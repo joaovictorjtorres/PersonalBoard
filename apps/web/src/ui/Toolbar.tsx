@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react'
-import { Eraser, Grid3x3, Hand, ImagePlus, MousePointer2, Pencil, Undo2 } from 'lucide-react'
+import { Eraser, Grid3x3, Hand, ImagePlus, MousePointer2, Pencil, Ruler, Undo2 } from 'lucide-react'
 import { useTable, useTableActions } from '../store/context'
 import { GridPopover } from './GridPopover'
 import { PenPopover } from './PenPopover'
@@ -43,6 +43,14 @@ export function Toolbar() {
         </button>
         {penMenu && <PenPopover onClose={closePenMenu} />}
       </div>
+      <button
+        aria-label="Régua (R)"
+        title="Régua (R) — clique fixa o início; novo clique ou Esc remove"
+        aria-pressed={tool === 'ruler'}
+        onClick={() => actions.setTool('ruler')}
+      >
+        <Ruler size={ICON} aria-hidden />
+      </button>
       <button aria-label="Adicionar imagem" title="Adicionar imagem na camada ativa" onClick={() => fileInput.current?.click()}>
         <ImagePlus size={ICON} aria-hidden />
       </button>

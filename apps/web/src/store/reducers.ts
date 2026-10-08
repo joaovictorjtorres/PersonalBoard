@@ -328,6 +328,7 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         deniedGrabs: {},
         settings: snap.settings,
         rulers: {},
+        ownRuler: null,
         pings: [],
         cameraTarget: null,
         chatTable: snap.chat,

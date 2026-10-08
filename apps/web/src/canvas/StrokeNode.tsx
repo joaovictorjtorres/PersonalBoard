@@ -3,6 +3,7 @@ import { canControl, type StrokeObject } from '@mesa/shared'
 import { useTable, useTableActions, useTableStore } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
 import { commitNodeChange } from './nodeChange'
+import { isPingClick } from './ping'
 
 export function StrokeNode({ object, segments }: { object: StrokeObject; segments?: number[][] }) {
   const store = useTableStore()
@@ -27,8 +28,8 @@ export function StrokeNode({ object, segments }: { object: StrokeObject; segment
       x={pos.x}
       y={pos.y}
       draggable={interactive}
-      onMouseDown={() => {
-        if (interactive) actions.select(object.id)
+      onMouseDown={(e) => {
+        if (interactive && !isPingClick(e.evt)) actions.select(object.id)
       }}
       onDragStart={() => actions.grab(object.id)}
       onDragMove={(e) =>

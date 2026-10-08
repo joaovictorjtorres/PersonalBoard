@@ -23,6 +23,8 @@ export function useKeyboard(): void {
         case 'h': actions.setTool('hand'); break
         case 'p': actions.setPen('draw'); break
         case 'e': actions.setPen('erase'); break
+        case 'r': actions.setTool('ruler'); break
+        case 'escape': actions.rulerCancel(); break
         case 'delete':
         case 'backspace':
           if (selectedId) {

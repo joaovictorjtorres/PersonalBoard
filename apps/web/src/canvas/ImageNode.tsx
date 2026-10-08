@@ -4,6 +4,7 @@ import { canControl, type ImageObject } from '@mesa/shared'
 import { useTable, useTableActions, useTableStore } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
 import { commitNodeChange, geometryFromNode } from './nodeChange'
+import { isPingClick } from './ping'
 
 export function ImageNode({ object }: { object: ImageObject }) {
   const [image] = useImage(`/files/${object.assetKey}`)
@@ -28,8 +29,8 @@ export function ImageNode({ object }: { object: ImageObject }) {
       height={g.height}
       rotation={g.rotation}
       draggable={interactive}
-      onMouseDown={() => {
-        if (interactive) actions.select(object.id)
+      onMouseDown={(e) => {
+        if (interactive && !isPingClick(e.evt)) actions.select(object.id)
       }}
       onDragStart={() => actions.grab(object.id)}
       onDragMove={(e) => actions.dragPreview(object.id, geometryFromNode(e.target))}

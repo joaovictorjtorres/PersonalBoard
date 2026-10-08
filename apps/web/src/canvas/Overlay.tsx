@@ -1,6 +1,10 @@
 import { Circle, Group, Layer, Line, Rect, Text } from 'react-konva'
+import { PING_DURATION_MS, type Member } from '@mesa/shared'
 import { useTable } from '../store/context'
-import { useNow } from './hooks'
+import type { Ruler } from '../store/state'
+import { useFrameClock, useNow } from './hooks'
+import { pingRing } from './ping'
+import { rulerLabel } from './ruler'
 
 export function Overlay() {
   const now = useNow(1000)
@@ -11,7 +15,11 @@ export function Overlay() {
   const dragPreviews = useTable((s) => s.dragPreviews)
   const strokePreviews = useTable((s) => s.strokePreviews)
   const scale = useTable((s) => s.viewport.scale)
-  const selfId = useTable((s) => s.self?.clientId)
+  const self = useTable((s) => s.self)
+  const rulers = useTable((s) => s.rulers)
+  const ownRuler = useTable((s) => s.ownRuler)
+  const gridSize = useTable((s) => s.settings.grid.size)
+  const selfId = self?.clientId
 
   return (
     <Layer listening={false}>
@@ -44,6 +52,78 @@ export function Overlay() {
           </Group>
         )
       })}
+
+      {/* Réguas dos outros (a de outra aba minha não aparece) e a minha, desenhada do estado local. */}
+      {Object.entries(rulers).map(([clientId, ruler]) =>
+        clientId === selfId ? null : (
+          <RulerMark key={clientId} ruler={ruler} member={members[clientId]} size={gridSize} scale={scale} />
+        ),
+      )}
+      {ownRuler && self && <RulerMark ruler={ownRuler} member={self} size={gridSize} scale={scale} />}
+
+      <Pings members={members} scale={scale} />
     </Layer>
+  )
+}
+
+function RulerMark({
+  ruler,
+  member,
+  size,
+  scale,
+}: {
+  ruler: Ruler
+  member: Pick<Member, 'nickname' | 'color'> | undefined
+  size: number
+  scale: number
+}) {
+  const color = member?.color ?? '#ffffff'
+  const k = 1 / scale
+  return (
+    <Group>
+      <Line
+        points={[ruler.from.x, ruler.from.y, ruler.to.x, ruler.to.y]}
+        stroke={color}
+        strokeWidth={2 * k}
+        dash={[8 * k, 6 * k]}
+        lineCap="round"
+      />
+      <Circle x={ruler.from.x} y={ruler.from.y} radius={3 * k} fill={color} />
+      <Text
+        name="ruler-label"
+        text={rulerLabel(member?.nickname ?? '?', ruler, size)}
+        x={ruler.to.x + 12 * k}
+        y={ruler.to.y + 12 * k}
+        fontSize={13 * k}
+        fill={color}
+        stroke="#111111"
+        strokeWidth={3 * k}
+        fillAfterStrokeEnabled
+      />
+    </Group>
+  )
+}
+
+function Pings({ members, scale }: { members: Record<string, Member>; scale: number }) {
+  const pings = useTable((s) => s.pings)
+  const last = pings[pings.length - 1]
+  const now = useFrameClock(!!last && Date.now() - last.at < PING_DURATION_MS)
+  return (
+    <>
+      {pings.map((p) => {
+        // O estado só poda pings na chegada de outro; a idade é filtrada aqui (pingRing → null).
+        const ring = pingRing(now - p.at)
+        if (!ring) return null
+        const member = members[p.clientId]
+        const color = member?.color ?? '#ffffff'
+        return (
+          <Group key={p.id} x={p.x} y={p.y} scaleX={1 / scale} scaleY={1 / scale} opacity={ring.opacity}>
+            <Circle radius={ring.radius} stroke={color} strokeWidth={3} />
+            <Circle radius={4} fill={color} />
+            <Text text={member?.nickname ?? '?'} x={ring.radius + 6} y={-6} fontSize={12} fill={color} />
+          </Group>
+        )
+      })}
+    </>
   )
 }

@@ -1,19 +1,41 @@
-import { Fragment, useMemo } from 'react'
+import { Fragment, useEffect, useMemo, useRef } from 'react'
+import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { Layer, Line, Stage } from 'react-konva'
-import type { TableObject } from '@mesa/shared'
-import { useTable, useTableActions } from '../store/context'
+import { CAMERA_GLIDE_MS, type TableObject } from '@mesa/shared'
+import { useTable, useTableActions, useTableStore } from '../store/context'
+import { centerOn, glideStep } from './camera'
 import { GridLayer } from './GridLayer'
 import { useModifierKeys, useWindowSize } from './hooks'
 import { ImageNode } from './ImageNode'
 import { ObjectDecorations } from './ObjectDecorations'
 import { Overlay } from './Overlay'
+import { isPingClick } from './ping'
 import { SelectionTransformer } from './SelectionTransformer'
 import { StrokeNode } from './StrokeNode'
 import { useDrawingTools } from './useDrawingTools'
 
 const MIN_SCALE = 0.1
 const MAX_SCALE = 8
+const debug = new URLSearchParams(window.location.search).has('debug')
+
+/** Desliza a câmera (≈400 ms) até centralizar o ponto pedido pelo mestre, mantendo o zoom. */
+function useCameraGlide(): void {
+  const store = useTableStore()
+  const target = useTable((s) => s.cameraTarget)
+  useEffect(() => {
+    if (!target) return
+    const from = store.getState().viewport
+    const to = centerOn(from, target, window.innerWidth, window.innerHeight)
+    const start = performance.now()
+    let frame = requestAnimationFrame(function step(time) {
+      const t = Math.min(1, (time - start) / CAMERA_GLIDE_MS)
+      store.getState().actions.setViewport(glideStep(from, to, t))
+      if (t < 1) frame = requestAnimationFrame(step)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [store, target])
+}
 
 export function TableCanvas() {
   const layers = useTable((s) => s.layers)
@@ -27,9 +49,15 @@ export function TableCanvas() {
   const { space } = useModifierKeys()
   const size = useWindowSize()
   const drawing = useDrawingTools()
+  const stageRef = useRef<Konva.Stage>(null)
   const panning = tool === 'hand' || space
   // A grade fica logo acima da camada "map"; sem ela (removida pelo mestre), abaixo de tudo.
   const hasMapLayer = layers.some((l) => l.id === 'map')
+  useCameraGlide()
+
+  useEffect(() => {
+    if (debug) (window as unknown as { __stage?: Konva.Stage | null }).__stage = stageRef.current
+  }, [])
 
   const byLayer = useMemo(() => {
     const groups: Record<string, TableObject[]> = {}
@@ -64,10 +92,19 @@ export function TableCanvas() {
     if (node) actions.openObjectMenu(node.id(), e.evt.clientX, e.evt.clientY)
   }
 
-  const cursor = panning ? 'grab' : tool === 'pencil' ? (penMode === 'erase' ? 'cell' : 'crosshair') : 'default'
+  const cursor = panning
+    ? 'grab'
+    : tool === 'pencil'
+      ? penMode === 'erase'
+        ? 'cell'
+        : 'crosshair'
+      : tool === 'ruler'
+        ? 'crosshair'
+        : 'default'
 
   return (
     <Stage
+      ref={stageRef}
       width={size.width}
       height={size.height}
       x={viewport.x}
@@ -81,13 +118,26 @@ export function TableCanvas() {
       onDragEnd={onStageDrag}
       onContextMenu={onContextMenu}
       onMouseDown={(e) => {
+        const pos = e.target.getStage()?.getRelativePointerPosition()
+        // Shift/Ctrl + clique: ping em qualquer ferramenta (inclusive Mão e Espaço), sem selecionar, desenhar nem medir.
+        if (pos && e.evt.button === 0 && isPingClick(e.evt)) {
+          actions.ping(pos, e.evt.ctrlKey || e.evt.metaKey)
+          return
+        }
         if (panning) return
+        if (tool === 'ruler') {
+          if (pos && e.evt.button === 0) actions.rulerClick(pos)
+          return
+        }
         if (tool === 'select' && e.target === e.target.getStage()) actions.select(null)
         drawing.onDown(e)
       }}
       onMouseMove={(e) => {
         const pos = e.target.getStage()?.getRelativePointerPosition()
-        if (pos) actions.cursor(pos.x, pos.y)
+        if (pos) {
+          actions.cursor(pos.x, pos.y)
+          actions.rulerMove(pos)
+        }
         if (!panning) drawing.onMove(e)
       }}
       onMouseUp={drawing.onUp}

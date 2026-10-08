@@ -50,3 +50,17 @@ export function useNow(intervalMs: number): number {
   }, [intervalMs])
   return now
 }
+
+/** Date.now() a cada quadro enquanto `active`; parado quando não há animação. */
+export function useFrameClock(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (!active) return
+    let frame = requestAnimationFrame(function tick() {
+      setNow(Date.now())
+      frame = requestAnimationFrame(tick)
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [active])
+  return now
+}
