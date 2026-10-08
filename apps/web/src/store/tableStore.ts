@@ -296,6 +296,10 @@ export function createTableStore(
       async sendChatImage(file) {
         // canal capturado antes do upload: trocar de aba durante o envio não muda o destino
         const channel = channelOf(get().chatActive)
+        if (get().status !== 'open' || !sync) {
+          set((s) => addToast(s, 'Sem conexão — aguarde reconectar'))
+          return
+        }
         try {
           const prepared = await prepareChatImage(file)
           const assetKey = await uploadAsset(tableId, prepared.blob)

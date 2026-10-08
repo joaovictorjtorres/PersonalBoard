@@ -44,13 +44,15 @@ export function openDmTab<S extends TableState>(s: S, clientId: string): S {
 
 /** Fechar a aba apaga o histórico dela (não há cópia no servidor). */
 export function closeDmTab<S extends TableState>(s: S, clientId: string): S {
-  return {
+  const next: S = {
     ...s,
     chatTabs: s.chatTabs.filter((t) => t !== clientId),
     chatDms: without(s.chatDms, clientId),
     chatUnread: without(s.chatUnread, clientId),
     chatActive: s.chatActive === clientId ? 'table' : s.chatActive,
   }
+  // voltou para a Mesa à vista: o que chegou nela enquanto a aba privada estava ativa já foi visto
+  return s.chatActive === clientId && s.chatOpen ? { ...next, chatUnread: without(next.chatUnread, 'table') } : next
 }
 
 export function selectChatTab<S extends TableState>(s: S, tab: ChatTab): S {

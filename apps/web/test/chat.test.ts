@@ -91,6 +91,14 @@ describe('conversas privadas', () => {
     expect(ids(s.chatDms.bia)).toEqual([])
   })
 
+  it('fechar a aba ativa com o painel aberto zera as não lidas da Mesa', () => {
+    let s = openDmTab(joined(), 'bia')
+    s = receive(s, 'table', msg('t1'))
+    expect(s.chatUnread.table).toBe(1)
+    s = closeDmTab(s, 'bia')
+    expect(s.chatUnread.table).toBeUndefined()
+  })
+
   it('reconexão mantém as abas privadas e o histórico local; pedidos pendentes são esquecidos', () => {
     let s: TableState = { ...receive(joined(), { dm: 'bia' }, msg('d1')), chatPending: { r1: 'table' } }
     s = reduceServer(s, welcome([msg('t1')]), 0)
