@@ -139,6 +139,17 @@ describe('SyncClient', () => {
     expect(FakeSocket.all).toHaveLength(1)
     expect(statuses.at(-1)).toBe('closed')
   })
+
+  it('error auth encerra sem reconectar', () => {
+    client.connect()
+    last().open()
+    last().receive({ t: 'error', reason: 'auth' })
+    last().drop()
+    vi.advanceTimersByTime(60_000)
+    expect(FakeSocket.all).toHaveLength(1)
+    expect(statuses.at(-1)).toBe('closed')
+    expect(received).toEqual([{ t: 'error', reason: 'auth' }])
+  })
 })
 
 /** close() does not fire onclose synchronously, like a real WebSocket. */

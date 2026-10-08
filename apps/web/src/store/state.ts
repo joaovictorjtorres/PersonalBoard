@@ -29,7 +29,7 @@ export interface StrokePreview {
 
 export interface TableState {
   status: ConnStatus
-  fatal: 'table_not_found' | null
+  fatal: 'table_not_found' | 'auth' | null
   self: Member | null
   meta: TableMetaPublic | null
   members: Record<string, Member>

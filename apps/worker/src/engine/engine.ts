@@ -53,7 +53,7 @@ export class TableEngine {
     return this.canSeeLayer(role, object.layerId)
   }
 
-  join(input: { clientId: string; nickname: string; role: Role }, online: Set<string>): Member {
+  join(input: { clientId: string; nickname: string; role: Role; secretHash?: string }, online: Set<string>): Member {
     const existing = this.store.getMember(input.clientId)
     const usedByOthers = new Set(
       this.store
@@ -65,7 +65,15 @@ export class TableEngine {
       existing && !usedByOthers.has(existing.color)
         ? existing.color
         : (MEMBER_COLORS.find((c) => !usedByOthers.has(c)) ?? MEMBER_COLORS[usedByOthers.size % MEMBER_COLORS.length])
-    const stored: StoredMember = { ...input, color, lastSeenAt: this.now() }
+    const secretHash = input.secretHash ?? existing?.secretHash
+    const stored: StoredMember = {
+      clientId: input.clientId,
+      nickname: input.nickname,
+      role: input.role,
+      color,
+      lastSeenAt: this.now(),
+      ...(secretHash ? { secretHash } : {}),
+    }
     this.store.upsertMember(stored)
     return { clientId: input.clientId, nickname: input.nickname, color, role: input.role, online: true }
   }

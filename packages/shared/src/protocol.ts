@@ -67,6 +67,7 @@ const HelloSchema = z.object({
   clientId: z.uuid(),
   nickname: z.string().trim().min(1).max(32),
   gmSecret: z.string().max(128).optional(),
+  clientSecret: z.string().max(128).optional(),
 })
 export type HelloMessage = z.infer<typeof HelloSchema>
 
@@ -106,7 +107,7 @@ export interface Snapshot {
 }
 
 export type ServerMessage =
-  | { t: 'welcome'; self: Member; snapshot: Snapshot }
+  | { t: 'welcome'; self: Member; snapshot: Snapshot; clientSecret?: string }
   | { t: 'ack'; opId: string; version: number }
   | { t: 'reject'; opId: string; reason: RejectReason; current?: TableObject | null }
   | { t: 'op'; op: AppliedOp; by: string }
@@ -122,4 +123,4 @@ export type ServerMessage =
   | { t: 'layerRemoved'; id: string }
   | { t: 'noteSet'; objectId: string; text: string }
   | { t: 'memberRemoved'; clientId: string }
-  | { t: 'error'; reason: 'table_not_found' }
+  | { t: 'error'; reason: 'table_not_found' | 'auth' }

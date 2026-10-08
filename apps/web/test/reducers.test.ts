@@ -144,4 +144,10 @@ describe('mensagens de outros', () => {
     expect(s.fatal).toBe('table_not_found')
     expect(s.status).toBe('closed')
   })
+
+  it('error auth marca fatal auth e fecha', () => {
+    const s = reduceServer(joined(), { t: 'error', reason: 'auth' }, 0)
+    expect(s.fatal).toBe('auth')
+    expect(s.status).toBe('closed')
+  })
 })

@@ -120,3 +120,11 @@ describe('readOpId', () => {
     expect(readOpId(null)).toBeNull()
   })
 })
+
+describe('hello com clientSecret', () => {
+  it('aceita segredo opcional até 128 caracteres', () => {
+    const base = { t: 'hello', clientId: uuid, nickname: 'Ana' }
+    expect(ClientMessageSchema.safeParse({ ...base, clientSecret: 'a'.repeat(43) }).success).toBe(true)
+    expect(ClientMessageSchema.safeParse({ ...base, clientSecret: 'a'.repeat(129) }).success).toBe(false)
+  })
+})

@@ -8,7 +8,7 @@ import {
 } from '@mesa/shared'
 import { TableEngine } from './engine/engine'
 import { SqlStore } from './engine/sql-store'
-import { safeEqual, sha256Hex } from './crypto'
+import { randomSecret, safeEqual, sha256Hex } from './crypto'
 
 interface Attachment {
   sessionId: string
@@ -104,12 +104,37 @@ export class TableDO extends DurableObject<Env> {
     if (!meta) return
     let role: Role = 'player'
     if (msg.gmSecret && safeEqual(await sha256Hex(msg.gmSecret), meta.gmSecretHash)) role = 'gm'
+    // Todos os awaits antes de ler o membro: ler-decidir-gravar fica atômico no DO.
+    const providedHash = msg.clientSecret ? await sha256Hex(msg.clientSecret) : null
+    const candidate = randomSecret()
+    const candidateHash = await sha256Hex(candidate)
+
+    const existing = this.store.getMember(msg.clientId)
+    let issued: string | undefined
+    if (existing?.secretHash) {
+      if (!providedHash || !safeEqual(providedHash, existing.secretHash)) {
+        this.send(ws, { t: 'error', reason: 'auth' })
+        ws.close(4401, 'auth')
+        return
+      }
+    } else {
+      issued = candidate // membro novo ou do M1 sem hash: trust-on-first-use
+    }
+
     const online = this.onlineClientIds()
-    const member = this.engine.join({ clientId: msg.clientId, nickname: msg.nickname, role }, online)
+    const member = this.engine.join(
+      { clientId: msg.clientId, nickname: msg.nickname, role, ...(issued ? { secretHash: candidateHash } : {}) },
+      online,
+    )
     const att: Attachment = { sessionId: crypto.randomUUID(), clientId: msg.clientId, role }
     ws.serializeAttachment(att)
     online.add(msg.clientId)
-    this.send(ws, { t: 'welcome', self: member, snapshot: this.engine.snapshot(role, online) })
+    this.send(ws, {
+      t: 'welcome',
+      self: member,
+      snapshot: this.engine.snapshot(role, online),
+      ...(issued ? { clientSecret: issued } : {}),
+    })
     this.broadcast(att.sessionId, () => ({ t: 'memberJoined', member }))
   }
 

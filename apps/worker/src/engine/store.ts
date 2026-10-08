@@ -13,6 +13,8 @@ export interface StoredMember {
   color: string
   role: Role
   lastSeenAt: number
+  /** SHA-256 hex do clientSecret; ausente em membros gravados pelo M1. */
+  secretHash?: string
 }
 
 export interface TableStore {

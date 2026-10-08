@@ -1,5 +1,7 @@
-import { exports } from 'cloudflare:workers'
+import { env, exports } from 'cloudflare:workers'
+import { runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
+import { SqlStore } from '../src/engine/sql-store'
 import { TestClient, createTable, tokenObject } from './helpers'
 
 const SELF = exports.default
@@ -104,8 +106,8 @@ describe('TableDO', () => {
     const tab1 = await TestClient.connect(tableId)
     const tab2 = await TestClient.connect(tableId)
     const other = await TestClient.connect(tableId)
-    const { clientId } = await tab1.hello('Ana')
-    await tab2.hello('Ana', { clientId })
+    const { clientId, welcome } = await tab1.hello('Ana')
+    await tab2.hello('Ana', { clientId, clientSecret: welcome.clientSecret })
     await other.hello('Bia')
     const obj = tokenObject()
     tab1.send({ t: 'op', opId: 'op_1', op: { kind: 'create', object: obj } })
@@ -184,5 +186,50 @@ describe('TableDO', () => {
     const body = await res.json<{ tableId: string; gmSecret: string }>()
     expect(body.tableId).toMatch(/^[A-Za-z0-9]{10}$/)
     expect(body.gmSecret.length).toBeGreaterThanOrEqual(43)
+  })
+})
+
+describe('TableDO — identidade (clientSecret)', () => {
+  it('primeiro hello recebe um segredo; hello falsificado é recusado sem atrapalhar o dono; segredo certo reconecta', async () => {
+    const { tableId } = await createTable()
+    const real = await TestClient.connect(tableId)
+    const { clientId, welcome } = await real.hello('Ana')
+    expect(welcome.clientSecret).toMatch(/^[A-Za-z0-9_-]{43}$/)
+
+    const noSecret = await TestClient.connect(tableId)
+    noSecret.send({ t: 'hello', clientId, nickname: 'Falsa' })
+    expect(await noSecret.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
+
+    const wrongSecret = await TestClient.connect(tableId)
+    wrongSecret.send({ t: 'hello', clientId, nickname: 'Falsa', clientSecret: 'b'.repeat(43) })
+    expect(await wrongSecret.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
+    await wrongSecret.expectNone('welcome')
+
+    await real.expectNone('memberJoined')
+    await real.expectNone('memberLeft')
+    real.send({ t: 'op', opId: 'op_1', op: { kind: 'create', object: tokenObject() } })
+    expect(await real.waitFor('ack')).toMatchObject({ opId: 'op_1' })
+
+    const tab2 = await TestClient.connect(tableId)
+    const { welcome: again } = await tab2.hello('Ana', { clientId, clientSecret: welcome.clientSecret })
+    expect(again.self.clientId).toBe(clientId)
+    expect(again.clientSecret).toBeUndefined()
+    expect(again.snapshot.members.find((m) => m.clientId === clientId)?.nickname).toBe('Ana')
+  })
+
+  it('membro do M1 sem hash adota o primeiro segredo que chegar (trust-on-first-use)', async () => {
+    const { tableId } = await createTable()
+    const clientId = crypto.randomUUID()
+    await runInDurableObject(env.TABLES.get(env.TABLES.idFromName(tableId)), (_instance, state) => {
+      new SqlStore(state.storage.sql).upsertMember({ clientId, nickname: 'Ana', color: '#e6194b', role: 'player', lastSeenAt: Date.now() })
+    })
+    const first = await TestClient.connect(tableId)
+    const { welcome } = await first.hello('Ana', { clientId })
+    expect(welcome.clientSecret).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    first.close()
+
+    const intruder = await TestClient.connect(tableId)
+    intruder.send({ t: 'hello', clientId, nickname: 'Ana' })
+    expect(await intruder.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
   })
 })

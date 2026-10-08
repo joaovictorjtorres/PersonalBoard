@@ -3,7 +3,7 @@ import { nanoid } from 'nanoid'
 import type { Op, Presence } from '@mesa/shared'
 import { SyncClient, type SyncClientOptions } from '../sync/SyncClient'
 import { throttle, type Throttled } from '../lib/throttle'
-import { getClientId, readGmSecret } from '../lib/identity'
+import { getClientId, readClientSecret, readGmSecret, rememberClientSecret, shouldRetryAuth } from '../lib/identity'
 import { uploadAsset, wsUrl } from '../lib/api'
 import { initialSize, prepareImage, uploadErrorText, viewportCenter } from '../lib/image'
 import { makeInitialState, type Geometry, type TableState, type Toast, type Tool, type Viewport } from './state'
@@ -44,6 +44,7 @@ export function createTableStore(
   let sync: SyncClient | null = null
   const dragThrottles = new Map<string, Throttled<[Geometry]>>()
   let writes = 0
+  let authRetried = false
 
   return createStore<TableStoreState>()((set, get) => {
     const cursorThrottle = throttle((x: number, y: number) => {
@@ -65,17 +66,31 @@ export function createTableStore(
     const actions: TableActions = {
       connect(nickname) {
         sync?.close()
+        let sentSecret: string | undefined
         // Callbacks de um cliente antigo (ex.: o close assíncrono do StrictMode)
         // são ignorados para não sobrescrever o status do cliente atual.
         const client: SyncClient = new SyncClient({
           url: wsUrl(tableId),
           hello: () => {
             const gmSecret = readGmSecret(tableId)
-            return { t: 'hello', clientId: getClientId(), nickname, ...(gmSecret ? { gmSecret } : {}) }
+            sentSecret = readClientSecret(tableId)
+            return {
+              t: 'hello',
+              clientId: getClientId(),
+              nickname,
+              ...(gmSecret ? { gmSecret } : {}),
+              ...(sentSecret ? { clientSecret: sentSecret } : {}),
+            }
           },
           onMessage: (msg) => {
             if (sync !== client) return
             if (msg.t === 'ack') writes++
+            if (msg.t === 'welcome' && msg.clientSecret) rememberClientSecret(tableId, msg.clientSecret)
+            if (msg.t === 'error' && msg.reason === 'auth' && shouldRetryAuth(sentSecret, readClientSecret(tableId), authRetried)) {
+              authRetried = true
+              actions.connect(nickname)
+              return
+            }
             set((s) => reduceServer(s, msg, Date.now()))
           },
           onStatus: (status) => {

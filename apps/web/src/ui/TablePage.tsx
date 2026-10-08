@@ -55,8 +55,14 @@ function TableView() {
     return (
       <div className="fullscreen-msg">
         <div>
-          <p>Mesa não encontrada.</p>
-          <a href="/" style={{ color: '#9db4ff' }}>Criar uma nova mesa</a>
+          {fatal === 'auth' ? (
+            <p>Identidade inválida — limpe os dados do site ou entre com outro navegador</p>
+          ) : (
+            <>
+              <p>Mesa não encontrada.</p>
+              <a href="/" style={{ color: '#9db4ff' }}>Criar uma nova mesa</a>
+            </>
+          )}
         </div>
       </div>
     )

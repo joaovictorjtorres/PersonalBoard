@@ -69,3 +69,25 @@ export function readGmSecret(tableId: string): string | undefined {
   }
   return safeGet(gmKey(tableId)) ?? memoryGm.get(tableId)
 }
+
+const secretKey = (tableId: string) => `mesa:secret:${tableId}`
+// fallback em memória quando o localStorage está bloqueado
+const memorySecrets = new Map<string, string>()
+
+export function readClientSecret(tableId: string): string | undefined {
+  return safeGet(secretKey(tableId)) ?? memorySecrets.get(tableId)
+}
+
+export function rememberClientSecret(tableId: string, secret: string): void {
+  memorySecrets.set(tableId, secret)
+  safeSet(secretKey(tableId), secret)
+}
+
+/**
+ * Duas abas entrando pela primeira vez ao mesmo tempo: a segunda é recusada porque a
+ * primeira já adotou um segredo. Se o armazenamento passou a ter um segredo diferente
+ * do que esta aba enviou, vale tentar de novo — uma vez só.
+ */
+export function shouldRetryAuth(sentSecret: string | undefined, storedSecret: string | undefined, alreadyRetried: boolean): boolean {
+  return !alreadyRetried && !!storedSecret && storedSecret !== sentSecret
+}
