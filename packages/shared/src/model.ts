@@ -30,7 +30,8 @@ export interface TableMetaPublic {
 // z.number() no Zod 4 já recusa NaN/Infinity.
 const coord = z.number()
 const size = z.number().nonnegative()
-const color = z.string().regex(/^#[0-9a-fA-F]{6}$/)
+export const ColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/)
+const color = ColorSchema
 const strokeWidth = z.number().min(1).max(100)
 
 const segment = z

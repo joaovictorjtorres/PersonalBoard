@@ -36,3 +36,20 @@ export const MEMBER_RECENT_MS = 7 * 24 * 60 * 60 * 1000
 export const HEARTBEAT_INTERVAL_MS = 25_000
 export const HEARTBEAT_TIMEOUT_MS = 10_000
 export const ERASER_MIN_SIZE = 8
+
+// M3
+export const GRID_MIN = 10
+export const GRID_MAX = 500
+export const DEFAULT_GRID_SIZE = 70
+export const SHAPE_STROKE_MAX = 30
+export const CHAT_TEXT_MAX = 500
+export const CHAT_HISTORY_LIMIT = 200
+export const CHAT_IMAGE_MAX_SIDE = 16_384
+export const CHAT_THUMB_MAX = 240
+export const CHAT_RATE_PER_SEC = 5
+export const PING_RATE_PER_SEC = 3
+export const PING_DURATION_MS = 2000
+export const CAMERA_GLIDE_MS = 400
+export const RULER_THROTTLE_MS = 33
+export const DICE_MAX_COUNT = 50
+export const DICE_MAX_BONUS = 100
