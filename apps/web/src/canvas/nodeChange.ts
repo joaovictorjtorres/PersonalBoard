@@ -1,5 +1,5 @@
 import type Konva from 'konva'
-import type { ObjectPatch } from '@mesa/shared'
+import { snapPatch, type ObjectPatch } from '@mesa/shared'
 import type { Geometry } from '../store/state'
 import type { TableStore } from '../store/tableStore'
 
@@ -41,6 +41,15 @@ export function commitNodeChange(store: TableStore, id: string, node: Konva.Node
     node.size({ width: g.width, height: g.height })
     patch = g
   }
+
+  // Encaixe: a mesma conta do servidor, para a imagem já cair no lugar certo.
+  const grid = s.settings.grid
+  if (object.type === 'image' && grid.snap) {
+    patch = snapPatch(patch, grid.size)
+    node.position({ x: patch.x ?? node.x(), y: patch.y ?? node.y() })
+    if (kind === 'transform') node.size({ width: patch.width ?? node.width(), height: patch.height ?? node.height() })
+  }
+
   if (!s.actions.submit({ kind: 'update', id, patch })) revert()
   s.actions.release(id)
 }

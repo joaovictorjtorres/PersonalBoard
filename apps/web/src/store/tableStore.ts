@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { nanoid } from 'nanoid'
 import type { ChatChannel, ClientMessage, MemberPatch, Op, Point, Presence, RollRequest, SettingsPatch, ShapeKind } from '@mesa/shared'
-import { CHAT_TEXT_MAX, DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, canControl, cellCenter, parseCommand } from '@mesa/shared'
+import { CHAT_TEXT_MAX, DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, canControl, cellCenter, parseCommand, snapToGrid } from '@mesa/shared'
 import { SyncClient, type SyncClientOptions } from '../sync/SyncClient'
 import { throttle, type Throttled } from '../lib/throttle'
 import { getClientId, readClientSecret, readGmSecret, rememberClientSecret, shouldRetryAuth } from '../lib/identity'
@@ -322,6 +322,10 @@ export function createTableStore(
           const prepared = await prepareImage(file)
           const assetKey = await uploadAsset(tableId, prepared.blob)
           const size = initialSize(layerId, prepared.width, prepared.height)
+          const box = { x: center.x - size.width / 2, y: center.y - size.height / 2, width: size.width, height: size.height }
+          // Mesmo encaixe do servidor: a imagem nova já aparece alinhada.
+          const grid = get().settings.grid
+          const placed = grid.snap ? snapToGrid(box, grid.size) : box
           actions.submit({
             kind: 'create',
             object: {
@@ -329,10 +333,7 @@ export function createTableStore(
               type: 'image',
               layerId,
               assetKey,
-              x: center.x - size.width / 2,
-              y: center.y - size.height / 2,
-              width: size.width,
-              height: size.height,
+              ...placed,
               rotation: 0,
               zIndex: actions.nextZ(layerId),
             },

@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
-import { Eraser, Hand, ImagePlus, MousePointer2, Pencil, Undo2 } from 'lucide-react'
+import { Eraser, Grid3x3, Hand, ImagePlus, MousePointer2, Pencil, Undo2 } from 'lucide-react'
 import { useTable, useTableActions } from '../store/context'
+import { GridPopover } from './GridPopover'
 import { PenPopover } from './PenPopover'
 
 const ICON = 18
@@ -8,10 +9,13 @@ const ICON = 18
 export function Toolbar() {
   const tool = useTable((s) => s.tool)
   const penMode = useTable((s) => s.penMode)
+  const isGm = useTable((s) => s.self?.role === 'gm')
   const actions = useTableActions()
   const fileInput = useRef<HTMLInputElement>(null)
   const [penMenu, setPenMenu] = useState(false)
+  const [gridMenu, setGridMenu] = useState(false)
   const closePenMenu = useCallback(() => setPenMenu(false), [])
+  const closeGridMenu = useCallback(() => setGridMenu(false), [])
   const penLabel = penMode === 'erase' ? 'Borracha (E)' : 'Lápis (P)'
 
   return (
@@ -54,6 +58,20 @@ export function Toolbar() {
           e.target.value = ''
         }}
       />
+      {isGm && (
+        <div className="pen-anchor">
+          <button
+            aria-label="Grade"
+            title="Grade (só o mestre)"
+            aria-haspopup="dialog"
+            aria-expanded={gridMenu}
+            onClick={() => setGridMenu(true)}
+          >
+            <Grid3x3 size={ICON} aria-hidden />
+          </button>
+          {gridMenu && <GridPopover onClose={closeGridMenu} />}
+        </div>
+      )}
       <button aria-label="Desfazer (Ctrl+Z)" title="Desfazer (Ctrl+Z)" onClick={() => actions.undo()}>
         <Undo2 size={ICON} aria-hidden />
       </button>

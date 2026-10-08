@@ -1,8 +1,9 @@
-import { useMemo } from 'react'
+import { Fragment, useMemo } from 'react'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { Layer, Line, Stage } from 'react-konva'
 import type { TableObject } from '@mesa/shared'
 import { useTable, useTableActions } from '../store/context'
+import { GridLayer } from './GridLayer'
 import { useModifierKeys, useWindowSize } from './hooks'
 import { ImageNode } from './ImageNode'
 import { ObjectDecorations } from './ObjectDecorations'
@@ -27,6 +28,8 @@ export function TableCanvas() {
   const size = useWindowSize()
   const drawing = useDrawingTools()
   const panning = tool === 'hand' || space
+  // A grade fica logo acima da camada "map"; sem ela (removida pelo mestre), abaixo de tudo.
+  const hasMapLayer = layers.some((l) => l.id === 'map')
 
   const byLayer = useMemo(() => {
     const groups: Record<string, TableObject[]> = {}
@@ -90,33 +93,37 @@ export function TableCanvas() {
       onMouseUp={drawing.onUp}
       onMouseLeave={drawing.onUp}
     >
+      {!hasMapLayer && <GridLayer />}
       {layers.map((layer) => {
         const active = layer.id === activeLayerId
         const list = byLayer[layer.id] ?? []
         return (
-          <Layer key={layer.id} listening={active && !panning} opacity={isGm && layer.visibility === 'gm' ? 0.5 : 1}>
-            {list.map((o) =>
-              o.type === 'image' ? (
-                <ImageNode key={o.id} object={o} />
-              ) : o.type === 'stroke' ? (
-                <StrokeNode key={o.id} object={o} segments={drawing.erasePreview[o.id]} />
-              ) : null,
-            )}
-            {list.map((o) => (
-              <ObjectDecorations key={`deco_${o.id}`} object={o} />
-            ))}
-            {drawing.ownPreview?.layerId === layer.id && (
-              <Line
-                points={drawing.ownPreview.points}
-                stroke={drawing.ownPreview.color}
-                strokeWidth={drawing.ownPreview.strokeWidth}
-                lineCap="round"
-                lineJoin="round"
-                listening={false}
-              />
-            )}
-            {active && <SelectionTransformer />}
-          </Layer>
+          <Fragment key={layer.id}>
+            <Layer listening={active && !panning} opacity={isGm && layer.visibility === 'gm' ? 0.5 : 1}>
+              {list.map((o) =>
+                o.type === 'image' ? (
+                  <ImageNode key={o.id} object={o} />
+                ) : o.type === 'stroke' ? (
+                  <StrokeNode key={o.id} object={o} segments={drawing.erasePreview[o.id]} />
+                ) : null,
+              )}
+              {list.map((o) => (
+                <ObjectDecorations key={`deco_${o.id}`} object={o} />
+              ))}
+              {drawing.ownPreview?.layerId === layer.id && (
+                <Line
+                  points={drawing.ownPreview.points}
+                  stroke={drawing.ownPreview.color}
+                  strokeWidth={drawing.ownPreview.strokeWidth}
+                  lineCap="round"
+                  lineJoin="round"
+                  listening={false}
+                />
+              )}
+              {active && <SelectionTransformer />}
+            </Layer>
+            {layer.id === 'map' && <GridLayer />}
+          </Fragment>
         )
       })}
       <Overlay />
