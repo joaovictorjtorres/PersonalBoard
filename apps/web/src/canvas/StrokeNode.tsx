@@ -3,11 +3,12 @@ import { canControl, type StrokeObject } from '@mesa/shared'
 import { useTable, useTableActions, useTableStore } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
 import { commitNodeChange } from './nodeChange'
-import { isPingClick } from './ping'
+import { isPingClick, usePingDragGuard } from './ping'
 
 export function StrokeNode({ object, segments }: { object: StrokeObject; segments?: number[][] }) {
   const store = useTableStore()
   const actions = useTableActions()
+  const pingGuard = usePingDragGuard()
   const tool = useTable((s) => s.tool)
   const lockedByOther = useTable((s) => isLockedByOther(s, object.id, Date.now()))
   const preview = useTable((s) => s.dragPreviews[object.id])
@@ -29,20 +30,19 @@ export function StrokeNode({ object, segments }: { object: StrokeObject; segment
       y={pos.y}
       draggable={interactive}
       onMouseDown={(e) => {
+        pingGuard.mouseDown(e.evt)
         if (interactive && !isPingClick(e.evt)) actions.select(object.id)
       }}
       onDragStart={(e) => {
-        // Clique de ping (Shift/Ctrl/⌘) não arrasta nem trava o traço.
-        if (isPingClick(e.evt as unknown as MouseEvent)) {
-          e.target.stopDrag()
-          return
-        }
+        if (pingGuard.dragStart(() => e.target.stopDrag())) return
         actions.grab(object.id)
       }}
       onDragMove={(e) =>
         actions.dragPreview(object.id, { x: e.target.x(), y: e.target.y(), width: object.width, height: object.height, rotation: 0 })
       }
-      onDragEnd={(e) => commitNodeChange(store, object.id, e.target, 'drag')}
+      onDragEnd={(e) => {
+        if (!pingGuard.dragEnd()) commitNodeChange(store, object.id, e.target, 'drag')
+      }}
     >
       {shown.map((points, i) => (
         <Line

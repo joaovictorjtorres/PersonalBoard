@@ -4,12 +4,13 @@ import { canControl, type ImageObject } from '@mesa/shared'
 import { useTable, useTableActions, useTableStore } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
 import { commitNodeChange, geometryFromNode } from './nodeChange'
-import { isPingClick } from './ping'
+import { isPingClick, usePingDragGuard } from './ping'
 
 export function ImageNode({ object }: { object: ImageObject }) {
   const [image] = useImage(`/files/${object.assetKey}`)
   const store = useTableStore()
   const actions = useTableActions()
+  const pingGuard = usePingDragGuard()
   const tool = useTable((s) => s.tool)
   const lockedByOther = useTable((s) => isLockedByOther(s, object.id, Date.now()))
   const preview = useTable((s) => s.dragPreviews[object.id])
@@ -30,18 +31,17 @@ export function ImageNode({ object }: { object: ImageObject }) {
       rotation={g.rotation}
       draggable={interactive}
       onMouseDown={(e) => {
+        pingGuard.mouseDown(e.evt)
         if (interactive && !isPingClick(e.evt)) actions.select(object.id)
       }}
       onDragStart={(e) => {
-        // Clique de ping (Shift/Ctrl/⌘) não arrasta nem trava a imagem.
-        if (isPingClick(e.evt as unknown as MouseEvent)) {
-          e.target.stopDrag()
-          return
-        }
+        if (pingGuard.dragStart(() => e.target.stopDrag())) return
         actions.grab(object.id)
       }}
       onDragMove={(e) => actions.dragPreview(object.id, geometryFromNode(e.target))}
-      onDragEnd={(e) => commitNodeChange(store, object.id, e.target, 'drag')}
+      onDragEnd={(e) => {
+        if (!pingGuard.dragEnd()) commitNodeChange(store, object.id, e.target, 'drag')
+      }}
       onTransformStart={() => actions.grab(object.id)}
       onTransform={(e) => actions.dragPreview(object.id, geometryFromNode(e.target))}
       onTransformEnd={(e) => commitNodeChange(store, object.id, e.target, 'transform')}

@@ -58,7 +58,9 @@ export function useShapeTool() {
     drag.current = null
     setPreview(null)
     const s = store.getState()
-    if (Math.max(d.geometry.width, d.geometry.height) * s.viewport.scale < MIN_EXTENT_PX) return
+    const w = d.geometry.width * s.viewport.scale
+    const h = d.geometry.height * s.viewport.scale
+    if (d.kind === 'line' ? Math.max(w, h) < MIN_EXTENT_PX : Math.min(w, h) < MIN_EXTENT_PX) return
     s.actions.submit({ kind: 'create', object: build(d, nanoid(), s.actions.nextZ(d.layerId)) })
   }
 

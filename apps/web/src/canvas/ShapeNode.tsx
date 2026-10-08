@@ -6,7 +6,7 @@ import { canControl, type ShapeObject } from '@mesa/shared'
 import { useTable, useTableActions, useTableStore } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
 import { commitNodeChange, geometryFromNode } from './nodeChange'
-import { isPingClick } from './ping'
+import { isPingClick, usePingDragGuard } from './ping'
 import { hexToRgba } from './shapes'
 
 function drawEllipse(ctx: Context, shape: KonvaShape): void {
@@ -22,6 +22,7 @@ function drawEllipse(ctx: Context, shape: KonvaShape): void {
 export function ShapeNode({ object, preview = false }: { object: ShapeObject; preview?: boolean }) {
   const store = useTableStore()
   const actions = useTableActions()
+  const pingGuard = usePingDragGuard()
   const tool = useTable((s) => s.tool)
   const lockedByOther = useTable((s) => isLockedByOther(s, object.id, Date.now()))
   const dragPreview = useTable((s) => s.dragPreviews[object.id])
@@ -41,18 +42,16 @@ export function ShapeNode({ object, preview = false }: { object: ShapeObject; pr
     listening: !preview,
     draggable: interactive,
     onMouseDown: (e: KonvaEventObject<MouseEvent>) => {
+      pingGuard.mouseDown(e.evt)
       if (interactive && !isPingClick(e.evt)) actions.select(object.id)
     },
     onDragStart: (e: KonvaEventObject<DragEvent>) => {
-      // Clique de ping (Shift/Ctrl/⌘) não arrasta nem trava o objeto.
-      const evt = e.evt as unknown as { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }
-      if (isPingClick(evt)) {
-        e.target.stopDrag()
-        return
-      }
+      if (pingGuard.dragStart(() => e.target.stopDrag())) return
       actions.grab(object.id)
     },
-    onDragEnd: (e: KonvaEventObject<DragEvent>) => commitNodeChange(store, object.id, e.target, 'drag'),
+    onDragEnd: (e: KonvaEventObject<DragEvent>) => {
+      if (!pingGuard.dragEnd()) commitNodeChange(store, object.id, e.target, 'drag')
+    },
   }
 
   if (object.kind === 'line') {
