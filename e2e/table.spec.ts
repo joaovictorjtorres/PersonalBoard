@@ -325,3 +325,24 @@ test('passada de borracha no meio de uma linha deixa 2 pedaços na tela do outro
 
   await expect.poll(async () => (await objects(gm)).find((o) => o.type === 'stroke')?.segments?.length).toBe(2)
 })
+
+test('mestre remove da lista um membro offline', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const anaRow = gm.locator('.members li', { hasText: 'Ana' })
+
+  await expect(anaRow).toBeVisible()
+  await expect(gm.getByRole('button', { name: 'Remover Ana da lista' })).toHaveCount(0) // online: sem X
+  await player.context().close()
+
+  const remove = gm.getByRole('button', { name: 'Remover Ana da lista' })
+  await expect(remove).toBeVisible()
+  await remove.click()
+  await expect(anaRow).toHaveCount(0)
+
+  await gm.reload()
+  await waitOpen(gm)
+  await expect(gm.locator('.members li', { hasText: 'Mestre' })).toBeVisible()
+  await expect(anaRow).toHaveCount(0)
+})

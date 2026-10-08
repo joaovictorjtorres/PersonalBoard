@@ -9,7 +9,9 @@ pnpm install
 pnpm dev:worker   # API + Durable Object + R2 locais em :8787
 pnpm dev:web      # front com hot reload em :5173 (proxy para :8787)
 pnpm test         # unitários + Durable Object
-pnpm e2e          # ponta a ponta (sobe o servidor sozinho)
+pnpm e2e          # ponta a ponta: sobe um wrangler dev próprio em :8788 (E2E_PORT muda a porta),
+                  # com build em apps/web/dist-e2e e estado em apps/worker/.wrangler/e2e-state —
+                  # não interfere num `pnpm host` rodando na 8787
 ```
 
 ## Opção A — rodar na sua máquina (sem conta Cloudflare)
