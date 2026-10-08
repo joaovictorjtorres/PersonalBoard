@@ -44,6 +44,14 @@ describe('SqlStore — migração do M1', () => {
     const current = { ...m1Image, control: { mode: 'all', clientIds: [] } }
     expect(normalizeObject(current)).toEqual(current)
   })
+
+  it('configurações gravadas com JSON parcial voltam completas', async () => {
+    await runInDurableObject(freshStub(), (_instance, state) => {
+      const store = new SqlStore(state.storage.sql)
+      state.storage.sql.exec('INSERT INTO settings (id, data) VALUES (1, ?)', JSON.stringify({ grid: { enabled: true } }))
+      expect(store.getSettings()).toEqual({ grid: { enabled: true, size: 70, snap: false } })
+    })
+  })
 })
 
 describe('contrato do TableStore', () => {

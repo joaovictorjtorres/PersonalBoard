@@ -1,4 +1,4 @@
-import type { Layer, Role, TableObject } from '@mesa/shared'
+import type { ChatEntry, Layer, Role, TableObject, TableSettings } from '@mesa/shared'
 
 export interface TableMeta {
   id: string
@@ -15,6 +15,10 @@ export interface StoredMember {
   lastSeenAt: number
   /** SHA-256 hex do clientSecret; ausente em membros gravados pelo M1. */
   secretHash?: string
+  /** M3: o mestre definiu o apelido; o `hello` não o sobrescreve. */
+  nicknameSetByGm?: boolean
+  /** M3: o mestre definiu a cor; o `hello` não a reatribui. */
+  colorSetByGm?: boolean
 }
 
 export interface TableStore {
@@ -37,4 +41,11 @@ export interface TableStore {
   deleteNote(objectId: string): void
   getAppliedOp(clientId: string, opId: string): number | null
   recordAppliedOp(clientId: string, opId: string, version: number): void
+  /** Padrão quando nunca foi gravado; sempre devolve uma cópia. */
+  getSettings(): TableSettings
+  putSettings(settings: TableSettings): void
+  /** Guarda a entrada e apaga as mais antigas além de CHAT_HISTORY_LIMIT. */
+  appendChat(entry: ChatEntry): void
+  /** Da mais antiga para a mais nova. */
+  listChat(): ChatEntry[]
 }

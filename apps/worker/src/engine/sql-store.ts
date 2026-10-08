@@ -1,4 +1,12 @@
-import { APPLIED_OPS_KEEP, type Layer, type TableObject } from '@mesa/shared'
+import {
+  APPLIED_OPS_KEEP,
+  CHAT_HISTORY_LIMIT,
+  parseSettings,
+  type ChatEntry,
+  type Layer,
+  type TableObject,
+  type TableSettings,
+} from '@mesa/shared'
 import { normalizeObject } from './migrate'
 import type { StoredMember, TableMeta, TableStore } from './store'
 
@@ -10,6 +18,8 @@ export class SqlStore implements TableStore {
     sql.exec('CREATE TABLE IF NOT EXISTS objects (id TEXT PRIMARY KEY, layer_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, version INTEGER NOT NULL)')
     sql.exec('CREATE TABLE IF NOT EXISTS applied_ops (seq INTEGER PRIMARY KEY, client_id TEXT NOT NULL, op_id TEXT NOT NULL, version INTEGER NOT NULL, UNIQUE(client_id, op_id))')
     sql.exec('CREATE TABLE IF NOT EXISTS gm_notes (object_id TEXT PRIMARY KEY, text TEXT NOT NULL)')
+    sql.exec('CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)')
+    sql.exec('CREATE TABLE IF NOT EXISTS chat (seq INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL)')
   }
 
   getMeta(): TableMeta | null {
@@ -104,5 +114,29 @@ export class SqlStore implements TableStore {
       'DELETE FROM applied_ops WHERE client_id = ? AND seq <= (SELECT seq FROM applied_ops WHERE client_id = ? ORDER BY seq DESC LIMIT 1 OFFSET ?)',
       clientId, clientId, APPLIED_OPS_KEEP,
     )
+  }
+
+  getSettings(): TableSettings {
+    const row = this.sql.exec<{ data: string }>('SELECT data FROM settings WHERE id = 1').toArray()[0]
+    return parseSettings(row ? JSON.parse(row.data) : null)
+  }
+
+  putSettings(settings: TableSettings): void {
+    this.sql.exec('INSERT OR REPLACE INTO settings (id, data) VALUES (1, ?)', JSON.stringify(settings))
+  }
+
+  appendChat(entry: ChatEntry): void {
+    this.sql.exec('INSERT INTO chat (data) VALUES (?)', JSON.stringify(entry))
+    this.sql.exec(
+      'DELETE FROM chat WHERE seq <= (SELECT seq FROM chat ORDER BY seq DESC LIMIT 1 OFFSET ?)',
+      CHAT_HISTORY_LIMIT,
+    )
+  }
+
+  listChat(): ChatEntry[] {
+    return this.sql
+      .exec<{ data: string }>('SELECT data FROM chat ORDER BY seq')
+      .toArray()
+      .map((r) => JSON.parse(r.data) as ChatEntry)
   }
 }

@@ -1,4 +1,12 @@
-import { APPLIED_OPS_KEEP, type Layer, type TableObject } from '@mesa/shared'
+import {
+  APPLIED_OPS_KEEP,
+  CHAT_HISTORY_LIMIT,
+  DEFAULT_SETTINGS,
+  type ChatEntry,
+  type Layer,
+  type TableObject,
+  type TableSettings,
+} from '@mesa/shared'
 import type { StoredMember, TableMeta, TableStore } from './store'
 
 export class MemoryStore implements TableStore {
@@ -9,6 +17,8 @@ export class MemoryStore implements TableStore {
   private notes = new Map<string, string>()
   private applied = new Map<string, number>()
   private appliedOrder = new Map<string, string[]>()
+  private settings: TableSettings = structuredClone(DEFAULT_SETTINGS)
+  private chat: ChatEntry[] = []
 
   getMeta() { return this.meta }
 
@@ -48,4 +58,9 @@ export class MemoryStore implements TableStore {
     while (order.length > APPLIED_OPS_KEEP) this.applied.delete(`${clientId}:${order.shift()}`)
     this.appliedOrder.set(clientId, order)
   }
+
+  getSettings() { return structuredClone(this.settings) }
+  putSettings(settings: TableSettings) { this.settings = structuredClone(settings) }
+  appendChat(entry: ChatEntry) { this.chat = [...this.chat, entry].slice(-CHAT_HISTORY_LIMIT) }
+  listChat() { return [...this.chat] }
 }
