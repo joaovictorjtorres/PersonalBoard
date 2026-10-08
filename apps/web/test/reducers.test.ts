@@ -52,7 +52,7 @@ describe('submit / ack / reject', () => {
     s = reduceServer(s, { t: 'ack', opId: 'op_1', version: 1 }, 0)
     expect(s.objects.t1.version).toBe(1)
     expect(s.pending).toEqual({})
-    expect(s.undoStack).toEqual([{ kind: 'delete', id: 't1' }])
+    expect(s.undoStack).toEqual([[{ kind: 'delete', id: 't1' }]])
   })
 
   it('ack de desfazer não empilha nada', () => {

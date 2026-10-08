@@ -7,12 +7,13 @@ import { getClientId, readClientSecret, readGmSecret, rememberClientSecret, shou
 import { uploadAsset, wsUrl } from '../lib/api'
 import { initialSize, prepareImage, uploadErrorText, viewportCenter } from '../lib/image'
 import { makeInitialState, type Geometry, type TableState, type Toast, type Tool, type Viewport } from './state'
-import { addToast, reduceServer, reduceStatus, reduceSubmit } from './reducers'
+import { addToast, reduceServer, reduceStatus, reduceSubmitBatch } from './reducers'
 
 export interface TableActions {
   connect(nickname: string): void
   disconnect(): void
   submit(op: Op): boolean
+  submitGroup(ops: Op[]): boolean
   undo(): void
   grab(id: string): void
   release(id: string): void
@@ -51,15 +52,16 @@ export function createTableStore(
       sync?.send({ t: 'presence', p: { kind: 'cursor', x, y } })
     }, 66)
 
-    const submitInternal = (op: Op, isUndo: boolean): boolean => {
+    const submitMany = (ops: Op[], isUndo: boolean): boolean => {
+      if (ops.length === 0) return true
       const s = get()
       if (s.status !== 'open' || !sync) {
         set(addToast(s, 'Sem conexão — aguarde reconectar'))
         return false
       }
-      const opId = `op_${nanoid()}`
-      set(reduceSubmit(s, opId, op, { isUndo }))
-      sync.sendOp(opId, op)
+      const items = ops.map((op) => ({ opId: `op_${nanoid()}`, op }))
+      set(reduceSubmitBatch(s, items, { isUndo, groupId: `g_${nanoid()}` }))
+      for (const { opId, op } of items) sync.sendOp(opId, op)
       return true
     }
 
@@ -105,14 +107,15 @@ export function createTableStore(
         sync?.close()
         sync = null
       },
-      submit: (op) => submitInternal(op, false),
+      submit: (op) => submitMany([op], false),
+      submitGroup: (ops) => submitMany(ops, false),
       undo() {
         const s = get()
-        const op = s.undoStack[s.undoStack.length - 1]
-        if (!op) return
+        const group = s.undoStack[s.undoStack.length - 1]
+        if (!group) return
         set({ undoStack: s.undoStack.slice(0, -1) })
-        // offline/sem sync: submitInternal recusa — devolve a op à pilha para não perdê-la
-        if (!submitInternal(op, true)) set((st) => ({ undoStack: [...st.undoStack, op] }))
+        // offline/sem sync: submitMany recusa — devolve o grupo à pilha para não perdê-lo
+        if (!submitMany(group, true)) set((st) => ({ undoStack: [...st.undoStack, group] }))
       },
       grab(id) {
         set((s) => ({ deniedGrabs: Object.fromEntries(Object.entries(s.deniedGrabs).filter(([k]) => k !== id)) }))
