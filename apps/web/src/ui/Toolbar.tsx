@@ -1,30 +1,46 @@
-import { useRef } from 'react'
-import type { Tool } from '../store/state'
+import { useCallback, useRef, useState } from 'react'
+import { Eraser, Hand, ImagePlus, MousePointer2, Pencil, Undo2 } from 'lucide-react'
 import { useTable, useTableActions } from '../store/context'
+import { PenPopover } from './PenPopover'
 
-const TOOLS: Array<{ tool: Tool; label: string; icon: string }> = [
-  { tool: 'select', label: 'Selecionar (V)', icon: '↖' },
-  { tool: 'hand', label: 'Mão (H)', icon: '✋' },
-  { tool: 'pencil', label: 'Lápis (P)', icon: '✏️' },
-  { tool: 'eraser', label: 'Borracha (E)', icon: '🧽' },
-]
+const ICON = 18
 
 export function Toolbar() {
   const tool = useTable((s) => s.tool)
-  const color = useTable((s) => s.color)
-  const strokeWidth = useTable((s) => s.strokeWidth)
+  const penMode = useTable((s) => s.penMode)
   const actions = useTableActions()
   const fileInput = useRef<HTMLInputElement>(null)
+  const [penMenu, setPenMenu] = useState(false)
+  const closePenMenu = useCallback(() => setPenMenu(false), [])
+  const penLabel = penMode === 'erase' ? 'Borracha (E)' : 'Lápis (P)'
 
   return (
     <div className="panel toolbar">
-      {TOOLS.map((t) => (
-        <button key={t.tool} aria-label={t.label} title={t.label} aria-pressed={tool === t.tool} onClick={() => actions.setTool(t.tool)}>
-          {t.icon}
+      <button aria-label="Selecionar (V)" title="Selecionar (V)" aria-pressed={tool === 'select'} onClick={() => actions.setTool('select')}>
+        <MousePointer2 size={ICON} aria-hidden />
+      </button>
+      <button aria-label="Mão (H)" title="Mão (H)" aria-pressed={tool === 'hand'} onClick={() => actions.setTool('hand')}>
+        <Hand size={ICON} aria-hidden />
+      </button>
+      <div className="pen-anchor">
+        <button
+          aria-label={penLabel}
+          title={`${penLabel} — botão direito: opções`}
+          aria-pressed={tool === 'pencil'}
+          aria-haspopup="dialog"
+          aria-expanded={penMenu}
+          onClick={() => actions.setPen(penMode)}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setPenMenu(true)
+          }}
+        >
+          {penMode === 'erase' ? <Eraser size={ICON} aria-hidden /> : <Pencil size={ICON} aria-hidden />}
         </button>
-      ))}
+        {penMenu && <PenPopover onClose={closePenMenu} />}
+      </div>
       <button aria-label="Adicionar imagem" title="Adicionar imagem na camada ativa" onClick={() => fileInput.current?.click()}>
-        🖼️
+        <ImagePlus size={ICON} aria-hidden />
       </button>
       <input
         ref={fileInput}
@@ -38,14 +54,9 @@ export function Toolbar() {
           e.target.value = ''
         }}
       />
-      <input type="color" aria-label="Cor do traço" title="Cor do traço" value={color} onChange={(e) => actions.setColor(e.target.value)} />
-      <input
-        type="range" aria-label="Espessura do traço" title="Espessura do traço"
-        min={1} max={30} value={strokeWidth}
-        onChange={(e) => actions.setStrokeWidth(Number(e.target.value))}
-        style={{ width: 44 }}
-      />
-      <button aria-label="Desfazer (Ctrl+Z)" title="Desfazer (Ctrl+Z)" onClick={() => actions.undo()}>↶</button>
+      <button aria-label="Desfazer (Ctrl+Z)" title="Desfazer (Ctrl+Z)" onClick={() => actions.undo()}>
+        <Undo2 size={ICON} aria-hidden />
+      </button>
     </div>
   )
 }

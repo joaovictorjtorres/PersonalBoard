@@ -21,8 +21,8 @@ export function useKeyboard(): void {
       switch (e.key.toLowerCase()) {
         case 'v': actions.setTool('select'); break
         case 'h': actions.setTool('hand'); break
-        case 'p': actions.setTool('pencil'); break
-        case 'e': actions.setTool('eraser'); break
+        case 'p': actions.setPen('draw'); break
+        case 'e': actions.setPen('erase'); break
         case 'delete':
         case 'backspace':
           if (selectedId) {

@@ -6,7 +6,7 @@ import { throttle, type Throttled } from '../lib/throttle'
 import { getClientId, readClientSecret, readGmSecret, rememberClientSecret, shouldRetryAuth } from '../lib/identity'
 import { uploadAsset, wsUrl } from '../lib/api'
 import { initialSize, prepareImage, uploadErrorText, viewportCenter } from '../lib/image'
-import { makeInitialState, type Geometry, type TableState, type Toast, type Tool, type Viewport } from './state'
+import { makeInitialState, type Geometry, type TableState, type Toast, type Tool, type Viewport, type PenMode } from './state'
 import { addToast, reduceServer, reduceStatus, reduceSubmitBatch } from './reducers'
 
 export interface TableActions {
@@ -21,6 +21,8 @@ export interface TableActions {
   cursor(x: number, y: number): void
   sendPresence(p: Presence): void
   setTool(tool: Tool): void
+  setPen(mode: PenMode): void
+  setEraseAll(value: boolean): void
   setColor(color: string): void
   setStrokeWidth(width: number): void
   setActiveLayer(id: string): void
@@ -137,6 +139,8 @@ export function createTableStore(
       cursor: (x, y) => cursorThrottle(x, y),
       sendPresence: (p) => sync?.send({ t: 'presence', p }),
       setTool: (tool) => set({ tool, selectedId: tool === 'select' ? get().selectedId : null }),
+      setPen: (penMode) => set({ tool: 'pencil', penMode, selectedId: null }),
+      setEraseAll: (eraseAll) => set({ eraseAll }),
       setColor: (color) => set({ color }),
       setStrokeWidth: (strokeWidth) => set({ strokeWidth }),
       setActiveLayer: (activeLayerId) => set({ activeLayerId, selectedId: null }),

@@ -109,3 +109,30 @@ test('link de mesa inexistente mostra aviso', async ({ browser }) => {
   await page.getByRole('button', { name: 'Entrar' }).click()
   await expect(page.getByText('Mesa não encontrada.')).toBeVisible()
 })
+
+test('botão direito na caneta abre opções; modo Apagar vira Borracha (E)', async ({ browser, page }) => {
+  const { tableId } = await newTable(page)
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await player.getByRole('button', { name: 'Lápis (P)' }).click({ button: 'right' })
+  const pop = player.getByRole('dialog', { name: 'Opções da caneta' })
+  await expect(pop).toBeVisible()
+  await pop.getByLabel('Espessura do traço').fill('12')
+  await pop.getByRole('button', { name: 'Cor #4363d8' }).click()
+  await pop.getByRole('button', { name: 'Apagar' }).click()
+  await expect(player.getByRole('button', { name: 'Borracha (E)' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(pop.getByText('Só os meus')).toHaveCount(0) // a chave é só do mestre
+
+  await player.keyboard.press('Escape')
+  await expect(pop).toHaveCount(0)
+  await player.keyboard.press('p')
+  await expect(player.getByRole('button', { name: 'Lápis (P)' })).toHaveAttribute('aria-pressed', 'true')
+  await player.keyboard.press('e')
+  await expect(player.getByRole('button', { name: 'Borracha (E)' })).toBeVisible()
+
+  const s = await player.evaluate(() => {
+    const st = (window as any).__mesa.getState()
+    return { strokeWidth: st.strokeWidth, color: st.color }
+  })
+  expect(s).toEqual({ strokeWidth: 12, color: '#4363d8' })
+})

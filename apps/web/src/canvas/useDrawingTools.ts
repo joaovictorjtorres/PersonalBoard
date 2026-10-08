@@ -1,5 +1,4 @@
 import { useMemo, useRef, useState } from 'react'
-import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { nanoid } from 'nanoid'
 import { MAX_SEGMENT_NUMBERS, boundsOf, simplifyPoints } from '@mesa/shared'
@@ -17,7 +16,6 @@ export function useDrawingTools() {
   const store = useTableStore()
   const [ownPreview, setOwnPreview] = useState<OwnPreview | null>(null)
   const current = useRef<{ strokeId: string; layerId: string; points: number[]; unsent: number[] } | null>(null)
-  const erased = useRef(new Set<string>())
 
   // Envia só os pontos novos desde o último envio (~30/s); quem recebe concatena.
   const flushPreview = useMemo(
@@ -35,26 +33,9 @@ export function useDrawingTools() {
     [store],
   )
 
-  const eraseTarget = (target: Konva.Node) => {
-    const node = target.findAncestor('.stroke', true)
-    if (!node) return
-    const id = node.id()
-    if (erased.current.has(id)) return
-    const s = store.getState()
-    const object = s.objects[id]
-    if (!object || object.layerId !== s.activeLayerId) return
-    erased.current.add(id)
-    s.actions.submit({ kind: 'delete', id })
-  }
-
   const onDown = (e: KonvaEventObject<MouseEvent>) => {
     const s = store.getState()
-    if (s.tool === 'eraser') {
-      erased.current.clear()
-      eraseTarget(e.target)
-      return
-    }
-    if (s.tool !== 'pencil' || e.evt.button !== 0) return
+    if (s.tool !== 'pencil' || s.penMode !== 'draw' || e.evt.button !== 0) return
     if (s.status !== 'open' || !s.actions.canEditLayer(s.activeLayerId)) return
     const pos = e.target.getStage()?.getRelativePointerPosition()
     if (!pos) return
@@ -64,11 +45,6 @@ export function useDrawingTools() {
   }
 
   const onMove = (e: KonvaEventObject<MouseEvent>) => {
-    const s = store.getState()
-    if (s.tool === 'eraser') {
-      if (e.evt.buttons & 1) eraseTarget(e.target)
-      return
-    }
     const cur = current.current
     if (!cur) return
     const pos = e.target.getStage()?.getRelativePointerPosition()

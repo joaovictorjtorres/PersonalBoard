@@ -22,3 +22,22 @@ input, select { background: #2a2c33; color: #eee; border: 1px solid #4a4d57; bor
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: grid; place-items: center; z-index: 20; }
 .modal { background: #26282e; padding: 24px; border-radius: 10px; display: grid; gap: 12px; min-width: 300px; }
 .fullscreen-msg { display: grid; place-items: center; height: 100%; gap: 12px; }
+
+/* M2 — ícones, popovers e formulários */
+button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+button:disabled { opacity: 0.45; cursor: default; }
+.toolbar > button, .toolbar > .pen-anchor > button { width: 36px; height: 36px; padding: 0; }
+.pen-anchor { position: relative; }
+.popover { display: grid; gap: 10px; z-index: 30; font-size: 13px; }
+.pen-popover { position: absolute; left: calc(100% + 12px); top: 0; width: 240px; }
+.floating { position: fixed; }
+.field { display: grid; gap: 4px; border: none; margin: 0; padding: 0; }
+.field legend { padding: 0; margin-bottom: 4px; }
+.field label, .popover > label { display: flex; align-items: center; gap: 6px; }
+.row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.swatch { width: 20px; height: 20px; padding: 0; border-radius: 50%; }
+.swatch[aria-pressed='true'] { outline: 2px solid #fff; outline-offset: 1px; }
+.width-preview { display: inline-block; border-radius: 50%; max-width: 30px; max-height: 30px; }
+.icon-button { padding: 4px; }
+.danger { border-color: #a33; color: #f88; }
+textarea { font: inherit; background: #2a2c33; color: #eee; border: 1px solid #4a4d57; border-radius: 6px; padding: 6px 8px; resize: vertical; }

@@ -1,7 +1,8 @@
 import type { Layer, Member, Op, TableMetaPublic, TableObject } from '@mesa/shared'
 import type { ConnStatus } from '../sync/SyncClient'
 
-export type Tool = 'select' | 'hand' | 'pencil' | 'eraser'
+export type Tool = 'select' | 'hand' | 'pencil'
+export type PenMode = 'draw' | 'erase'
 
 export interface Viewport { x: number; y: number; scale: number }
 export interface Geometry { x: number; y: number; width: number; height: number; rotation: number }
@@ -67,6 +68,9 @@ export interface TableState {
   tool: Tool
   color: string
   strokeWidth: number
+  penMode: PenMode
+  /** Mestre no modo apagar: false = só os meus traços; true = de todos. */
+  eraseAll: boolean
   selectedId: string | null
   viewport: Viewport
 }
@@ -95,6 +99,8 @@ export function makeInitialState(): TableState {
     tool: 'select',
     color: '#e6194b',
     strokeWidth: 4,
+    penMode: 'draw',
+    eraseAll: false,
     selectedId: null,
     viewport: { x: 0, y: 0, scale: 1 },
   }

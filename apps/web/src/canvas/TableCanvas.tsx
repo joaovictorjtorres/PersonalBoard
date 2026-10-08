@@ -17,6 +17,7 @@ export function TableCanvas() {
   const layers = useTable((s) => s.layers)
   const objects = useTable((s) => s.objects)
   const tool = useTable((s) => s.tool)
+  const penMode = useTable((s) => s.penMode)
   const viewport = useTable((s) => s.viewport)
   const activeLayerId = useTable((s) => s.activeLayerId)
   const actions = useTableActions()
@@ -50,7 +51,7 @@ export function TableCanvas() {
     if (e.target === e.target.getStage()) actions.setViewport({ ...viewport, x: e.target.x(), y: e.target.y() })
   }
 
-  const cursor = panning ? 'grab' : tool === 'pencil' ? 'crosshair' : tool === 'eraser' ? 'cell' : 'default'
+  const cursor = panning ? 'grab' : tool === 'pencil' ? (penMode === 'erase' ? 'cell' : 'crosshair') : 'default'
 
   return (
     <Stage

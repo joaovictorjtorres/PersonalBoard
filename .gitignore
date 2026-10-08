@@ -6,3 +6,4 @@ playwright-report/
 .superpowers/
 *.log
 .DS_Store
+apps/web/dist-e2e/

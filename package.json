@@ -8,6 +8,7 @@
     "dev:worker": "pnpm --filter @mesa/worker dev",
     "dev:web": "pnpm --filter @mesa/web dev",
     "build": "pnpm --filter @mesa/web build",
+    "build:e2e": "pnpm --filter @mesa/web exec vite build --outDir dist-e2e --emptyOutDir",
     "e2e": "playwright test",
     "deploy": "pnpm build && pnpm --filter @mesa/worker run deploy",
     "host": "pnpm build && pnpm --filter @mesa/worker exec wrangler dev --ip 0.0.0.0 --port 8787",
