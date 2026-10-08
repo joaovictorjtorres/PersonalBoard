@@ -6,6 +6,7 @@ import { createTableStore } from '../store/tableStore'
 import { ConnectionBanner } from './ConnectionBanner'
 import { DebugPanel } from './DebugPanel'
 import { LayersPanel } from './LayersPanel'
+import { ObjectContextMenu } from './ObjectContextMenu'
 import { MembersPanel } from './MembersPanel'
 import { NicknameModal } from './NicknameModal'
 import { Toasts } from './Toasts'
@@ -90,6 +91,7 @@ function TableView() {
         <strong>{name ?? '…'}</strong>
       </div>
       <LayersPanel />
+      <ObjectContextMenu />
       <MembersPanel />
       <ConnectionBanner />
       <Toasts />

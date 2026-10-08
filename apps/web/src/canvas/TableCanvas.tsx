@@ -5,6 +5,7 @@ import type { TableObject } from '@mesa/shared'
 import { useTable, useTableActions } from '../store/context'
 import { useModifierKeys, useWindowSize } from './hooks'
 import { ImageNode } from './ImageNode'
+import { ObjectDecorations } from './ObjectDecorations'
 import { Overlay } from './Overlay'
 import { SelectionTransformer } from './SelectionTransformer'
 import { StrokeNode } from './StrokeNode'
@@ -20,6 +21,7 @@ export function TableCanvas() {
   const penMode = useTable((s) => s.penMode)
   const viewport = useTable((s) => s.viewport)
   const activeLayerId = useTable((s) => s.activeLayerId)
+  const isGm = useTable((s) => s.self?.role === 'gm')
   const actions = useTableActions()
   const { space } = useModifierKeys()
   const size = useWindowSize()
@@ -51,6 +53,14 @@ export function TableCanvas() {
     if (e.target === e.target.getStage()) actions.setViewport({ ...viewport, x: e.target.x(), y: e.target.y() })
   }
 
+  // O menu do navegador fica desativado sobre o canvas; sobre um objeto, abre o nosso.
+  const onContextMenu = (e: KonvaEventObject<PointerEvent>) => {
+    e.evt.preventDefault()
+    if (panning) return
+    const node = e.target.findAncestor('.object', true)
+    if (node) actions.openObjectMenu(node.id(), e.evt.clientX, e.evt.clientY)
+  }
+
   const cursor = panning ? 'grab' : tool === 'pencil' ? (penMode === 'erase' ? 'cell' : 'crosshair') : 'default'
 
   return (
@@ -66,6 +76,7 @@ export function TableCanvas() {
       onWheel={onWheel}
       onDragMove={onStageDrag}
       onDragEnd={onStageDrag}
+      onContextMenu={onContextMenu}
       onMouseDown={(e) => {
         if (panning) return
         if (tool === 'select' && e.target === e.target.getStage()) actions.select(null)
@@ -81,11 +92,15 @@ export function TableCanvas() {
     >
       {layers.map((layer) => {
         const active = layer.id === activeLayerId
+        const list = byLayer[layer.id] ?? []
         return (
-          <Layer key={layer.id} listening={active && !panning}>
-            {(byLayer[layer.id] ?? []).map((o) =>
+          <Layer key={layer.id} listening={active && !panning} opacity={isGm && layer.visibility === 'gm' ? 0.5 : 1}>
+            {list.map((o) =>
               o.type === 'image' ? <ImageNode key={o.id} object={o} /> : <StrokeNode key={o.id} object={o} />,
             )}
+            {list.map((o) => (
+              <ObjectDecorations key={`deco_${o.id}`} object={o} />
+            ))}
             {drawing.ownPreview?.layerId === layer.id && (
               <Line
                 points={drawing.ownPreview.points}

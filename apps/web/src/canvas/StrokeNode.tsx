@@ -1,5 +1,5 @@
 import { Group, Line } from 'react-konva'
-import type { StrokeObject } from '@mesa/shared'
+import { canControl, type StrokeObject } from '@mesa/shared'
 import { useTable, useTableActions, useTableStore } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
 import { commitNodeChange } from './nodeChange'
@@ -10,8 +10,9 @@ export function StrokeNode({ object }: { object: StrokeObject }) {
   const tool = useTable((s) => s.tool)
   const lockedByOther = useTable((s) => isLockedByOther(s, object.id, Date.now()))
   const preview = useTable((s) => s.dragPreviews[object.id])
+  const mayControl = useTable((s) => !!s.self && canControl(object, s.self.clientId, s.self.role))
   const pos = lockedByOther && preview ? preview : object
-  const interactive = tool === 'select' && !lockedByOther
+  const interactive = tool === 'select' && !lockedByOther && mayControl
 
   // Um Group com uma Line por pedaço: clique e arrasto valem para o traço inteiro.
   return (

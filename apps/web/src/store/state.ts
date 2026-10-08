@@ -36,6 +36,13 @@ export interface Toast {
   action?: { label: string; run: () => void }
 }
 
+export interface ObjectMenu {
+  objectId: string
+  /** Posição do clique na tela (clientX/clientY). */
+  x: number
+  y: number
+}
+
 export interface StrokePreview {
   clientId: string
   layerId: string
@@ -72,6 +79,7 @@ export interface TableState {
   /** Mestre no modo apagar: false = só os meus traços; true = de todos. */
   eraseAll: boolean
   selectedId: string | null
+  objectMenu: ObjectMenu | null
   viewport: Viewport
 }
 
@@ -102,6 +110,7 @@ export function makeInitialState(): TableState {
     penMode: 'draw',
     eraseAll: false,
     selectedId: null,
+    objectMenu: null,
     viewport: { x: 0, y: 0, scale: 1 },
   }
 }

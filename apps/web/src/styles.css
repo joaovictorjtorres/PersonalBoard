@@ -47,3 +47,6 @@ textarea { font: inherit; background: #2a2c33; color: #eee; border: 1px solid #4
 .layer-row { width: 100%; justify-content: space-between; }
 .layer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .layer-flags { display: inline-flex; gap: 4px; opacity: 0.8; }
+.context-menu { max-height: calc(100vh - 24px); overflow: auto; }
+.submenu { display: grid; gap: 4px; padding-left: 12px; margin-top: 4px; }
+.indent { padding-left: 18px; }

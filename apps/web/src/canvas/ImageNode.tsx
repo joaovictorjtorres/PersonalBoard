@@ -1,6 +1,6 @@
 import { Image as KonvaImage } from 'react-konva'
 import useImage from 'use-image'
-import type { ImageObject } from '@mesa/shared'
+import { canControl, type ImageObject } from '@mesa/shared'
 import { useTable, useTableActions, useTableStore } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
 import { commitNodeChange, geometryFromNode } from './nodeChange'
@@ -12,8 +12,9 @@ export function ImageNode({ object }: { object: ImageObject }) {
   const tool = useTable((s) => s.tool)
   const lockedByOther = useTable((s) => isLockedByOther(s, object.id, Date.now()))
   const preview = useTable((s) => s.dragPreviews[object.id])
+  const mayControl = useTable((s) => !!s.self && canControl(object, s.self.clientId, s.self.role))
   const g = lockedByOther && preview ? preview : object
-  const interactive = tool === 'select' && !lockedByOther
+  const interactive = tool === 'select' && !lockedByOther && mayControl
 
   return (
     <KonvaImage

@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { nanoid } from 'nanoid'
 import type { Op, Presence } from '@mesa/shared'
-import { DEFAULT_LAYER_NAME } from '@mesa/shared'
+import { DEFAULT_LAYER_NAME, canControl } from '@mesa/shared'
 import { SyncClient, type SyncClientOptions } from '../sync/SyncClient'
 import { throttle, type Throttled } from '../lib/throttle'
 import { getClientId, readClientSecret, readGmSecret, rememberClientSecret, shouldRetryAuth } from '../lib/identity'
@@ -29,6 +29,9 @@ export interface TableActions {
   setActiveLayer(id: string): void
   createLayer(): void
   select(id: string | null): void
+  openObjectMenu(objectId: string, x: number, y: number): void
+  closeObjectMenu(): void
+  moveObjectToLayer(objectId: string, layerId: string): void
   setViewport(v: Viewport): void
   toast(text: string, action?: Toast['action']): void
   dismissToast(id: number): void
@@ -153,6 +156,19 @@ export function createTableStore(
         }
       },
       select: (selectedId) => set({ selectedId }),
+      openObjectMenu(objectId, x, y) {
+        const s = get()
+        const object = s.objects[objectId]
+        // Jogador que não controla o objeto: o menu não abre.
+        if (!object || !s.self || !canControl(object, s.self.clientId, s.self.role)) return
+        set({ objectMenu: { objectId, x, y }, selectedId: objectId })
+      },
+      closeObjectMenu: () => set({ objectMenu: null }),
+      moveObjectToLayer(objectId, layerId) {
+        // Só layerId e zIndex (topo da camada de destino): posição e tamanho ficam iguais.
+        actions.submit({ kind: 'update', id: objectId, patch: { layerId, zIndex: actions.nextZ(layerId) } })
+        set({ selectedId: null })
+      },
       setViewport: (viewport) => set({ viewport }),
       toast: (text, action) => set((s) => addToast(s, text, action)),
       dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),

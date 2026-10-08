@@ -5,7 +5,18 @@ const PNG = Buffer.from(
   'base64',
 )
 
-interface Obj { id: string; type: string; layerId: string; x: number; y: number; width: number; height: number }
+interface Obj {
+  id: string
+  type: string
+  layerId: string
+  x: number
+  y: number
+  width: number
+  height: number
+  title?: string
+  segments?: number[][]
+  control: { mode: string; clientIds: string[] }
+}
 
 async function newTable(page: Page): Promise<{ tableId: string; gmSecret: string }> {
   const res = await page.request.post('/api/tables', { data: { name: 'E2E' } })
@@ -49,6 +60,22 @@ async function openLayerMenu(page: Page, name: string) {
   const menu = page.getByRole('dialog', { name: 'Propriedades da camada' })
   await expect(menu).toBeVisible()
   return menu
+}
+
+async function openObjectMenu(page: Page, obj: Obj) {
+  await page.mouse.click(obj.x + obj.width / 2, obj.y + obj.height / 2, { button: 'right' })
+  const menu = page.getByRole('dialog', { name: 'Menu do objeto' })
+  await expect(menu).toBeVisible()
+  return menu
+}
+
+async function dragObject(page: Page, obj: Obj, dx: number, dy: number): Promise<void> {
+  const cx = obj.x + obj.width / 2
+  const cy = obj.y + obj.height / 2
+  await page.mouse.move(cx, cy)
+  await page.mouse.down()
+  await page.mouse.move(cx + dx, cy + dy, { steps: 10 })
+  await page.mouse.up()
 }
 
 test('token arrastado pelo mestre se move na tela do jogador', async ({ browser, page }) => {
@@ -197,4 +224,81 @@ test('nova camada entra abaixo do Mestre; subir/descer respeita os limites', asy
   await expect(gmMenu.getByLabel('Oculta para jogadores')).toHaveCount(0)
   await expect(gmMenu.getByRole('button', { name: 'Remover camada' })).toHaveCount(0)
   await expect(gmMenu.getByRole('button', { name: 'Subir camada' })).toHaveCount(0)
+})
+
+test('título aparece para o jogador; anotação do mestre não chega a ele', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await uploadToken(gm)
+  await expect.poll(async () => (await objects(player)).length).toBe(1)
+  const [token] = await objects(gm)
+
+  const menu = await openObjectMenu(gm, token)
+  await menu.getByLabel('Título').fill('Goblin')
+  await menu.getByLabel('Título').press('Enter')
+  await menu.getByLabel('Anotação do mestre').fill('tem 3 PV')
+  await menu.getByLabel('Anotação do mestre').blur()
+
+  await expect.poll(async () => (await objects(player))[0].title).toBe('Goblin')
+  await expect.poll(() => gm.evaluate(() => (window as any).__mesa.getState().notes)).toEqual({ [token.id]: 'tem 3 PV' })
+  await player.waitForTimeout(500)
+  const playerState = await player.evaluate(() => {
+    const s = (window as any).__mesa.getState()
+    return JSON.stringify({ objects: s.objects, notes: s.notes })
+  })
+  expect(playerState).not.toContain('tem 3 PV')
+})
+
+test('mestre move token da camada Mestre para Tokens; jogador passa a vê-lo no mesmo lugar', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await selectLayer(gm, 'Mestre')
+  await uploadToken(gm)
+  await expect.poll(async () => (await objects(gm)).length).toBe(1)
+  await player.waitForTimeout(500)
+  expect(await objects(player)).toHaveLength(0)
+
+  const [token] = await objects(gm)
+  const menu = await openObjectMenu(gm, token)
+  await menu.getByRole('button', { name: 'Mover para camada' }).click()
+  await expect(menu.getByRole('button', { name: 'Mestre', exact: true })).toHaveCount(0) // a atual não aparece
+  await menu.getByRole('button', { name: 'Tokens', exact: true }).click()
+  await expect(menu).toHaveCount(0)
+
+  await expect.poll(async () => (await objects(player)).length).toBe(1)
+  const [seen] = await objects(player)
+  expect(seen).toMatchObject({ id: token.id, layerId: 'tokens', x: token.x, y: token.y, width: token.width, height: token.height })
+})
+
+test('token "só o mestre": o arrasto do jogador não move o token na tela do mestre', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await uploadToken(gm)
+  await expect.poll(async () => (await objects(player)).length).toBe(1)
+  const [token] = await objects(gm)
+
+  // Primeiro libera para todos e confirma que o arrasto do jogador funciona…
+  let menu = await openObjectMenu(gm, token)
+  await menu.getByLabel('Todos').check()
+  await gm.keyboard.press('Escape')
+  await expect.poll(async () => (await objects(player))[0].control.mode).toBe('all')
+  await dragObject(player, token, 100, 0)
+  await expect.poll(async () => Math.round((await objects(gm))[0].x)).toBe(Math.round(token.x + 100))
+
+  // …depois restringe ao mestre: o arrasto do jogador não tem efeito.
+  const [moved] = await objects(gm)
+  menu = await openObjectMenu(gm, moved)
+  await menu.getByLabel('Só o mestre').check()
+  await gm.keyboard.press('Escape')
+  await expect.poll(async () => (await objects(player))[0].control.mode).toBe('gm')
+  await dragObject(player, moved, 0, 120)
+  await player.waitForTimeout(500)
+  expect(Math.round((await objects(gm))[0].y)).toBe(Math.round(moved.y))
+  expect(Math.round((await objects(player))[0].y)).toBe(Math.round(moved.y))
 })

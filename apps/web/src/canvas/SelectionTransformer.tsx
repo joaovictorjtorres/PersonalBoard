@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type Konva from 'konva'
 import { Transformer } from 'react-konva'
+import { canControl } from '@mesa/shared'
 import { useTable } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
 
@@ -10,10 +11,14 @@ export function SelectionTransformer() {
   const tool = useTable((s) => s.tool)
   const activeLayerId = useTable((s) => s.activeLayerId)
   const lockedByOther = useTable((s) => (s.selectedId ? isLockedByOther(s, s.selectedId, Date.now()) : false))
+  const mayControl = useTable((s) => {
+    const o = s.selectedId ? s.objects[s.selectedId] : undefined
+    return !!o && !!s.self && canControl(o, s.self.clientId, s.self.role)
+  })
 
   // Só imagens redimensionam/giram; traços apenas se movem.
   const targetId =
-    object && object.type === 'image' && object.layerId === activeLayerId && tool === 'select' && !lockedByOther
+    object && object.type === 'image' && object.layerId === activeLayerId && tool === 'select' && !lockedByOther && mayControl
       ? object.id
       : null
 
