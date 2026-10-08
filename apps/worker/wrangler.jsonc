@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "mesa-virtual",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-22",
+  "assets": {
+    "directory": "../web/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/files/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "TABLES", "class_name": "TableDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TableDO"] }],
+  "r2_buckets": [{ "binding": "FILES", "bucket_name": "mesa-virtual-files" }],
+  "observability": { "enabled": true }
+}

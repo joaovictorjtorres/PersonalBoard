@@ -1,0 +1,23 @@
+{
+  "name": "@mesa/worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ensure-assets": "node -e \"require('fs').mkdirSync('../web/dist',{recursive:true})\"",
+    "dev": "pnpm ensure-assets && wrangler dev",
+    "test": "pnpm ensure-assets && vitest run",
+    "types": "wrangler types",
+    "typecheck": "tsc --noEmit",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "@mesa/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.23.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11",
+    "wrangler": "^4.148.0"
+  }
+}
