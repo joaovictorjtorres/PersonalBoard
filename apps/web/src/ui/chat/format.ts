@@ -40,3 +40,15 @@ export function thumbSize(width: number, height: number): { width: number; heigh
 export function pickImageFile<T extends { type: string }>(files: ArrayLike<T> | null | undefined): T | null {
   return Array.from(files ?? []).find((f) => ALLOWED_UPLOAD_TYPES.includes(f.type)) ?? null
 }
+
+export const AUTOSCROLL_THRESHOLD_PX = 40
+
+/** A lista está a até 40px do fim? */
+export function isNearBottom(scrollHeight: number, scrollTop: number, clientHeight: number): boolean {
+  return scrollHeight - scrollTop - clientHeight <= AUTOSCROLL_THRESHOLD_PX
+}
+
+/** Rola ao fim em nova entrada só se já estava perto do fim ou a entrada é do próprio usuário. */
+export function shouldAutoScroll(wasNearBottom: boolean, ownEntry: boolean): boolean {
+  return wasNearBottom || ownEntry
+}

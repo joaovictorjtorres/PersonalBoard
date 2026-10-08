@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { ArrowDown, ArrowUp, Eye, EyeOff, Lock, LockOpen, Trash2 } from 'lucide-react'
 import { GM_LAYER_ID, LAYER_NAME_MAX, sortLayers, type LayerPatch } from '@mesa/shared'
 import { useTable, useTableActions } from '../store/context'
+import { OverlayPortal } from './OverlayPortal'
 import { floatingStyle, useDismiss } from './useDismiss'
 
 interface Props {
@@ -32,6 +33,7 @@ export function LayerMenu({ layerId, x, y, onClose }: Props) {
   const update = (patch: LayerPatch) => actions.submit({ kind: 'layerUpdate', id: layerId, patch })
 
   return (
+    <OverlayPortal>
     <div
       ref={ref}
       className="panel popover floating"
@@ -102,5 +104,6 @@ export function LayerMenu({ layerId, x, y, onClose }: Props) {
         </>
       )}
     </div>
+    </OverlayPortal>
   )
 }

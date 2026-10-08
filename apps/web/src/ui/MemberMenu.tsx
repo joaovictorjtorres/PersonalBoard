@@ -3,6 +3,7 @@ import { MessageCircle, UserPen } from 'lucide-react'
 import type { Member } from '@mesa/shared'
 import { useTable, useTableActions } from '../store/context'
 import { memberMenuOptions, memberPatch } from './memberMenu'
+import { OverlayPortal } from './OverlayPortal'
 import { floatingStyle, useDismiss } from './useDismiss'
 
 export function MemberMenu({ member, x, y, onClose }: { member: Member; x: number; y: number; onClose: () => void }) {
@@ -17,6 +18,7 @@ export function MemberMenu({ member, x, y, onClose }: { member: Member; x: numbe
   const options = memberMenuOptions(member.clientId, selfId, isGm)
 
   return (
+    <OverlayPortal>
     <div
       ref={ref}
       className="panel popover floating"
@@ -63,5 +65,6 @@ export function MemberMenu({ member, x, y, onClose }: { member: Member; x: numbe
         </form>
       )}
     </div>
+    </OverlayPortal>
   )
 }

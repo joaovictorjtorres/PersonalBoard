@@ -21,15 +21,18 @@ export function MembersPanel() {
     <div className="panel members">
       <strong>Na mesa</strong>
       <ul>
-        {list.map((m) => (
+        {list.map((m) => {
+          const options = memberMenuOptions(m.clientId, selfId, isGm)
+          const hasMenu = options.dm || options.edit
+          return (
           <li
             key={m.clientId}
             className={m.online ? '' : 'offline'}
-            title="Botão direito: conversa privada"
+            title={options.dm ? 'Botão direito: conversa privada' : undefined}
             onContextMenu={(e) => {
+              if (!hasMenu) return
               e.preventDefault()
-              const options = memberMenuOptions(m.clientId, selfId, isGm)
-              if (options.dm || options.edit) setMenu({ clientId: m.clientId, x: e.clientX, y: e.clientY })
+              setMenu({ clientId: m.clientId, x: e.clientX, y: e.clientY })
             }}
           >
             <span className="dot" style={{ background: m.color }} />
@@ -47,7 +50,8 @@ export function MembersPanel() {
               </button>
             )}
           </li>
-        ))}
+          )
+        })}
       </ul>
       {menu && menuMember && (
         <MemberMenu key={menu.clientId} member={menuMember} x={menu.x} y={menu.y} onClose={closeMenu} />

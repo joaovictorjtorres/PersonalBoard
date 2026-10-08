@@ -3,6 +3,7 @@ import { Minus, Plus } from 'lucide-react'
 import { DICE_MAX_BONUS, DICE_MAX_COUNT, DIE_SIDES, type RollMode } from '@mesa/shared'
 import { loadDiceConfig, normalizeDiceConfig, saveDiceConfig, toRollRequest, type DiceConfig } from '../../lib/dice-config'
 import { useTable, useTableActions } from '../../store/context'
+import { OverlayPortal } from '../OverlayPortal'
 import { floatingStyle, useDismiss } from '../useDismiss'
 
 const MODES: Array<{ mode: RollMode; label: string }> = [
@@ -27,6 +28,7 @@ export function DiceModal({ x, y, onClose }: { x: number; y: number; onClose: ()
   }
 
   return (
+    <OverlayPortal>
     <div
       ref={ref}
       className="panel popover floating dice-modal"
@@ -113,5 +115,6 @@ export function DiceModal({ x, y, onClose }: { x: number; y: number; onClose: ()
 
       <button onClick={roll}>Rolar</button>
     </div>
+    </OverlayPortal>
   )
 }

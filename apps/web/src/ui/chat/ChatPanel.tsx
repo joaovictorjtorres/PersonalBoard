@@ -6,7 +6,7 @@ import { useTable, useTableActions } from '../../store/context'
 import { ChatEntryView } from './ChatEntryView'
 import { DiceModal } from './DiceModal'
 import { ImageLightbox } from './ImageLightbox'
-import { pickImageFile } from './format'
+import { pickImageFile, isNearBottom, shouldAutoScroll } from './format'
 
 const EMPTY: ChatEntry[] = []
 const D20: RollRequest = { die: 20, count: 1, bonus: 0, mode: 'normal' }
@@ -29,11 +29,22 @@ export function ChatPanel() {
   const totalUnread = Object.values(unread).reduce((sum, n) => sum + n, 0)
   const tabName = (tab: ChatTab) => (tab === 'table' ? 'Mesa' : (members[tab]?.nickname ?? 'Conversa'))
 
-  // Sempre mostra o fim da conversa.
+  // Mostra o fim da conversa ao abrir/trocar de aba; em novas mensagens, só se já estava perto do fim
+  // (ou se a nova mensagem é minha), para não tirar quem está lendo o histórico.
+  const selfId = useTable((s) => s.self?.clientId)
+  const lastSeen = useRef<{ tab: ChatTab; open: boolean; count: number }>({ tab: active, open, count: 0 })
+  const wasNearBottom = useRef(true)
   useEffect(() => {
     const list = listRef.current
-    if (list) list.scrollTop = list.scrollHeight
-  }, [entries, active, open])
+    if (!list) return
+    const prev = lastSeen.current
+    const lastEntry = entries[entries.length - 1]
+    const fresh = prev.tab !== active || prev.open !== open
+    const mine = !fresh && entries.length > prev.count && lastEntry?.authorId === selfId
+    lastSeen.current = { tab: active, open, count: entries.length }
+    if (fresh || shouldAutoScroll(wasNearBottom.current, mine)) list.scrollTop = list.scrollHeight
+  }, [entries, active, open, selfId])
+
 
   const sendImage = (file: Blob | null) => {
     if (file) void actions.sendChatImage(file)
@@ -103,7 +114,13 @@ export function ChatPanel() {
             })}
           </div>
 
-          <ol ref={listRef} className="chat-list" aria-label={`Mensagens — ${tabName(active)}`}>
+          <ol
+            ref={listRef}
+            onScroll={(e) => {
+              const el = e.currentTarget
+              wasNearBottom.current = isNearBottom(el.scrollHeight, el.scrollTop, el.clientHeight)
+            }}
+            className="chat-list" aria-label={`Mensagens — ${tabName(active)}`}>
             {entries.map((entry) => (
               <ChatEntryView key={entry.id} entry={entry} author={members[entry.authorId] ?? null} onOpenImage={setLightbox} />
             ))}
