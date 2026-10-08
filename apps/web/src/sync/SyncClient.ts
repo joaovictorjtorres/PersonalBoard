@@ -1,4 +1,11 @@
-import type { ClientMessage, HelloMessage, Op, ServerMessage } from '@mesa/shared'
+import {
+  HEARTBEAT_INTERVAL_MS,
+  HEARTBEAT_TIMEOUT_MS,
+  type ClientMessage,
+  type HelloMessage,
+  type Op,
+  type ServerMessage,
+} from '@mesa/shared'
 
 export type ConnStatus = 'connecting' | 'open' | 'reconnecting' | 'closed'
 
@@ -26,6 +33,8 @@ export class SyncClient {
   private pending = new Map<string, Extract<ClientMessage, { t: 'op' }>>()
   private attempt = 0
   private timer: ReturnType<typeof setTimeout> | null = null
+  private heartbeat: ReturnType<typeof setInterval> | null = null
+  private pongTimer: ReturnType<typeof setTimeout> | null = null
   private isReady = false
   private stopped = false
 
@@ -53,6 +62,7 @@ export class SyncClient {
 
   /** Drops the current socket: stale callbacks are ignored once it is detached. */
   private detachSocket(code: number, reason: string): void {
+    this.stopHeartbeat()
     const ws = this.ws
     this.ws = null
     this.isReady = false
@@ -77,11 +87,13 @@ export class SyncClient {
     this.isReady = false
     ws.onopen = () => {
       if (this.ws !== ws) return
+      this.startHeartbeat(ws)
       this.raw(this.opts.hello())
     }
     ws.onmessage = (ev) => {
       if (this.ws !== ws) return
-      if (typeof ev.data !== 'string') return
+      this.clearPongTimer()
+      if (typeof ev.data !== 'string' || ev.data === 'pong') return
       this.stats.received++
       let msg: ServerMessage
       try {
@@ -95,6 +107,44 @@ export class SyncClient {
       if (this.ws !== ws) return
       this.handleClose()
     }
+  }
+
+  private startHeartbeat(ws: WebSocketLike): void {
+    this.stopHeartbeat()
+    this.heartbeat = setInterval(() => {
+      if (this.ws !== ws) return
+      try {
+        ws.send('ping')
+      } catch {
+        // socket fechando; o onclose cuida
+      }
+      if (!this.pongTimer) this.pongTimer = setTimeout(() => this.onHeartbeatTimeout(ws), HEARTBEAT_TIMEOUT_MS)
+    }, HEARTBEAT_INTERVAL_MS)
+  }
+
+  private stopHeartbeat(): void {
+    if (this.heartbeat) clearInterval(this.heartbeat)
+    this.heartbeat = null
+    this.clearPongTimer()
+  }
+
+  private clearPongTimer(): void {
+    if (this.pongTimer) clearTimeout(this.pongTimer)
+    this.pongTimer = null
+  }
+
+  // Conexão "zumbi": não espera o close do navegador (pode demorar minutos) — solta e reconecta já.
+  private onHeartbeatTimeout(ws: WebSocketLike): void {
+    this.pongTimer = null
+    if (this.ws !== ws) return
+    this.stopHeartbeat()
+    this.ws = null
+    try {
+      ws.close(4000, 'heartbeat_timeout')
+    } catch {
+      // ignora
+    }
+    this.handleClose()
   }
 
   private handle(msg: ServerMessage): void {
@@ -112,6 +162,7 @@ export class SyncClient {
   }
 
   private handleClose(): void {
+    this.stopHeartbeat()
     this.ws = null
     this.isReady = false
     if (this.stopped) {

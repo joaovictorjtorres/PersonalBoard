@@ -11,10 +11,11 @@ class FakeSocket implements WebSocketLike {
   constructor(public url: string) {
     FakeSocket.all.push(this)
   }
-  send(data: string) { this.sent.push(JSON.parse(data)) }
+  send(data: string) { this.sent.push(data === 'ping' ? 'ping' : JSON.parse(data)) }
   close() { this.onclose?.({ code: 1000 }) }
   open() { this.onopen?.({}) }
   receive(msg: ServerMessage) { this.onmessage?.({ data: JSON.stringify(msg) }) }
+  receiveRaw(data: string) { this.onmessage?.({ data }) }
   drop() { this.onclose?.({ code: 1006 }) }
 }
 
@@ -180,7 +181,7 @@ describe('SyncClient stale sockets', () => {
     s2.open()
     s2.receive(welcome)
     s1.drop()
-    vi.advanceTimersByTime(60_000)
+    vi.advanceTimersByTime(5_000)
     expect(FakeSocket.all).toHaveLength(2)
     expect(statuses.at(-1)).toBe('open')
   })
@@ -202,5 +203,66 @@ describe('SyncClient stale sockets', () => {
     s2.receive(welcome)
     expect(received).toEqual([welcome])
     expect(c.ready).toBe(true)
+  })
+})
+
+describe('SyncClient heartbeat', () => {
+  const opened = () => {
+    client.connect()
+    last().open()
+    last().receive(welcome)
+  }
+  const pings = () => last().sent.filter((m) => m === 'ping').length
+
+  it('envia ping a cada 25 s com o socket aberto, sem contar nas estatísticas', () => {
+    opened()
+    vi.advanceTimersByTime(24_999)
+    expect(pings()).toBe(0)
+    vi.advanceTimersByTime(1)
+    expect(pings()).toBe(1)
+    last().receiveRaw('pong')
+    vi.advanceTimersByTime(25_000)
+    expect(pings()).toBe(2)
+    expect(client.stats).toEqual({ sent: 1, received: 1 })
+  })
+
+  it('pong dentro de 10 s mantém a conexão', () => {
+    opened()
+    vi.advanceTimersByTime(25_000)
+    vi.advanceTimersByTime(9_000)
+    last().receiveRaw('pong')
+    vi.advanceTimersByTime(10_000)
+    expect(FakeSocket.all).toHaveLength(1)
+    expect(statuses.at(-1)).toBe('open')
+  })
+
+  it('qualquer mensagem conta como resposta', () => {
+    opened()
+    vi.advanceTimersByTime(25_000)
+    last().receive({ t: 'memberLeft', clientId: 'x' })
+    vi.advanceTimersByTime(10_000)
+    expect(FakeSocket.all).toHaveLength(1)
+  })
+
+  it('sem resposta em 10 s fecha e reconecta', () => {
+    opened()
+    vi.advanceTimersByTime(25_000)
+    vi.advanceTimersByTime(9_999)
+    expect(statuses.at(-1)).toBe('open')
+    vi.advanceTimersByTime(1)
+    expect(statuses.at(-1)).toBe('reconnecting')
+    vi.advanceTimersByTime(1_000)
+    expect(FakeSocket.all).toHaveLength(2)
+  })
+
+  it('não envia ping antes de abrir nem depois de close()', () => {
+    client.connect()
+    vi.advanceTimersByTime(60_000)
+    expect(FakeSocket.all[0].sent).toEqual([])
+    last().open()
+    client.close()
+    vi.advanceTimersByTime(60_000)
+    expect(last().sent.filter((m) => m === 'ping')).toEqual([])
+    expect(vi.getTimerCount()).toBe(0)
   })
 })
