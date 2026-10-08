@@ -6,13 +6,18 @@ export function inverseOf(op: Op, before: TableObject | null): Op | null {
       return { kind: 'delete', id: op.object.id }
     case 'delete': {
       if (!before) return null
-      const { ownerId: _o, version: _v, updatedBy: _u, ...object } = before
+      // control é do servidor: a recriação volta com o autor do desfazer como controlador
+      const { ownerId: _o, version: _v, updatedBy: _u, control: _c, ...object } = before
       return { kind: 'create', object }
     }
     case 'update': {
       if (!before) return null
       const patch: Record<string, unknown> = {}
-      for (const key of Object.keys(op.patch)) patch[key] = (before as Record<string, unknown>)[key]
+      for (const key of Object.keys(op.patch)) {
+        const value = (before as Record<string, unknown>)[key]
+        // título ausente antes → desfazer remove o título
+        patch[key] = value === undefined && key === 'title' ? null : value
+      }
       return { kind: 'update', id: op.id, patch: patch as ObjectPatch }
     }
   }

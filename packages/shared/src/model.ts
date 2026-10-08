@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { MAX_CONTROL_IDS, MAX_SEGMENTS, MAX_SEGMENT_NUMBERS, TITLE_MAX } from './constants'
 
 export const IdSchema = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/)
 
@@ -29,13 +30,26 @@ export interface TableMetaPublic {
 // z.number() no Zod 4 já recusa NaN/Infinity.
 const coord = z.number()
 const size = z.number().nonnegative()
-const points = z
-  .array(z.number())
-  .min(2)
-  .max(20000)
-  .refine((p) => p.length % 2 === 0, 'points must be x,y pairs')
 const color = z.string().regex(/^#[0-9a-fA-F]{6}$/)
 const strokeWidth = z.number().min(1).max(100)
+
+const segment = z
+  .array(z.number())
+  .min(4)
+  .refine((p) => p.length % 2 === 0, 'segment must be x,y pairs')
+const segments = z
+  .array(segment)
+  .min(1)
+  .max(MAX_SEGMENTS)
+  .refine((list) => list.reduce((n, s) => n + s.length, 0) <= MAX_SEGMENT_NUMBERS, 'too many points')
+
+export const ControlSchema = z.strictObject({
+  mode: z.enum(['all', 'gm', 'list']),
+  clientIds: z.array(z.string().min(1).max(64)).max(MAX_CONTROL_IDS),
+})
+export type Control = z.infer<typeof ControlSchema>
+
+export const TitleSchema = z.string().trim().min(1).max(TITLE_MAX)
 
 const objectBase = {
   id: IdSchema,
@@ -46,12 +60,14 @@ const objectBase = {
   height: size,
   rotation: coord,
   zIndex: coord,
+  title: TitleSchema.optional(),
 }
 
 const serverFields = {
   ownerId: z.string(),
   version: z.number().int().nonnegative(),
   updatedBy: z.string(),
+  control: ControlSchema,
 }
 
 const imageFields = {
@@ -61,11 +77,12 @@ const imageFields = {
 
 const strokeFields = {
   type: z.literal('stroke'),
-  points,
+  segments,
   color,
   strokeWidth,
 }
 
+// Sem `control`: o servidor define o controle na criação (campo enviado é descartado).
 export const NewObjectSchema = z.discriminatedUnion('type', [
   z.object({ ...objectBase, ...imageFields }),
   z.object({ ...objectBase, ...strokeFields }),
@@ -89,9 +106,24 @@ export const ObjectPatchSchema = z
     height: size,
     rotation: coord,
     zIndex: coord,
-    points,
+    segments,
     color,
     strokeWidth,
+    control: ControlSchema,
+    title: TitleSchema.nullable(),
   })
   .partial()
 export type ObjectPatch = z.infer<typeof ObjectPatchSchema>
+
+/** Aplica o patch sem validar; `title: null` remove o título. */
+export function mergePatch(before: TableObject, patch: ObjectPatch): TableObject {
+  const merged: Record<string, unknown> = { ...before, ...patch }
+  if (merged.title === null) delete merged.title
+  return merged as TableObject
+}
+
+export function canControl(object: Pick<TableObject, 'control'>, clientId: string, role: Role): boolean {
+  if (role === 'gm') return true
+  const { mode, clientIds } = object.control
+  return mode === 'all' || (mode === 'list' && clientIds.includes(clientId))
+}

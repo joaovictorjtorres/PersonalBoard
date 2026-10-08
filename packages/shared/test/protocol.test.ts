@@ -37,7 +37,7 @@ describe('OpSchema', () => {
   })
 
   it('recusa traço com quantidade ímpar de coordenadas', () => {
-    const stroke = { ...image, type: 'stroke', points: [0, 0, 1], color: '#000000', strokeWidth: 3 }
+    const stroke = { ...image, type: 'stroke', segments: [[0, 0, 1, 0, 2]], color: '#000000', strokeWidth: 3 }
     delete (stroke as Record<string, unknown>).assetKey
     expect(OpSchema.safeParse({ kind: 'create', object: stroke }).success).toBe(false)
   })
@@ -64,7 +64,8 @@ describe('ObjectPatchSchema', () => {
 
 describe('TableObjectSchema', () => {
   it('exige campos de servidor', () => {
+    const control = { mode: 'list', clientIds: ['c'] }
     expect(TableObjectSchema.safeParse(image).success).toBe(false)
-    expect(TableObjectSchema.safeParse({ ...image, ownerId: 'c', version: 1, updatedBy: 'c' }).success).toBe(true)
+    expect(TableObjectSchema.safeParse({ ...image, ownerId: 'c', version: 1, updatedBy: 'c', control }).success).toBe(true)
   })
 })

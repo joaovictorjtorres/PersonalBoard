@@ -1,4 +1,5 @@
 import { APPLIED_OPS_KEEP, type Layer, type TableObject } from '@mesa/shared'
+import { normalizeObject } from './migrate'
 import type { StoredMember, TableMeta, TableStore } from './store'
 
 export class SqlStore implements TableStore {
@@ -45,11 +46,11 @@ export class SqlStore implements TableStore {
 
   getObject(id: string): TableObject | null {
     const row = this.sql.exec<{ data: string }>('SELECT data FROM objects WHERE id = ?', id).toArray()[0]
-    return row ? (JSON.parse(row.data) as TableObject) : null
+    return row ? normalizeObject(JSON.parse(row.data)) : null
   }
 
   listObjects(): TableObject[] {
-    return this.sql.exec<{ data: string }>('SELECT data FROM objects').toArray().map((r) => JSON.parse(r.data) as TableObject)
+    return this.sql.exec<{ data: string }>('SELECT data FROM objects').toArray().map((r) => normalizeObject(JSON.parse(r.data)))
   }
 
   putObject(object: TableObject): void {

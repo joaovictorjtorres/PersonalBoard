@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react'
 import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { nanoid } from 'nanoid'
-import { boundsOf, simplifyPoints } from '@mesa/shared'
+import { MAX_SEGMENT_NUMBERS, boundsOf, simplifyPoints } from '@mesa/shared'
 import { throttle } from '../lib/throttle'
 import { useTableStore } from '../store/context'
 
@@ -36,8 +36,9 @@ export function useDrawingTools() {
   )
 
   const eraseTarget = (target: Konva.Node) => {
-    if (!target.hasName('stroke')) return
-    const id = target.id()
+    const node = target.findAncestor('.stroke', true)
+    if (!node) return
+    const id = node.id()
     if (erased.current.has(id)) return
     const s = store.getState()
     const object = s.objects[id]
@@ -89,7 +90,9 @@ export function useDrawingTools() {
 
     let points = simplifyPoints(cur.points, 1 / s.viewport.scale)
     if (points.length < 4) points = [points[0], points[1], points[0] + 0.01, points[1]]
-    if (points.length > 20000) points = simplifyPoints(points, 4 / s.viewport.scale).slice(0, 20000)
+    if (points.length > MAX_SEGMENT_NUMBERS) {
+      points = simplifyPoints(points, 4 / s.viewport.scale).slice(0, MAX_SEGMENT_NUMBERS)
+    }
     const b = boundsOf(points)
     s.actions.submit({
       kind: 'create',
@@ -103,7 +106,7 @@ export function useDrawingTools() {
         height: b.height,
         rotation: 0,
         zIndex: s.actions.nextZ(cur.layerId),
-        points: points.map((v, i) => (i % 2 === 0 ? v - b.minX : v - b.minY)),
+        segments: [points.map((v, i) => (i % 2 === 0 ? v - b.minX : v - b.minY))],
         color: s.color,
         strokeWidth: s.strokeWidth,
       },

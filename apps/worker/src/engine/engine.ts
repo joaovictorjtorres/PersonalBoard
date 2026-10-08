@@ -2,6 +2,7 @@ import {
   LOCK_TTL_MS,
   MEMBER_COLORS,
   TableObjectSchema,
+  mergePatch,
   type Layer,
   type LockInfo,
   type Member,
@@ -108,7 +109,13 @@ export class TableEngine {
       if (!this.canEditLayer(role, object.layerId)) return reject('forbidden', null)
       const existing = this.store.getObject(object.id)
       if (existing) return reject('exists', this.canSeeObject(role, existing) ? existing : null)
-      const after = { ...object, ownerId: clientId, version: 1, updatedBy: clientId } as TableObject
+      const after = {
+        ...object,
+        control: { mode: 'list', clientIds: [clientId] },
+        ownerId: clientId,
+        version: 1,
+        updatedBy: clientId,
+      } as TableObject
       this.store.putObject(after)
       return { ok: true, duplicate: false, version: 1, before: null, after }
     }
@@ -126,8 +133,7 @@ export class TableEngine {
 
     if (op.patch.layerId !== undefined && !this.canEditLayer(role, op.patch.layerId)) return reject('forbidden', before)
     const parsed = TableObjectSchema.safeParse({
-      ...before,
-      ...op.patch,
+      ...mergePatch(before, op.patch),
       version: before.version + 1,
       updatedBy: clientId,
     })

@@ -1,4 +1,4 @@
-import { Line } from 'react-konva'
+import { Group, Line } from 'react-konva'
 import type { StrokeObject } from '@mesa/shared'
 import { useTable, useTableActions, useTableStore } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
@@ -13,18 +13,13 @@ export function StrokeNode({ object }: { object: StrokeObject }) {
   const pos = lockedByOther && preview ? preview : object
   const interactive = tool === 'select' && !lockedByOther
 
+  // Um Group com uma Line por pedaço: clique e arrasto valem para o traço inteiro.
   return (
-    <Line
+    <Group
       id={object.id}
       name="object stroke"
       x={pos.x}
       y={pos.y}
-      points={object.points}
-      stroke={object.color}
-      strokeWidth={object.strokeWidth}
-      hitStrokeWidth={Math.max(object.strokeWidth, 12)}
-      lineCap="round"
-      lineJoin="round"
       draggable={interactive}
       onMouseDown={() => {
         if (interactive) actions.select(object.id)
@@ -34,6 +29,18 @@ export function StrokeNode({ object }: { object: StrokeObject }) {
         actions.dragPreview(object.id, { x: e.target.x(), y: e.target.y(), width: object.width, height: object.height, rotation: 0 })
       }
       onDragEnd={(e) => commitNodeChange(store, object.id, e.target, 'drag')}
-    />
+    >
+      {object.segments.map((points, i) => (
+        <Line
+          key={i}
+          points={points}
+          stroke={object.color}
+          strokeWidth={object.strokeWidth}
+          hitStrokeWidth={Math.max(object.strokeWidth, 12)}
+          lineCap="round"
+          lineJoin="round"
+        />
+      ))}
+    </Group>
   )
 }

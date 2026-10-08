@@ -9,7 +9,7 @@ const newToken = (id = 't1'): NewObject => ({
   x: 0, y: 0, width: 70, height: 70, rotation: 0, zIndex: 1,
 })
 const stored = (id = 't1', over: Partial<TableObject> = {}): TableObject =>
-  ({ ...newToken(id), ownerId: 'other', version: 1, updatedBy: 'other', ...over }) as TableObject
+  ({ ...newToken(id), ownerId: 'other', version: 1, updatedBy: 'other', control: { mode: 'list', clientIds: ['other'] }, ...over }) as TableObject
 
 const welcome = (objects: TableObject[] = []): ServerMessage => ({
   t: 'welcome',
