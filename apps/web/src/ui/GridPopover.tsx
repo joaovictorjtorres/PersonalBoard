@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { GRID_MAX, GRID_MIN } from '@mesa/shared'
 import { parseGridSize } from '../canvas/grid'
 import { useTable, useTableActions } from '../store/context'
@@ -9,6 +9,13 @@ export function GridPopover({ onClose }: { onClose: () => void }) {
   useDismiss(ref, onClose)
   const grid = useTable((s) => s.settings.grid)
   const actions = useTableActions()
+  // Valor ao vivo do controle deslizante; null = segue o valor da store.
+  const [drag, setDrag] = useState<number | null>(null)
+  const shown = drag ?? grid.size
+  const commitSlider = (value: number) => {
+    setDrag(null)
+    if (value !== grid.size) actions.updateSettings({ grid: { size: value } })
+  }
 
   return (
     <div ref={ref} className="panel popover pen-popover" role="dialog" aria-label="Grade">
@@ -23,12 +30,12 @@ export function GridPopover({ onClose }: { onClose: () => void }) {
       <label className="field">
         Tamanho do quadrado (px)
         <input
-          key={grid.size}
+          key={shown}
           type="number"
           min={GRID_MIN}
           max={GRID_MAX}
           step={1}
-          defaultValue={grid.size}
+          defaultValue={shown}
           onKeyDown={(e) => {
             if (e.key === 'Enter') e.currentTarget.blur()
           }}
@@ -42,6 +49,18 @@ export function GridPopover({ onClose }: { onClose: () => void }) {
           }}
         />
       </label>
+      <input
+        type="range"
+        aria-label="Tamanho do quadrado (controle deslizante)"
+        min={GRID_MIN}
+        max={GRID_MAX}
+        step={1}
+        value={shown}
+        onChange={(e) => setDrag(Number(e.currentTarget.value))}
+        onPointerUp={(e) => commitSlider(Number(e.currentTarget.value))}
+        onKeyUp={(e) => commitSlider(Number(e.currentTarget.value))}
+        onBlur={(e) => commitSlider(Number(e.currentTarget.value))}
+      />
       <label>
         <input
           type="checkbox"
