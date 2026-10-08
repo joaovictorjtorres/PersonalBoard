@@ -1,7 +1,7 @@
 import { env, exports } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
-import type { Op } from '@mesa/shared'
+import type { NewObject, Op } from '@mesa/shared'
 import { SqlStore } from '../src/engine/sql-store'
 import { TestClient, createTable, tokenObject } from './helpers'
 
@@ -454,5 +454,65 @@ describe('TableDO — M2', () => {
     expect(await p.waitFor('grabDenied')).toEqual({ t: 'grabDenied', objectId: obj.id })
     p.send(op('op_3', { kind: 'update', id: obj.id, patch: { x: 999 } }))
     expect(await p.waitFor('reject')).toMatchObject({ opId: 'op_3', reason: 'forbidden' })
+  })
+})
+
+describe('TableDO — M3: configurações, membros e encaixe', () => {
+  const op = (opId: string, o: Op) => ({ t: 'op' as const, opId, op: o })
+
+  async function table() {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    const p = await TestClient.connect(tableId)
+    const { welcome: gmWelcome } = await gm.hello('Mestre', { gmSecret })
+    const { clientId: playerId, welcome } = await p.hello('Ana')
+    return { tableId, gmSecret, gm, p, playerId, playerSecret: welcome.clientSecret, gmColor: gmWelcome.self.color }
+  }
+
+  it('settingsUpdate: jogador recusado; mestre muda e todos recebem; snapshot traz as configurações', async () => {
+    const { tableId, gm, p } = await table()
+    p.send(op('op_p', { kind: 'settingsUpdate', patch: { grid: { enabled: true } } }))
+    expect(await p.waitFor('reject')).toMatchObject({ opId: 'op_p', reason: 'forbidden' })
+    gm.send(op('op_g', { kind: 'settingsUpdate', patch: { grid: { enabled: true, size: 50 } } }))
+    await gm.waitFor('ack', (m) => m.opId === 'op_g')
+    const expected = { grid: { enabled: true, size: 50, snap: false } }
+    expect(await p.waitFor('settingsUpdated')).toEqual({ t: 'settingsUpdated', settings: expected })
+    expect(await gm.waitFor('settingsUpdated')).toEqual({ t: 'settingsUpdated', settings: expected })
+    const late = await TestClient.connect(tableId)
+    expect((await late.hello('Bia')).welcome.snapshot.settings).toEqual(expected)
+  })
+
+  it('memberUpdate: só o mestre; todos recebem; o hello seguinte não sobrescreve apelido nem cor', async () => {
+    const { tableId, gm, p, playerId, playerSecret, gmColor } = await table()
+    p.send(op('op_p', { kind: 'memberUpdate', clientId: playerId, patch: { nickname: 'Hacker' } }))
+    expect(await p.waitFor('reject')).toMatchObject({ opId: 'op_p', reason: 'forbidden' })
+    gm.send(op('op_g', { kind: 'memberUpdate', clientId: playerId, patch: { nickname: 'Aninha', color: gmColor } }))
+    expect((await p.waitFor('memberUpdated')).member).toMatchObject({ clientId: playerId, nickname: 'Aninha', color: gmColor, online: true })
+    expect((await gm.waitFor('memberUpdated')).member).toMatchObject({ nickname: 'Aninha' })
+    p.close()
+    await gm.waitFor('memberLeft')
+    const again = await TestClient.connect(tableId)
+    const { welcome } = await again.hello('Ana de novo', { clientId: playerId, clientSecret: playerSecret })
+    expect(welcome.self).toMatchObject({ nickname: 'Aninha', color: gmColor })
+    expect((await gm.waitFor('memberJoined', (m) => m.member.clientId === playerId && m.member.nickname === 'Aninha')).member.color).toBe(gmColor)
+  })
+
+  it('encaixe: o autor também recebe o objeto encaixado; traço não encaixa nem ecoa', async () => {
+    const { gm, p } = await table()
+    gm.send(op('op_s', { kind: 'settingsUpdate', patch: { grid: { snap: true, size: 50 } } }))
+    await p.waitFor('settingsUpdated')
+    const obj = tokenObject({ x: 26, y: 74 })
+    p.send(op('op_1', { kind: 'create', object: obj }))
+    expect(await p.waitFor('ack', (m) => m.opId === 'op_1')).toMatchObject({ version: 1 })
+    expect((await p.waitFor('op')).op).toMatchObject({ kind: 'upsert', object: { id: obj.id, x: 50, y: 50, width: 50, height: 50 } })
+    expect((await gm.waitFor('op')).op).toMatchObject({ kind: 'upsert', object: { id: obj.id, x: 50, y: 50 } })
+    const stroke: NewObject = {
+      id: 'st1', type: 'stroke', layerId: 'drawings', x: 26, y: 74, width: 10, height: 10, rotation: 0, zIndex: 1,
+      segments: [[0, 0, 10, 10]], color: '#ffffff', strokeWidth: 3,
+    }
+    p.send(op('op_2', { kind: 'create', object: stroke }))
+    const seen = await gm.waitFor('op', (m) => m.op.kind === 'upsert' && m.op.object.id === 'st1')
+    expect(seen.op).toMatchObject({ object: { x: 26, y: 74 } })
+    await p.expectNone('op', (m) => m.op.kind === 'upsert' && m.op.object.id === 'st1')
   })
 })

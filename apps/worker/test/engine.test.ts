@@ -364,3 +364,151 @@ describe('membros e snapshot', () => {
     expect(engine.snapshot('gm', new Set(['A'])).members.map((m) => m.clientId)).toEqual(['A'])
   })
 })
+
+const rect = (over: Record<string, unknown> = {}): NewObject =>
+  ({
+    id: 'r1', type: 'shape', kind: 'rect', layerId: 'drawings', x: 0, y: 0, width: 100, height: 40, rotation: 0, zIndex: 1,
+    stroke: '#ffffff', strokeWidth: 3, fill: null, ...over,
+  }) as NewObject
+
+describe('M3 — configurações', () => {
+  it('só o mestre muda; o patch é mesclado e vira efeito; snapshot traz o resultado', () => {
+    expect(engine.applyOp('A', 'player', 'p1', { kind: 'settingsUpdate', patch: { grid: { enabled: true } } })).toMatchObject({
+      ok: false, reason: 'forbidden',
+    })
+    const r = engine.applyOp('G', 'gm', 'g1', { kind: 'settingsUpdate', patch: { grid: { enabled: true, size: 50 } } })
+    expect(effects(r)).toEqual([{ kind: 'settings', settings: { grid: { enabled: true, size: 50, snap: false } } }])
+    expect(engine.snapshot('player', new Set()).settings).toEqual({ grid: { enabled: true, size: 50, snap: false } })
+  })
+})
+
+describe('M3 — encaixe na grade', () => {
+  const snapOn = () => engine.applyOp('G', 'gm', `gs${clock}`, { kind: 'settingsUpdate', patch: { grid: { snap: true, size: 50 } } })
+
+  it('create de imagem encaixa e pede eco ao autor; traço e forma não encaixam', () => {
+    snapOn()
+    const r = engine.applyOp('A', 'player', 'op1', create(token({ x: 26, y: 74, width: 70, height: 20 })))
+    expect(store.getObject('tok1')).toMatchObject({ x: 50, y: 50, width: 50, height: 50 })
+    expect(effects(r)[0]).toMatchObject({ kind: 'object', echo: true })
+    const stroke = {
+      id: 's1', type: 'stroke', layerId: 'drawings', x: 26, y: 74, width: 10, height: 10, rotation: 0, zIndex: 1,
+      segments: [[0, 0, 10, 10]], color: '#ffffff', strokeWidth: 3,
+    } as NewObject
+    const rs = engine.applyOp('A', 'player', 'op2', create(stroke))
+    expect(store.getObject('s1')).toMatchObject({ x: 26, y: 74 })
+    expect(effects(rs)[0]).not.toHaveProperty('echo')
+    engine.applyOp('A', 'player', 'op3', create(rect({ x: 26, y: 74 })))
+    expect(store.getObject('r1')).toMatchObject({ x: 26, y: 74, width: 100, height: 40 })
+  })
+
+  it('update de imagem encaixa só os campos enviados e não mexe na rotação', () => {
+    engine.applyOp('A', 'player', 'op0', create(token({ x: 13, y: 13 })))
+    snapOn()
+    engine.applyOp('A', 'player', 'op1', update('tok1', { x: 76, rotation: 33 }))
+    expect(store.getObject('tok1')).toMatchObject({ x: 100, y: 13, width: 70, height: 70, rotation: 33 })
+  })
+
+  it('update de imagem sem geometria (ex.: título) não encaixa nem pede eco', () => {
+    engine.applyOp('A', 'player', 'op0', create(token({ x: 13, y: 13 })))
+    snapOn()
+    const r = engine.applyOp('A', 'player', 'op1', update('tok1', { title: 'Orc' }))
+    expect(store.getObject('tok1')).toMatchObject({ x: 13, y: 13, title: 'Orc' })
+    expect(effects(r)[0]).not.toHaveProperty('echo')
+  })
+
+  it('ligar o encaixe ou mudar o tamanho não move objetos existentes', () => {
+    engine.applyOp('A', 'player', 'op0', create(token({ x: 13, y: 13 })))
+    snapOn()
+    engine.applyOp('G', 'gm', 'g2', { kind: 'settingsUpdate', patch: { grid: { size: 30 } } })
+    expect(store.getObject('tok1')).toMatchObject({ x: 13, y: 13 })
+  })
+})
+
+describe('M3 — formas', () => {
+  it('seguem as regras de objeto: o dono move e redimensiona, outro jogador não', () => {
+    engine.applyOp('A', 'player', 'op1', create(rect()))
+    expect(engine.applyOp('B', 'player', 'op2', update('r1', { x: 5 }))).toMatchObject({ ok: false, reason: 'forbidden' })
+    expect(engine.applyOp('A', 'player', 'op3', update('r1', { x: 5, width: 300, rotation: 45 }))).toMatchObject({ ok: true })
+    expect(store.getObject('r1')).toMatchObject({ type: 'shape', kind: 'rect', x: 5, width: 300, rotation: 45, stroke: '#ffffff' })
+  })
+
+  it('espessura acima de 30 vira invalid', () => {
+    engine.applyOp('A', 'player', 'op1', create(rect()))
+    expect(engine.applyOp('A', 'player', 'op2', update('r1', { strokeWidth: 31 }))).toEqual({ ok: false, reason: 'invalid' })
+  })
+
+  it('linha é criada com points relativos', () => {
+    engine.applyOp('A', 'player', 'op1', create(rect({ id: 'l1', kind: 'line', points: [0, 40, 100, 0] })))
+    expect(store.getObject('l1')).toMatchObject({ kind: 'line', points: [0, 40, 100, 0], fill: null })
+  })
+})
+
+describe('M3 — memberUpdate', () => {
+  it('só o mestre; inexistente é not_found; grava, marca e devolve o membro', () => {
+    engine.join({ clientId: 'A', nickname: 'Ana', role: 'player' }, new Set())
+    const op: Op = { kind: 'memberUpdate', clientId: 'A', patch: { nickname: 'Aninha', color: '#123456' } }
+    expect(engine.applyOp('B', 'player', 'p1', op)).toMatchObject({ ok: false, reason: 'forbidden' })
+    expect(engine.applyOp('G', 'gm', 'g0', { kind: 'memberUpdate', clientId: 'Z', patch: { nickname: 'X' } })).toMatchObject({ ok: false, reason: 'not_found' })
+    const r = engine.applyOp('G', 'gm', 'g1', op, new Set(['A']))
+    expect(effects(r)).toEqual([
+      { kind: 'memberUpdated', member: { clientId: 'A', nickname: 'Aninha', color: '#123456', role: 'player', online: true } },
+    ])
+    expect(store.getMember('A')).toMatchObject({ nickname: 'Aninha', color: '#123456', nicknameSetByGm: true, colorSetByGm: true })
+  })
+
+  it('patch só de cor não marca o apelido', () => {
+    engine.join({ clientId: 'A', nickname: 'Ana', role: 'player' }, new Set())
+    engine.applyOp('G', 'gm', 'g1', { kind: 'memberUpdate', clientId: 'A', patch: { color: '#123456' } })
+    expect(store.getMember('A')).toMatchObject({ nickname: 'Ana', color: '#123456', colorSetByGm: true })
+    expect(store.getMember('A')?.nicknameSetByGm).toBeUndefined()
+  })
+
+  it('join mantém apelido e cor definidos pelo mestre, mesmo com a cor repetida', () => {
+    engine.join({ clientId: 'G', nickname: 'Mestre', role: 'gm' }, new Set())
+    engine.join({ clientId: 'A', nickname: 'Ana', role: 'player' }, new Set(['G']))
+    const gmColor = store.getMember('G')!.color
+    engine.applyOp('G', 'gm', 'g1', { kind: 'memberUpdate', clientId: 'A', patch: { nickname: 'Aninha', color: gmColor } })
+    const back = engine.join({ clientId: 'A', nickname: 'Outro nome', role: 'player' }, new Set(['G']))
+    expect(back).toMatchObject({ nickname: 'Aninha', color: gmColor })
+    expect(store.getMember('A')).toMatchObject({ nicknameSetByGm: true, colorSetByGm: true })
+  })
+})
+
+describe('M3 — chat e dados', () => {
+  const seq = (...values: number[]) => {
+    let i = 0
+    return () => values[i++]
+  }
+
+  it('rolagem usa o gerador injetado: normal com bônus, vantagem e desvantagem', () => {
+    const e = new TableEngine(store, () => clock, seq(0, 1, 5, 16, 7, 16, 7))
+    expect(e.chatEntry('A', { kind: 'roll', request: { die: 6, count: 3, bonus: 2, mode: 'normal' }, secret: false })).toMatchObject({
+      kind: 'roll', authorId: 'A', at: clock, secret: false, result: { rolls: [1, 2, 6], kept: [1, 2, 6], total: 11 },
+    })
+    expect(e.chatEntry('A', { kind: 'roll', request: { die: 20, count: 1, bonus: 5, mode: 'advantage' }, secret: true })).toMatchObject({
+      secret: true, result: { rolls: [17, 8], kept: [17], total: 22 },
+    })
+    expect(e.chatEntry('A', { kind: 'roll', request: { die: 20, count: 1, bonus: 0, mode: 'disadvantage' }, secret: false })).toMatchObject({
+      result: { rolls: [17, 8], kept: [8], total: 8 },
+    })
+  })
+
+  it('mensagem e imagem ganham id e hora do servidor', () => {
+    const m = engine.chatEntry('A', { kind: 'message', text: 'oi' })
+    expect(m).toMatchObject({ kind: 'message', text: 'oi', authorId: 'A', at: clock })
+    expect(m.id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(engine.chatEntry('A', { kind: 'image', assetKey: 'a'.repeat(64), width: 10, height: 20 })).toMatchObject({
+      kind: 'image', width: 10, height: 20,
+    })
+  })
+
+  it('histórico guarda as últimas 200 e o snapshot esconde a rolagem secreta de terceiros', () => {
+    for (let i = 0; i < 205; i++) engine.appendTableChat(engine.chatEntry('A', { kind: 'message', text: `m${i}` }))
+    engine.appendTableChat(engine.chatEntry('B', { kind: 'roll', request: { die: 20, count: 1, bonus: 0, mode: 'normal' }, secret: true }))
+    const forC = engine.snapshot('player', new Set(), 'C').chat
+    expect(forC).toHaveLength(199)
+    expect(forC[0]).toMatchObject({ kind: 'message', text: 'm6' })
+    expect(engine.snapshot('player', new Set(), 'B').chat).toHaveLength(200)
+    expect(engine.snapshot('gm', new Set(), 'G').chat.at(-1)).toMatchObject({ kind: 'roll', secret: true })
+  })
+})

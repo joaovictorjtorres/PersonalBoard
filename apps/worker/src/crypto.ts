@@ -28,3 +28,8 @@ export function safeEqual(a: string, b: string): boolean {
   for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
   return diff === 0
 }
+
+/** uint32 aleatório para os dados (o engine aplica a rejeição contra viés de módulo). */
+export function randomUint32(): number {
+  return crypto.getRandomValues(new Uint32Array(1))[0]
+}

@@ -146,7 +146,7 @@ export class TableDO extends DurableObject<Env> {
     this.send(ws, {
       t: 'welcome',
       self: member,
-      snapshot: this.engine.snapshot(role, online),
+      snapshot: this.engine.snapshot(role, online, msg.clientId),
       ...(issued ? { clientSecret: issued } : {}),
     })
     this.broadcast(att.sessionId, () => ({ t: 'memberJoined', member }))
@@ -167,7 +167,8 @@ export class TableDO extends DurableObject<Env> {
     switch (effect.kind) {
       case 'object': {
         const { before, after } = effect
-        this.broadcast(author.sessionId, (other) => {
+        // Com `echo` (encaixe na grade) o autor também recebe: o `ack` não traz a posição corrigida.
+        this.broadcast(effect.echo ? null : author.sessionId, (other) => {
           if (after && this.engine.canSeeObject(other.role, after)) {
             return { t: 'op', by: author.clientId, op: { kind: 'upsert', object: after } }
           }
@@ -198,6 +199,12 @@ export class TableDO extends DurableObject<Env> {
         return
       case 'released':
         this.broadcastReleased(effect.objectId, effect.clientId)
+        return
+      case 'settings':
+        this.broadcast(null, () => ({ t: 'settingsUpdated', settings: effect.settings }))
+        return
+      case 'memberUpdated':
+        this.broadcast(null, () => ({ t: 'memberUpdated', member: effect.member }))
         return
     }
   }
