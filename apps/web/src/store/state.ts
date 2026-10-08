@@ -1,7 +1,17 @@
-import type { Layer, Member, Op, TableMetaPublic, TableObject } from '@mesa/shared'
+import {
+  DEFAULT_SETTINGS,
+  type Layer,
+  type Member,
+  type Op,
+  type Point,
+  type ShapeKind,
+  type TableMetaPublic,
+  type TableObject,
+  type TableSettings,
+} from '@mesa/shared'
 import type { ConnStatus } from '../sync/SyncClient'
 
-export type Tool = 'select' | 'hand' | 'pencil'
+export type Tool = 'select' | 'hand' | 'pencil' | 'ruler' | 'shape'
 export type PenMode = 'draw' | 'erase'
 
 export interface Viewport { x: number; y: number; scale: number }
@@ -12,6 +22,7 @@ export type LocalPrev =
   | { kind: 'layers'; layers: Layer[]; objects: TableObject[]; notes: Record<string, string> }
   | { kind: 'note'; objectId: string; text: string | null }
   | { kind: 'member'; member: Member | null }
+  | { kind: 'settings'; settings: TableSettings }
 
 export interface PendingOp {
   op: Op
@@ -52,6 +63,27 @@ export interface StrokePreview {
   strokeWidth: number
 }
 
+export interface Ruler {
+  from: Point
+  to: Point
+}
+
+export interface Ping {
+  id: number
+  clientId: string
+  x: number
+  y: number
+  /** Date.now() de quando chegou. */
+  at: number
+}
+
+export interface ShapeFill {
+  enabled: boolean
+  /** null = mesma cor do contorno (a da caneta). */
+  color: string | null
+  opacity: number
+}
+
 export interface TableState {
   status: ConnStatus
   fatal: 'table_not_found' | 'auth' | null
@@ -82,6 +114,15 @@ export interface TableState {
   selectedId: string | null
   objectMenu: ObjectMenu | null
   viewport: Viewport
+  settings: TableSettings
+  /** Réguas das outras pessoas, por clientId (a minha é `ownRuler`). */
+  rulers: Record<string, Ruler>
+  ownRuler: Ruler | null
+  pings: Ping[]
+  /** Ping com recenter de outra pessoa; `seq` muda a cada pedido. */
+  cameraTarget: { x: number; y: number; seq: number } | null
+  shapeKind: ShapeKind
+  shapeFill: ShapeFill
 }
 
 export function makeInitialState(): TableState {
@@ -113,5 +154,12 @@ export function makeInitialState(): TableState {
     selectedId: null,
     objectMenu: null,
     viewport: { x: 0, y: 0, scale: 1 },
+    settings: { grid: { ...DEFAULT_SETTINGS.grid } },
+    rulers: {},
+    ownRuler: null,
+    pings: [],
+    cameraTarget: null,
+    shapeKind: 'rect',
+    shapeFill: { enabled: false, color: null, opacity: 0.3 },
   }
 }

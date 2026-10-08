@@ -1,11 +1,14 @@
 import {
   LOCK_TTL_MS,
+  PING_DURATION_MS,
   UNDO_LIMIT,
   insertLayer,
   isObjectOp,
+  mergeSettings,
   moveLayer,
   sortLayers,
   type Layer,
+  type Member,
   type Op,
   type RejectReason,
   type ServerMessage,
@@ -25,6 +28,10 @@ const REJECT_TEXT: Record<RejectReason, string> = {
 }
 
 export function rejectText(op: Op, reason: RejectReason, layerGone = false): string {
+  if (op.kind === 'settingsUpdate' || op.kind === 'memberUpdate') {
+    if (reason === 'forbidden') return 'Só o mestre pode fazer isso'
+    if (reason === 'not_found') return 'Essa pessoa não está mais na lista'
+  }
   // a camada sumiu no meio da ação: o servidor responde not_found, mas o que vale para o usuário é a permissão
   if (reason === 'not_found' && layerGone) return REJECT_TEXT.forbidden
   if (reason === 'forbidden') {
@@ -36,6 +43,7 @@ export function rejectText(op: Op, reason: RejectReason, layerGone = false): str
 }
 
 let toastSeq = 0
+let pingSeq = 0
 
 export function addToast<S extends TableState>(s: S, text: string, action?: Toast['action']): S {
   // um lote recusado (ex.: borracha) não empilha o mesmo aviso várias vezes
@@ -93,6 +101,12 @@ function isLayerOp(op: Op): boolean {
 
 function setNote(notes: Record<string, string>, objectId: string, text: string): Record<string, string> {
   return text === '' ? omit(notes, objectId) : { ...notes, [objectId]: text }
+}
+
+/** Atualiza o membro na lista e, se for eu, o apelido e a cor do `self`. */
+function withMember<S extends TableState>(s: S, member: Member): S {
+  const self = s.self && s.self.clientId === member.clientId ? { ...s.self, nickname: member.nickname, color: member.color } : s.self
+  return { ...s, self, members: { ...s.members, [member.clientId]: member } }
 }
 
 function upsertLayer(layers: Layer[], layer: Layer): Layer[] {
@@ -191,8 +205,23 @@ function applyOptimistic<S extends TableState>(
         prev: { kind: 'member', member: s.members[op.clientId] ?? null },
         layerOrders: null,
       }
+    case 'settingsUpdate':
+      return {
+        next: { ...s, settings: mergeSettings(s.settings, op.patch) },
+        before: null,
+        prev: { kind: 'settings', settings: s.settings },
+        layerOrders: null,
+      }
+    case 'memberUpdate': {
+      const member = s.members[op.clientId]
+      return {
+        next: member ? withMember(s, { ...member, ...op.patch }) : s,
+        before: null,
+        prev: { kind: 'member', member: member ?? null },
+        layerOrders: null,
+      }
+    }
     default:
-      // settingsUpdate e memberUpdate ganham efeito otimista na Task 6.
       return { next: s, before: null, prev: null, layerOrders: null }
   }
 }
@@ -211,7 +240,9 @@ function revertLocal<S extends TableState>(s: S, p: PendingOp): S {
     case 'note':
       return { ...s, notes: setNote(s.notes, prev.objectId, prev.text ?? '') }
     case 'member':
-      return prev.member ? { ...s, members: { ...s.members, [prev.member.clientId]: prev.member } } : s
+      return prev.member ? withMember(s, prev.member) : s
+    case 'settings':
+      return { ...s, settings: prev.settings }
   }
 }
 
@@ -292,6 +323,10 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         dragPreviews: {},
         strokePreviews: {},
         deniedGrabs: {},
+        settings: snap.settings,
+        rulers: {},
+        pings: [],
+        cameraTarget: null,
         activeLayerId,
         selectedId: s.selectedId && objects[s.selectedId] ? s.selectedId : null,
       }
@@ -309,6 +344,14 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
           case 'memberRemove':
             out = { ...out, members: omit(out.members, p.op.clientId) }
             break
+          case 'settingsUpdate':
+            out = { ...out, settings: mergeSettings(out.settings, p.op.patch) }
+            break
+          case 'memberUpdate': {
+            const member = out.members[p.op.clientId]
+            if (member) out = withMember(out, { ...member, ...p.op.patch })
+            break
+          }
         }
       }
       return out
@@ -416,6 +459,23 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         }
         case 'strokeEnd':
           return { ...s, strokePreviews: omit(s.strokePreviews, p.strokeId) }
+        case 'ruler':
+          return { ...s, rulers: { ...s.rulers, [msg.clientId]: { from: p.from, to: p.to } } }
+        case 'rulerEnd':
+          return { ...s, rulers: omit(s.rulers, msg.clientId) }
+        case 'ping': {
+          const pings = [
+            ...s.pings.filter((old) => now - old.at < PING_DURATION_MS),
+            { id: ++pingSeq, clientId: msg.clientId, x: p.x, y: p.y, at: now },
+          ]
+          // Só centraliza com pedido de outra pessoa (o servidor só deixa o mestre pedir).
+          const recenter = p.recenter && msg.clientId !== selfId
+          return {
+            ...s,
+            pings,
+            cameraTarget: recenter ? { x: p.x, y: p.y, seq: (s.cameraTarget?.seq ?? 0) + 1 } : s.cameraTarget,
+          }
+        }
       }
       return s
     }
@@ -429,13 +489,19 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         ...s,
         members: member ? { ...s.members, [msg.clientId]: { ...member, online: false } } : s.members,
         cursors: omit(s.cursors, msg.clientId),
+        rulers: omit(s.rulers, msg.clientId),
         locks: Object.fromEntries(Object.entries(s.locks).filter(([, l]) => l.clientId !== msg.clientId)),
         strokePreviews: Object.fromEntries(Object.entries(s.strokePreviews).filter(([, p]) => p.clientId !== msg.clientId)),
       }
     }
 
     case 'memberRemoved':
-      return { ...s, members: omit(s.members, msg.clientId), cursors: omit(s.cursors, msg.clientId) }
+      return {
+        ...s,
+        members: omit(s.members, msg.clientId),
+        cursors: omit(s.cursors, msg.clientId),
+        rulers: omit(s.rulers, msg.clientId),
+      }
 
     case 'layerUpsert':
       return recomputeLayers({ ...s, confirmedLayers: upsertLayer(s.confirmedLayers, msg.layer) })
@@ -459,8 +525,14 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
 
     case 'error':
       return { ...s, fatal: msg.reason, status: 'closed' }
+    case 'settingsUpdated':
+      return { ...s, settings: msg.settings }
+
+    case 'memberUpdated':
+      return withMember(s, msg.member)
+
     default:
-      // Configurações e membros: Task 6; chat: Task 7.
+      // chat: Task 7.
       return s
   }
 }

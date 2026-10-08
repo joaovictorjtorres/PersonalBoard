@@ -1,13 +1,23 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { nanoid } from 'nanoid'
-import type { Op, Presence } from '@mesa/shared'
-import { DEFAULT_LAYER_NAME, canControl } from '@mesa/shared'
+import type { MemberPatch, Op, Point, Presence, SettingsPatch, ShapeKind } from '@mesa/shared'
+import { DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, canControl, cellCenter } from '@mesa/shared'
 import { SyncClient, type SyncClientOptions } from '../sync/SyncClient'
 import { throttle, type Throttled } from '../lib/throttle'
 import { getClientId, readClientSecret, readGmSecret, rememberClientSecret, shouldRetryAuth } from '../lib/identity'
 import { uploadAsset, wsUrl } from '../lib/api'
 import { initialSize, prepareImage, uploadErrorText, viewportCenter } from '../lib/image'
-import { makeInitialState, type Geometry, type TableState, type Toast, type Tool, type Viewport, type PenMode } from './state'
+import {
+  makeInitialState,
+  type Geometry,
+  type PenMode,
+  type Ruler,
+  type ShapeFill,
+  type TableState,
+  type Toast,
+  type Tool,
+  type Viewport,
+} from './state'
 import { addToast, reduceServer, reduceStatus, reduceSubmitBatch } from './reducers'
 
 export interface TableActions {
@@ -40,6 +50,16 @@ export interface TableActions {
   canEditLayer(layerId: string): boolean
   stats(): { sent: number; received: number; writes: number }
   addImageFile(file: Blob, at?: { x: number; y: number }): Promise<void>
+  updateSettings(patch: SettingsPatch): void
+  updateMember(clientId: string, patch: MemberPatch): void
+  /** Escolhe o tipo e ativa a ferramenta Formas. */
+  setShapeKind(kind: ShapeKind): void
+  setShapeFill(patch: Partial<ShapeFill>): void
+  /** Sem régua: começa no centro do quadrado clicado. Com régua: remove. */
+  rulerClick(p: Point): void
+  rulerMove(p: Point): void
+  rulerCancel(): void
+  ping(p: Point, recenter: boolean): void
 }
 
 export type TableStoreState = TableState & { actions: TableActions }
@@ -58,6 +78,10 @@ export function createTableStore(
     const cursorThrottle = throttle((x: number, y: number) => {
       sync?.send({ t: 'presence', p: { kind: 'cursor', x, y } })
     }, 66)
+
+    const rulerThrottle = throttle((ruler: Ruler) => {
+      sync?.send({ t: 'presence', p: { kind: 'ruler', from: ruler.from, to: ruler.to } })
+    }, RULER_THROTTLE_MS)
 
     const submitMany = (ops: Op[], isUndo: boolean): boolean => {
       if (ops.length === 0) return true
@@ -144,8 +168,14 @@ export function createTableStore(
       },
       cursor: (x, y) => cursorThrottle(x, y),
       sendPresence: (p) => sync?.send({ t: 'presence', p }),
-      setTool: (tool) => set({ tool, selectedId: tool === 'select' ? get().selectedId : null }),
-      setPen: (penMode) => set({ tool: 'pencil', penMode, selectedId: null }),
+      setTool(tool) {
+        if (tool !== 'ruler') actions.rulerCancel()
+        set({ tool, selectedId: tool === 'select' ? get().selectedId : null })
+      },
+      setPen(penMode) {
+        actions.rulerCancel()
+        set({ tool: 'pencil', penMode, selectedId: null })
+      },
       setEraseAll: (eraseAll) => set({ eraseAll }),
       setColor: (color) => set({ color }),
       setStrokeWidth: (strokeWidth) => set({ strokeWidth }),
@@ -186,6 +216,44 @@ export function createTableStore(
         return !!layer && (!layer.locked || s.self?.role === 'gm')
       },
       stats: () => ({ ...(sync ? sync.stats : { sent: 0, received: 0 }), writes }),
+      updateSettings(patch) {
+        actions.submit({ kind: 'settingsUpdate', patch })
+      },
+      updateMember(clientId, patch) {
+        actions.submit({ kind: 'memberUpdate', clientId, patch })
+      },
+      setShapeKind(shapeKind) {
+        actions.rulerCancel()
+        set({ tool: 'shape', shapeKind, selectedId: null })
+      },
+      setShapeFill: (patch) => set((s) => ({ shapeFill: { ...s.shapeFill, ...patch } })),
+      rulerClick(p) {
+        const s = get()
+        if (s.ownRuler) {
+          actions.rulerCancel()
+          return
+        }
+        // Com a grade desligada o quadrado usa o tamanho configurado do mesmo jeito.
+        const ruler: Ruler = { from: cellCenter(p, s.settings.grid.size), to: p }
+        set({ ownRuler: ruler })
+        rulerThrottle(ruler)
+      },
+      rulerMove(p) {
+        const current = get().ownRuler
+        if (!current) return
+        const ruler: Ruler = { from: current.from, to: p }
+        set({ ownRuler: ruler })
+        rulerThrottle(ruler)
+      },
+      rulerCancel() {
+        if (!get().ownRuler) return
+        rulerThrottle.cancel()
+        set({ ownRuler: null })
+        sync?.send({ t: 'presence', p: { kind: 'rulerEnd' } })
+      },
+      ping(p, recenter) {
+        sync?.send({ t: 'presence', p: { kind: 'ping', x: p.x, y: p.y, recenter } })
+      },
       async addImageFile(file, at) {
         // capturado antes do primeiro await: trocar de camada/pan durante o upload não pode mudar o destino
         const s0 = get()
