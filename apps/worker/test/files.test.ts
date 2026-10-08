@@ -9,6 +9,8 @@ const PNG_1x1 = Uint8Array.from(
   (c) => c.charCodeAt(0),
 )
 
+const GIF_1x1 = Uint8Array.from(atob('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'), (c) => c.charCodeAt(0))
+
 const upload = (tableId: string, body: BodyInit, type: string) =>
   SELF.fetch(`https://mesa.test/api/tables/${tableId}/assets`, { method: 'POST', headers: { 'Content-Type': type }, body })
 
@@ -35,11 +37,19 @@ describe('assets', () => {
     expect(a.assetKey).toBe(b.assetKey)
   })
 
-  // Review Focus #5
-  it('recusa SVG e GIF com 415', async () => {
+  it('recusa SVG com 415', async () => {
     const { tableId } = await createTable()
     expect((await upload(tableId, '<svg/>', 'image/svg+xml')).status).toBe(415)
-    expect((await upload(tableId, PNG_1x1, 'image/gif')).status).toBe(415)
+  })
+
+  it('aceita GIF sem conversão e serve como image/gif', async () => {
+    const { tableId } = await createTable()
+    const res = await upload(tableId, GIF_1x1, 'image/gif')
+    expect(res.status).toBe(201)
+    const { assetKey } = await res.json<{ assetKey: string }>()
+    const file = await SELF.fetch(`https://mesa.test/files/${assetKey}`)
+    expect(file.headers.get('Content-Type')).toBe('image/gif')
+    expect(new Uint8Array(await file.arrayBuffer())).toEqual(GIF_1x1)
   })
 
   // Review Focus #5

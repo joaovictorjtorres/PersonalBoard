@@ -3,6 +3,7 @@ import {
   LOCK_TTL_MS,
   MEMBER_COLORS,
   MEMBER_RECENT_MS,
+  RollRequestSchema,
   TableObjectSchema,
   canControl,
   changedLayers,
@@ -335,8 +336,12 @@ export class TableEngine {
         return { ...base, kind: 'message', text: body.text }
       case 'image':
         return { ...base, kind: 'image', assetKey: body.assetKey, width: body.width, height: body.height }
-      case 'roll':
-        return { ...base, kind: 'roll', request: body.request, result: rollDice(body.request, this.rng), secret: body.secret }
+      case 'roll': {
+        // Defesa em profundidade: um dado inválido nunca pode chegar ao gerador (laço infinito = DO travado).
+        const parsed = RollRequestSchema.safeParse(body.request)
+        if (!parsed.success) throw new Error('invalid roll request')
+        return { ...base, kind: 'roll', request: parsed.data, result: rollDice(parsed.data, this.rng), secret: body.secret }
+      }
     }
   }
 

@@ -1,16 +1,22 @@
 import { DurableObject } from 'cloudflare:workers'
 import {
+  CHAT_RATE_PER_SEC,
   ClientMessageSchema,
   DEFAULT_LAYERS,
+  PING_RATE_PER_SEC,
+  readChatReqId,
   readOpId,
+  type ChatMessage,
+  type ChatRejectReason,
   type ClientMessage,
   type Role,
   type ServerMessage,
   type TableObject,
 } from '@mesa/shared'
-import { TableEngine, type LayerChange, type OpEffect } from './engine/engine'
+import { TableEngine, type ChatBody, type LayerChange, type OpEffect } from './engine/engine'
 import { SqlStore } from './engine/sql-store'
 import { randomSecret, safeEqual, sha256Hex } from './crypto'
+import { RateLimiter } from './rate-limit'
 
 interface Attachment {
   sessionId: string
@@ -20,10 +26,24 @@ interface Attachment {
 
 type Msg<T extends ClientMessage['t']> = Extract<ClientMessage, { t: T }>
 
+function chatBody(msg: ChatMessage): ChatBody {
+  switch (msg.t) {
+    case 'chatSend':
+      return { kind: 'message', text: msg.text }
+    case 'chatImage':
+      return { kind: 'image', assetKey: msg.assetKey, width: msg.width, height: msg.height }
+    case 'roll':
+      return { kind: 'roll', request: msg.request, secret: msg.secret }
+  }
+}
+
 export class TableDO extends DurableObject<Env> {
   private store: SqlStore
   private engine: TableEngine
   private strokeLayers = new Map<string, string>()
+  // Limites por pessoa (clientId), só em memória.
+  private chatLimiter = new RateLimiter(CHAT_RATE_PER_SEC, 1000)
+  private pingLimiter = new RateLimiter(PING_RATE_PER_SEC, 1000)
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -74,7 +94,9 @@ export class TableDO extends DurableObject<Env> {
     const parsed = ClientMessageSchema.safeParse(json)
     if (!parsed.success) {
       const opId = readOpId(json)
+      const reqId = readChatReqId(json)
       if (opId && att) this.send(ws, { t: 'reject', opId, reason: 'invalid' })
+      else if (reqId && att) this.send(ws, { t: 'chatReject', reqId, reason: 'invalid' })
       else console.warn('mensagem inválida', parsed.error.issues[0]?.message)
       return
     }
@@ -89,6 +111,10 @@ export class TableDO extends DurableObject<Env> {
       case 'grab': return this.onGrab(ws, att, msg)
       case 'release': return this.onRelease(att, msg)
       case 'presence': return this.onPresence(att, msg)
+      case 'chatSend':
+      case 'chatImage':
+      case 'roll':
+        return this.onChat(ws, att, msg)
     }
   }
 
@@ -242,6 +268,30 @@ export class TableDO extends DurableObject<Env> {
     this.broadcastReleased(msg.objectId, att.clientId)
   }
 
+  private onChat(ws: WebSocket, att: Attachment, msg: ChatMessage): void {
+    const fail = (reason: ChatRejectReason) => this.send(ws, { t: 'chatReject', reqId: msg.reqId, reason })
+    const dm = msg.channel === 'table' ? null : msg.channel.dm
+    if (dm === att.clientId) return fail('invalid')
+    if (!this.chatLimiter.allow(att.clientId)) return fail('rate_limited')
+    if (dm !== null && !this.onlineClientIds().has(dm)) return fail('not_found')
+
+    const entry = this.engine.chatEntry(att.clientId, chatBody(msg))
+    this.send(ws, { t: 'chatAck', reqId: msg.reqId })
+    if (dm === null) {
+      this.engine.appendTableChat(entry)
+      this.broadcast(null, (other) =>
+        this.engine.canSeeChat(other.clientId, other.role, entry) ? { t: 'chat', channel: 'table', entry } : null,
+      )
+      return
+    }
+    // Conversa privada: só retransmite, nunca grava; `dm` aponta sempre para a outra pessoa.
+    this.broadcast(null, (other) => {
+      if (other.clientId === att.clientId) return { t: 'chat', channel: { dm }, entry }
+      if (other.clientId === dm) return { t: 'chat', channel: { dm: att.clientId }, entry }
+      return null
+    })
+  }
+
   private onPresence(att: Attachment, msg: Msg<'presence'>): void {
     const p = msg.p
     const out = { t: 'presence' as const, clientId: att.clientId, p }
@@ -269,6 +319,17 @@ export class TableDO extends DurableObject<Env> {
         this.strokeLayers.set(p.strokeId, p.layerId)
         this.broadcast(att.sessionId, (other) => (this.engine.canSeeLayer(other.role, p.layerId) ? out : null))
         return
+      case 'ruler':
+      case 'rulerEnd':
+        this.broadcast(att.sessionId, () => out)
+        return
+      case 'ping': {
+        if (!this.pingLimiter.allow(att.clientId)) return
+        // Só o mestre centraliza a tela dos outros; de jogador vira ping comum.
+        const ping: ServerMessage = { t: 'presence', clientId: att.clientId, p: { ...p, recenter: p.recenter && att.role === 'gm' } }
+        this.broadcast(null, () => ping)
+        return
+      }
     }
   }
 

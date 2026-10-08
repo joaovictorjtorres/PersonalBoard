@@ -17,7 +17,7 @@ export const MEMBER_COLORS = [
 
 export const LOCK_TTL_MS = 10_000
 export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024
-export const ALLOWED_UPLOAD_TYPES = ['image/webp', 'image/png', 'image/jpeg']
+export const ALLOWED_UPLOAD_TYPES = ['image/webp', 'image/png', 'image/jpeg', 'image/gif']
 export const TABLE_ID_RE = /^[A-Za-z0-9]{10}$/
 export const ASSET_KEY_RE = /^[a-f0-9]{64}$/
 export const UNDO_LIMIT = 50

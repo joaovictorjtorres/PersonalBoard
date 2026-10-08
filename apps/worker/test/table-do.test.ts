@@ -516,3 +516,120 @@ describe('TableDO — M3: configurações, membros e encaixe', () => {
     await p.expectNone('op', (m) => m.op.kind === 'upsert' && m.op.object.id === 'st1')
   })
 })
+
+describe('TableDO — M3: chat, dados e presença', () => {
+  const d20 = { die: 20, count: 1, bonus: 0, mode: 'normal' } as const
+
+  async function trio() {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    const a = await TestClient.connect(tableId)
+    const b = await TestClient.connect(tableId)
+    const { clientId: gmId } = await gm.hello('Mestre', { gmSecret })
+    const { clientId: aId, welcome } = await a.hello('Ana')
+    const { clientId: bId } = await b.hello('Bia')
+    return { tableId, gmSecret, gm, a, b, gmId, aId, bId, aSecret: welcome.clientSecret }
+  }
+
+  it('mensagem da mesa: ack para o autor e chat para todos, inclusive ele', async () => {
+    const { gm, a, b, aId } = await trio()
+    a.send({ t: 'chatSend', reqId: 'c1', channel: 'table', text: 'olá' })
+    expect(await a.waitFor('chatAck')).toEqual({ t: 'chatAck', reqId: 'c1' })
+    for (const c of [gm, a, b]) {
+      expect(await c.waitFor('chat')).toMatchObject({ channel: 'table', entry: { kind: 'message', text: 'olá', authorId: aId } })
+    }
+  })
+
+  it('rolagem secreta chega ao autor e ao mestre, nunca a outro jogador; snapshot idem', async () => {
+    const { tableId, gmSecret, gm, a, b } = await trio()
+    a.send({ t: 'roll', reqId: 'r1', channel: 'table', request: d20, secret: true })
+    expect((await a.waitFor('chat')).entry).toMatchObject({ kind: 'roll', secret: true })
+    expect((await gm.waitFor('chat')).entry).toMatchObject({ kind: 'roll', secret: true })
+    await b.expectNone('chat')
+    const late = await TestClient.connect(tableId)
+    expect((await late.hello('Caio')).welcome.snapshot.chat).toEqual([])
+    const gm2 = await TestClient.connect(tableId)
+    expect((await gm2.hello('Mestre 2', { gmSecret })).welcome.snapshot.chat).toHaveLength(1)
+  })
+
+  it('rolagem com vantagem: dois dados de 1 a 20, mantém o maior, soma o bônus', async () => {
+    const { a, b } = await trio()
+    a.send({ t: 'roll', reqId: 'r1', channel: 'table', request: { die: 20, count: 1, bonus: 3, mode: 'advantage' }, secret: false })
+    const { entry } = await b.waitFor('chat')
+    if (entry.kind !== 'roll') throw new Error('esperava rolagem')
+    expect(entry.result.rolls).toHaveLength(2)
+    for (const v of entry.result.rolls) {
+      expect(v).toBeGreaterThanOrEqual(1)
+      expect(v).toBeLessThanOrEqual(20)
+    }
+    expect(entry.result.kept).toEqual([Math.max(...entry.result.rolls)])
+    expect(entry.result.total).toBe(entry.result.kept[0] + 3)
+  })
+
+  // Review Focus #3
+  it('conversa privada: só as sessões do remetente (todas as abas) e do destinatário; mestre não recebe; nada é guardado', async () => {
+    const { tableId, gmSecret, gm, a, b, aId, bId, aSecret } = await trio()
+    const a2 = await TestClient.connect(tableId)
+    await a2.hello('Ana', { clientId: aId, clientSecret: aSecret })
+    a.send({ t: 'chatSend', reqId: 'd1', channel: { dm: bId }, text: 'segredo' })
+    expect(await a.waitFor('chatAck')).toEqual({ t: 'chatAck', reqId: 'd1' })
+    expect(await a.waitFor('chat')).toMatchObject({ channel: { dm: bId }, entry: { text: 'segredo', authorId: aId } })
+    expect(await a2.waitFor('chat')).toMatchObject({ channel: { dm: bId }, entry: { text: 'segredo' } })
+    expect(await b.waitFor('chat')).toMatchObject({ channel: { dm: aId }, entry: { text: 'segredo' } })
+    await gm.expectNone('chat')
+    expect(JSON.stringify(gm.messages)).not.toContain('segredo')
+    const gm2 = await TestClient.connect(tableId)
+    expect((await gm2.hello('Mestre 2', { gmSecret })).welcome.snapshot.chat).toEqual([])
+  })
+
+  it('privada: destinatário offline → not_found; para si mesmo → invalid; rolagem secreta na privada → invalid', async () => {
+    const { a, b, aId, bId } = await trio()
+    b.close()
+    await a.waitFor('memberLeft')
+    a.send({ t: 'chatSend', reqId: 'd1', channel: { dm: bId }, text: 'oi' })
+    expect(await a.waitFor('chatReject')).toEqual({ t: 'chatReject', reqId: 'd1', reason: 'not_found' })
+    a.send({ t: 'chatSend', reqId: 'd2', channel: { dm: aId }, text: 'oi' })
+    expect(await a.waitFor('chatReject')).toEqual({ t: 'chatReject', reqId: 'd2', reason: 'invalid' })
+    a.send({ t: 'roll', reqId: 'd3', channel: { dm: bId }, request: d20, secret: true })
+    expect(await a.waitFor('chatReject')).toEqual({ t: 'chatReject', reqId: 'd3', reason: 'invalid' })
+  })
+
+  it('texto acima de 500 caracteres recebe chatReject invalid', async () => {
+    const { a } = await trio()
+    a.send(JSON.stringify({ t: 'chatSend', reqId: 'c9', channel: 'table', text: 'x'.repeat(501) }))
+    expect(await a.waitFor('chatReject')).toEqual({ t: 'chatReject', reqId: 'c9', reason: 'invalid' })
+  })
+
+  // Review Focus #2
+  it('limite de 5 envios por segundo por pessoa, somando mesa, privada e rolagem', async () => {
+    const { a, bId } = await trio()
+    for (let i = 0; i < 3; i++) a.send({ t: 'chatSend', reqId: `t${i}`, channel: 'table', text: `m${i}` })
+    for (let i = 0; i < 2; i++) a.send({ t: 'chatSend', reqId: `d${i}`, channel: { dm: bId }, text: `p${i}` })
+    a.send({ t: 'roll', reqId: 'x', channel: 'table', request: d20, secret: false })
+    expect(await a.waitFor('chatReject')).toEqual({ t: 'chatReject', reqId: 'x', reason: 'rate_limited' })
+    for (const reqId of ['t0', 't1', 't2', 'd0', 'd1']) await a.waitFor('chatAck', (m) => m.reqId === reqId)
+  })
+
+  it('régua vai só para os outros; ping vai para todos; recenter de jogador vira false', async () => {
+    const { gm, a, b, gmId, aId } = await trio()
+    a.send({ t: 'presence', p: { kind: 'ruler', from: { x: 35, y: 35 }, to: { x: 200, y: 35 } } })
+    expect(await b.waitFor('presence')).toEqual({
+      t: 'presence', clientId: aId, p: { kind: 'ruler', from: { x: 35, y: 35 }, to: { x: 200, y: 35 } },
+    })
+    a.send({ t: 'presence', p: { kind: 'rulerEnd' } })
+    expect((await b.waitFor('presence')).p).toEqual({ kind: 'rulerEnd' })
+    await a.expectNone('presence')
+    a.send({ t: 'presence', p: { kind: 'ping', x: 1, y: 2, recenter: true } })
+    expect((await b.waitFor('presence')).p).toEqual({ kind: 'ping', x: 1, y: 2, recenter: false })
+    expect((await a.waitFor('presence')).p).toEqual({ kind: 'ping', x: 1, y: 2, recenter: false })
+    gm.send({ t: 'presence', p: { kind: 'ping', x: 5, y: 6, recenter: true } })
+    expect(await b.waitFor('presence', (m) => m.clientId === gmId)).toMatchObject({ p: { kind: 'ping', recenter: true } })
+  })
+
+  it('ping: no máximo 3 por segundo por pessoa', async () => {
+    const { a, b } = await trio()
+    for (let i = 0; i < 5; i++) a.send({ t: 'presence', p: { kind: 'ping', x: i, y: 0, recenter: false } })
+    await b.waitFor('presence', (m) => m.p.kind === 'ping' && m.p.x === 2)
+    await b.expectNone('presence', (m) => m.p.kind === 'ping' && m.p.x >= 3)
+  })
+})

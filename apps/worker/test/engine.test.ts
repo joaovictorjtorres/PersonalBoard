@@ -493,6 +493,12 @@ describe('M3 — chat e dados', () => {
     })
   })
 
+  it('rolagem inválida é recusada antes de rolar (nunca chega ao uniformInt)', () => {
+    for (const request of [{ die: 0, count: 1, bonus: 0, mode: 'normal' }, { die: 20, count: 9999, bonus: 0, mode: 'normal' }, { die: 1.5, count: 1, bonus: 0, mode: 'normal' }]) {
+      expect(() => engine.chatEntry('A', { kind: 'roll', request: request as never, secret: false })).toThrow()
+    }
+  })
+
   it('mensagem e imagem ganham id e hora do servidor', () => {
     const m = engine.chatEntry('A', { kind: 'message', text: 'oi' })
     expect(m).toMatchObject({ kind: 'message', text: 'oi', authorId: 'A', at: clock })
