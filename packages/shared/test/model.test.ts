@@ -101,3 +101,39 @@ describe('canControl', () => {
     expect(canControl(obj('list', ['A']), 'B', 'player')).toBe(false)
   })
 })
+
+describe('formas (M3)', () => {
+  const shape = {
+    id: 'sh1', type: 'shape', layerId: 'drawings', x: 0, y: 0, width: 100, height: 50, rotation: 0, zIndex: 1,
+    kind: 'rect', stroke: '#ffffff', strokeWidth: 3, fill: null,
+  }
+  const line = { ...shape, kind: 'line', points: [0, 0, 100, 50] }
+
+  it('retângulo e elipse, com ou sem preenchimento', () => {
+    expect(NewObjectSchema.safeParse(shape).success).toBe(true)
+    expect(NewObjectSchema.safeParse({ ...shape, kind: 'ellipse', fill: { color: '#ff0000', opacity: 0.3 } }).success).toBe(true)
+  })
+
+  it('linha exige points e não tem preenchimento; rect/ellipse não têm points', () => {
+    expect(NewObjectSchema.safeParse(line).success).toBe(true)
+    expect(NewObjectSchema.safeParse({ ...line, points: undefined }).success).toBe(false)
+    expect(NewObjectSchema.safeParse({ ...line, fill: { color: '#ff0000', opacity: 0.3 } }).success).toBe(false)
+    expect(NewObjectSchema.safeParse({ ...line, points: [0, 0, 1] }).success).toBe(false)
+    expect(NewObjectSchema.safeParse({ ...shape, points: [0, 0, 1, 1] }).success).toBe(false)
+  })
+
+  it('limites: espessura 1..30, opacidade 0..1, cor #rrggbb e tipo conhecido', () => {
+    expect(NewObjectSchema.safeParse({ ...shape, strokeWidth: 30 }).success).toBe(true)
+    expect(NewObjectSchema.safeParse({ ...shape, strokeWidth: 31 }).success).toBe(false)
+    expect(NewObjectSchema.safeParse({ ...shape, strokeWidth: 0 }).success).toBe(false)
+    expect(NewObjectSchema.safeParse({ ...shape, fill: { color: '#ff0000', opacity: 1.1 } }).success).toBe(false)
+    expect(NewObjectSchema.safeParse({ ...shape, stroke: 'white' }).success).toBe(false)
+    expect(NewObjectSchema.safeParse({ ...shape, kind: 'polygon' }).success).toBe(false)
+  })
+
+  it('forma gravada exige campos de servidor; imagens e traços do M2 continuam válidos sem migração', () => {
+    expect(TableObjectSchema.safeParse({ ...shape, ...server }).success).toBe(true)
+    expect(TableObjectSchema.safeParse(shape).success).toBe(false)
+    expect(TableObjectSchema.safeParse(stored()).success).toBe(true)
+  })
+})

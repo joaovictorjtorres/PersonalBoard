@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_LAYERS, type Layer, type Member, type ServerMessage, type TableObject } from '@mesa/shared'
+import { DEFAULT_LAYERS, DEFAULT_SETTINGS, type Layer, type Member, type ServerMessage, type TableObject } from '@mesa/shared'
 import { reduceServer, reduceSubmit } from '../src/store/reducers'
 import { makeInitialState, type TableState } from '../src/store/state'
 
@@ -15,7 +15,7 @@ function joined(self: Member, layers: Layer[], objects: TableObject[] = [], note
   const welcome: ServerMessage = {
     t: 'welcome',
     self,
-    snapshot: { meta: { id: 'T', name: 'M' }, members: [self, player], layers, objects, locks: [], notes },
+    snapshot: { meta: { id: 'T', name: 'M' }, members: [self, player], layers, objects, locks: [], notes, settings: DEFAULT_SETTINGS, chat: [] },
   }
   return reduceServer(makeInitialState(), welcome, 0)
 }
@@ -163,7 +163,7 @@ describe('rulings do controlador', () => {
     s = reduceSubmit(s, 'op_3', { kind: 'memberRemove', clientId: 'p1' }, { isUndo: false })
     s = reduceServer(
       s,
-      { t: 'welcome', self: gm, snapshot: { meta: { id: 'T', name: 'M' }, members: [gm, player], layers: DEFAULT_LAYERS, objects: [token('t1')], locks: [], notes: {} } },
+      { t: 'welcome', self: gm, snapshot: { meta: { id: 'T', name: 'M' }, members: [gm, player], layers: DEFAULT_LAYERS, objects: [token('t1')], locks: [], notes: {}, settings: DEFAULT_SETTINGS, chat: [] } },
       0,
     )
     expect(ids(s)).toContain('nova')
@@ -200,7 +200,7 @@ describe('base confirmada de camadas', () => {
   const welcomeMsg = (layers: Layer[]): ServerMessage => ({
     t: 'welcome',
     self: gm,
-    snapshot: { meta: { id: 'T', name: 'M' }, members: [gm, player], layers, objects: [], locks: [], notes: {} },
+    snapshot: { meta: { id: 'T', name: 'M' }, members: [gm, player], layers, objects: [], locks: [], notes: {}, settings: DEFAULT_SETTINGS, chat: [] },
   })
 
   it('rejeitar op1 e depois op2 não ressuscita a mudança de op1', () => {

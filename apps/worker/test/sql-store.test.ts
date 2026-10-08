@@ -45,6 +45,23 @@ describe('SqlStore — migração do M1', () => {
     expect(normalizeObject(current)).toEqual(current)
   })
 
+  it('forma (linha) mantém points no round-trip e na normalização', async () => {
+    const line = {
+      id: 'ln1', type: 'shape', kind: 'line', layerId: 'drawings', x: 1, y: 2, width: 100, height: 50, rotation: 0, zIndex: 1,
+      stroke: '#ffffff', strokeWidth: 3, fill: null, points: [0, 0, 100, 50],
+      control: { mode: 'list', clientIds: ['A'] }, ownerId: 'A', version: 1, updatedBy: 'A',
+    }
+    expect(normalizeObject(line)).toEqual(line)
+    await runInDurableObject(freshStub(), (_instance, state) => {
+      const store = new SqlStore(state.storage.sql)
+      store.putObject(line as never)
+      const got = store.getObject('ln1')
+      expect(got).toMatchObject({ type: 'shape', points: [0, 0, 100, 50] })
+      expect(store.listObjects()[0]).toMatchObject({ points: [0, 0, 100, 50] })
+      expect(TableObjectSchema.safeParse(got).success).toBe(true)
+    })
+  })
+
   it('configurações gravadas com JSON parcial voltam completas', async () => {
     await runInDurableObject(freshStub(), (_instance, state) => {
       const store = new SqlStore(state.storage.sql)

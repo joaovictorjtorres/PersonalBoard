@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_LAYERS, type Member, type TableObject } from '@mesa/shared'
+import { DEFAULT_LAYERS, DEFAULT_SETTINGS, type Member, type TableObject } from '@mesa/shared'
 import { addToast, reduceServer, reduceSubmit, reduceSubmitBatch } from '../src/store/reducers'
 import { makeInitialState, type TableState } from '../src/store/state'
 
@@ -16,7 +16,7 @@ function joined(): TableState {
     {
       t: 'welcome',
       self: me,
-      snapshot: { meta: { id: 'T', name: 'M' }, members: [me], layers: DEFAULT_LAYERS.slice(0, 3), objects: [stroke('a'), stroke('b')], locks: [], notes: {} },
+      snapshot: { meta: { id: 'T', name: 'M' }, members: [me], layers: DEFAULT_LAYERS.slice(0, 3), objects: [stroke('a'), stroke('b')], locks: [], notes: {}, settings: DEFAULT_SETTINGS, chat: [] },
     },
     0,
   )

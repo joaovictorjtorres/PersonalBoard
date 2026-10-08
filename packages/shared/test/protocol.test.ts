@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ClientMessageSchema, ObjectPatchSchema, OpSchema, TableObjectSchema, isObjectOp, readOpId } from '../src'
+import { ClientMessageSchema, ObjectPatchSchema, OpSchema, TableObjectSchema, isObjectOp, readChatReqId, readOpId } from '../src'
 
 const uuid = '3f1c2b9e-8a4d-4c1e-9b7a-2d5e6f708192'
 const image = {
@@ -126,5 +126,64 @@ describe('hello com clientSecret', () => {
     const base = { t: 'hello', clientId: uuid, nickname: 'Ana' }
     expect(ClientMessageSchema.safeParse({ ...base, clientSecret: 'a'.repeat(43) }).success).toBe(true)
     expect(ClientMessageSchema.safeParse({ ...base, clientSecret: 'a'.repeat(129) }).success).toBe(false)
+  })
+})
+
+describe('protocolo do M3', () => {
+  const d20 = { die: 20, count: 1, bonus: 0, mode: 'normal' }
+
+  it('settingsUpdate valida a grade', () => {
+    expect(OpSchema.safeParse({ kind: 'settingsUpdate', patch: { grid: { enabled: true, size: 50 } } }).success).toBe(true)
+    expect(OpSchema.safeParse({ kind: 'settingsUpdate', patch: { grid: { size: 5 } } }).success).toBe(false)
+  })
+
+  it('memberUpdate: apelido aparado 1..32, cor #rrggbb, ao menos um campo, nada além disso', () => {
+    expect(OpSchema.parse({ kind: 'memberUpdate', clientId: 'c', patch: { nickname: '  Bia  ' } })).toEqual({
+      kind: 'memberUpdate', clientId: 'c', patch: { nickname: 'Bia' },
+    })
+    expect(OpSchema.safeParse({ kind: 'memberUpdate', clientId: 'c', patch: { color: '#123456' } }).success).toBe(true)
+    expect(OpSchema.safeParse({ kind: 'memberUpdate', clientId: 'c', patch: {} }).success).toBe(false)
+    expect(OpSchema.safeParse({ kind: 'memberUpdate', clientId: 'c', patch: { nickname: '   ' } }).success).toBe(false)
+    expect(OpSchema.safeParse({ kind: 'memberUpdate', clientId: 'c', patch: { nickname: 'x'.repeat(33) } }).success).toBe(false)
+    expect(OpSchema.safeParse({ kind: 'memberUpdate', clientId: 'c', patch: { color: 'red' } }).success).toBe(false)
+    expect(OpSchema.safeParse({ kind: 'memberUpdate', clientId: 'c', patch: { role: 'gm' } }).success).toBe(false)
+  })
+
+  it('chatSend apara o texto e limita 500; aceita conversa privada', () => {
+    expect(ClientMessageSchema.parse({ t: 'chatSend', reqId: 'c1', channel: 'table', text: '  oi  ' })).toEqual({
+      t: 'chatSend', reqId: 'c1', channel: 'table', text: 'oi',
+    })
+    expect(ClientMessageSchema.safeParse({ t: 'chatSend', reqId: 'c1', channel: 'table', text: 'x'.repeat(501) }).success).toBe(false)
+    expect(ClientMessageSchema.safeParse({ t: 'chatSend', reqId: 'c1', channel: { dm: 'abc' }, text: 'oi' }).success).toBe(true)
+    expect(ClientMessageSchema.safeParse({ t: 'chatSend', reqId: '', channel: 'table', text: 'oi' }).success).toBe(false)
+  })
+
+  it('roll: pedido validado; secreta só na mesa', () => {
+    expect(ClientMessageSchema.safeParse({ t: 'roll', reqId: 'r1', channel: 'table', request: d20, secret: true }).success).toBe(true)
+    expect(ClientMessageSchema.safeParse({ t: 'roll', reqId: 'r1', channel: { dm: 'abc' }, request: d20, secret: false }).success).toBe(true)
+    expect(ClientMessageSchema.safeParse({ t: 'roll', reqId: 'r1', channel: { dm: 'abc' }, request: d20, secret: true }).success).toBe(false)
+    expect(ClientMessageSchema.safeParse({ t: 'roll', reqId: 'r1', channel: 'table', request: { ...d20, count: 51 }, secret: false }).success).toBe(false)
+  })
+
+  it('chatImage exige assetKey e lados inteiros', () => {
+    const img = { t: 'chatImage', reqId: 'i1', channel: 'table', assetKey: 'a'.repeat(64), width: 300, height: 200 }
+    expect(ClientMessageSchema.safeParse(img).success).toBe(true)
+    expect(ClientMessageSchema.safeParse({ ...img, assetKey: 'x' }).success).toBe(false)
+    expect(ClientMessageSchema.safeParse({ ...img, width: 0 }).success).toBe(false)
+  })
+
+  it('presença de régua e ping', () => {
+    expect(ClientMessageSchema.safeParse({ t: 'presence', p: { kind: 'ruler', from: { x: 1, y: 2 }, to: { x: 3, y: 4 } } }).success).toBe(true)
+    expect(ClientMessageSchema.safeParse({ t: 'presence', p: { kind: 'rulerEnd' } }).success).toBe(true)
+    expect(ClientMessageSchema.safeParse({ t: 'presence', p: { kind: 'ping', x: 1, y: 2, recenter: true } }).success).toBe(true)
+    expect(ClientMessageSchema.safeParse({ t: 'presence', p: { kind: 'ping', x: 1, y: 2 } }).success).toBe(false)
+  })
+
+  it('readChatReqId lê o reqId de mensagens de chat mal formadas', () => {
+    expect(readChatReqId({ t: 'chatSend', reqId: 'c1', text: 5 })).toBe('c1')
+    expect(readChatReqId({ t: 'roll', reqId: 'r1' })).toBe('r1')
+    expect(readChatReqId({ t: 'op', reqId: 'c1' })).toBeNull()
+    expect(readChatReqId({ t: 'chatImage', reqId: 'x'.repeat(65) })).toBeNull()
+    expect(readChatReqId(null)).toBeNull()
   })
 })

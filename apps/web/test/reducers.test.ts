@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_LAYERS, LOCK_TTL_MS, type NewObject, type ServerMessage, type TableObject } from '@mesa/shared'
+import { DEFAULT_LAYERS, DEFAULT_SETTINGS, LOCK_TTL_MS, type NewObject, type ServerMessage, type TableObject } from '@mesa/shared'
 import { isLockedByOther, reduceServer, reduceSubmit } from '../src/store/reducers'
 import { makeInitialState, type TableState } from '../src/store/state'
 
@@ -14,7 +14,7 @@ const stored = (id = 't1', over: Partial<TableObject> = {}): TableObject =>
 const welcome = (objects: TableObject[] = []): ServerMessage => ({
   t: 'welcome',
   self,
-  snapshot: { meta: { id: 'T', name: 'M' }, members: [self], layers: DEFAULT_LAYERS.slice(0, 3), objects, locks: [], notes: {} },
+  snapshot: { meta: { id: 'T', name: 'M' }, members: [self], layers: DEFAULT_LAYERS.slice(0, 3), objects, locks: [], notes: {}, settings: DEFAULT_SETTINGS, chat: [] },
 })
 
 function joined(objects: TableObject[] = []): TableState {

@@ -98,9 +98,9 @@ export function TableCanvas() {
             {list.map((o) =>
               o.type === 'image' ? (
                 <ImageNode key={o.id} object={o} />
-              ) : (
+              ) : o.type === 'stroke' ? (
                 <StrokeNode key={o.id} object={o} segments={drawing.erasePreview[o.id]} />
-              ),
+              ) : null,
             )}
             {list.map((o) => (
               <ObjectDecorations key={`deco_${o.id}`} object={o} />

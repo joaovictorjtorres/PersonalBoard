@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { MAX_CONTROL_IDS, MAX_SEGMENTS, MAX_SEGMENT_NUMBERS, TITLE_MAX } from './constants'
+import { MAX_CONTROL_IDS, MAX_SEGMENTS, MAX_SEGMENT_NUMBERS, SHAPE_STROKE_MAX, TITLE_MAX } from './constants'
 
 export const IdSchema = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/)
 
@@ -83,20 +83,38 @@ const strokeFields = {
   strokeWidth,
 }
 
+const shapeFields = {
+  type: z.literal('shape'),
+  kind: z.enum(['rect', 'ellipse', 'line']),
+  stroke: color,
+  strokeWidth: z.number().min(1).max(SHAPE_STROKE_MAX),
+  fill: z.strictObject({ color, opacity: z.number().min(0).max(1) }).nullable(),
+  /** Só linha: [x1, y1, x2, y2] relativos a (x, y). */
+  points: z.tuple([coord, coord, coord, coord]).optional(),
+}
+
+// Linha: com points e sem preenchimento. Retângulo/elipse: sem points.
+const shapeIsConsistent = (o: { kind: string; fill: unknown; points?: unknown }) =>
+  o.kind === 'line' ? o.points !== undefined && o.fill === null : o.points === undefined
+
 // Sem `control`: o servidor define o controle na criação (campo enviado é descartado).
 export const NewObjectSchema = z.discriminatedUnion('type', [
   z.object({ ...objectBase, ...imageFields }),
   z.object({ ...objectBase, ...strokeFields }),
+  z.object({ ...objectBase, ...shapeFields }).refine(shapeIsConsistent, 'shape fields do not match kind'),
 ])
 export type NewObject = z.infer<typeof NewObjectSchema>
 
 export const TableObjectSchema = z.discriminatedUnion('type', [
   z.object({ ...objectBase, ...serverFields, ...imageFields }),
   z.object({ ...objectBase, ...serverFields, ...strokeFields }),
+  z.object({ ...objectBase, ...serverFields, ...shapeFields }).refine(shapeIsConsistent, 'shape fields do not match kind'),
 ])
 export type TableObject = z.infer<typeof TableObjectSchema>
 export type ImageObject = Extract<TableObject, { type: 'image' }>
 export type StrokeObject = Extract<TableObject, { type: 'stroke' }>
+export type ShapeObject = Extract<TableObject, { type: 'shape' }>
+export type ShapeKind = ShapeObject['kind']
 
 export const ObjectPatchSchema = z
   .strictObject({

@@ -1,6 +1,16 @@
 import { z } from 'zod'
-import { LAYER_NAME_MAX, NOTE_MAX } from './constants'
+import { ASSET_KEY_RE, LAYER_NAME_MAX, NOTE_MAX } from './constants'
 import {
+  ChatChannelSchema,
+  ChatImageSideSchema,
+  ChatTextSchema,
+  type ChatChannel,
+  type ChatEntry,
+  type ChatRejectReason,
+} from './chat'
+import { RollRequestSchema } from './dice'
+import {
+  ColorSchema,
   IdSchema,
   NewObjectSchema,
   ObjectPatchSchema,
@@ -9,6 +19,7 @@ import {
   type TableMetaPublic,
   type TableObject,
 } from './model'
+import { SettingsPatchSchema, type TableSettings } from './settings'
 
 export const LayerNameSchema = z.string().trim().min(1).max(LAYER_NAME_MAX)
 
@@ -21,6 +32,14 @@ export const LayerPatchSchema = z
   .partial()
 export type LayerPatch = z.infer<typeof LayerPatchSchema>
 
+export const NicknameSchema = z.string().trim().min(1).max(32)
+
+export const MemberPatchSchema = z
+  .strictObject({ nickname: NicknameSchema, color: ColorSchema })
+  .partial()
+  .refine((p) => p.nickname !== undefined || p.color !== undefined, 'empty member patch')
+export type MemberPatch = z.infer<typeof MemberPatchSchema>
+
 export const OpSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('create'), object: NewObjectSchema }),
   z.object({ kind: z.literal('update'), id: IdSchema, patch: ObjectPatchSchema }),
@@ -31,6 +50,8 @@ export const OpSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('layerMove'), id: IdSchema, direction: z.enum(['up', 'down']) }),
   z.object({ kind: z.literal('noteSet'), objectId: IdSchema, text: z.string().max(NOTE_MAX) }),
   z.object({ kind: z.literal('memberRemove'), clientId: z.string().min(1).max(64) }),
+  z.object({ kind: z.literal('settingsUpdate'), patch: SettingsPatchSchema }),
+  z.object({ kind: z.literal('memberUpdate'), clientId: z.string().min(1).max(64), patch: MemberPatchSchema }),
 ])
 export type Op = z.infer<typeof OpSchema>
 export type ObjectOp = Extract<Op, { kind: 'create' | 'update' | 'delete' }>
@@ -38,6 +59,8 @@ export type ObjectOp = Extract<Op, { kind: 'create' | 'update' | 'delete' }>
 export function isObjectOp(op: Op): op is ObjectOp {
   return op.kind === 'create' || op.kind === 'update' || op.kind === 'delete'
 }
+
+const PointSchema = z.object({ x: z.number(), y: z.number() })
 
 export const PresenceSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('cursor'), x: z.number(), y: z.number() }),
@@ -59,13 +82,16 @@ export const PresenceSchema = z.discriminatedUnion('kind', [
     strokeWidth: z.number().min(1).max(100),
   }),
   z.object({ kind: z.literal('strokeEnd'), strokeId: IdSchema }),
+  z.object({ kind: z.literal('ruler'), from: PointSchema, to: PointSchema }),
+  z.object({ kind: z.literal('rulerEnd') }),
+  z.object({ kind: z.literal('ping'), x: z.number(), y: z.number(), recenter: z.boolean() }),
 ])
 export type Presence = z.infer<typeof PresenceSchema>
 
 const HelloSchema = z.object({
   t: z.literal('hello'),
   clientId: z.uuid(),
-  nickname: z.string().trim().min(1).max(32),
+  nickname: NicknameSchema,
   gmSecret: z.string().max(128).optional(),
   clientSecret: z.string().max(128).optional(),
   /** Versão do protocolo do cliente; 2 = guarda clientSecret (M2). */
@@ -73,20 +99,44 @@ const HelloSchema = z.object({
 })
 export type HelloMessage = z.infer<typeof HelloSchema>
 
+const ReqIdSchema = z.string().min(1).max(64)
+
 export const ClientMessageSchema = z.discriminatedUnion('t', [
   HelloSchema,
   z.object({ t: z.literal('op'), opId: z.string().min(1).max(64), op: OpSchema }),
   z.object({ t: z.literal('grab'), objectId: IdSchema }),
   z.object({ t: z.literal('release'), objectId: IdSchema }),
   z.object({ t: z.literal('presence'), p: PresenceSchema }),
+  z.object({ t: z.literal('chatSend'), reqId: ReqIdSchema, channel: ChatChannelSchema, text: ChatTextSchema }),
+  z.object({
+    t: z.literal('chatImage'),
+    reqId: ReqIdSchema,
+    channel: ChatChannelSchema,
+    assetKey: z.string().regex(ASSET_KEY_RE),
+    width: ChatImageSideSchema,
+    height: ChatImageSideSchema,
+  }),
+  z
+    .object({ t: z.literal('roll'), reqId: ReqIdSchema, channel: ChatChannelSchema, request: RollRequestSchema, secret: z.boolean() })
+    .refine((m) => !m.secret || m.channel === 'table', 'secret roll only on the table channel'),
 ])
 export type ClientMessage = z.infer<typeof ClientMessageSchema>
+export type ChatMessage = Extract<ClientMessage, { t: 'chatSend' | 'chatImage' | 'roll' }>
 
 /** `opId` de uma mensagem `{ t: 'op' }` que falhou no schema, para responder `reject invalid`. */
 export function readOpId(json: unknown): string | null {
   if (typeof json !== 'object' || json === null) return null
   const { t, opId } = json as { t?: unknown; opId?: unknown }
   return t === 'op' && typeof opId === 'string' && opId.length >= 1 && opId.length <= 64 ? opId : null
+}
+
+const CHAT_MESSAGE_TYPES: ReadonlySet<unknown> = new Set(['chatSend', 'chatImage', 'roll'])
+
+/** `reqId` de uma mensagem de chat que falhou no schema, para responder `chatReject invalid`. */
+export function readChatReqId(json: unknown): string | null {
+  if (typeof json !== 'object' || json === null) return null
+  const { t, reqId } = json as { t?: unknown; reqId?: unknown }
+  return CHAT_MESSAGE_TYPES.has(t) && typeof reqId === 'string' && reqId.length >= 1 && reqId.length <= 64 ? reqId : null
 }
 
 export type AppliedOp = { kind: 'upsert'; object: TableObject } | { kind: 'delete'; id: string }
@@ -106,6 +156,9 @@ export interface Snapshot {
   locks: LockInfo[]
   /** Só o mestre recebe anotações; jogadores recebem `{}`. */
   notes: Record<string, string>
+  settings: TableSettings
+  /** Só o canal da mesa, já filtrado para quem recebe (rolagem secreta: autor e mestres). */
+  chat: ChatEntry[]
 }
 
 export type ServerMessage =
@@ -125,4 +178,10 @@ export type ServerMessage =
   | { t: 'layerRemoved'; id: string }
   | { t: 'noteSet'; objectId: string; text: string }
   | { t: 'memberRemoved'; clientId: string }
+  | { t: 'settingsUpdated'; settings: TableSettings }
+  | { t: 'memberUpdated'; member: Member }
+  /** Na conversa privada, `channel.dm` é sempre a OUTRA pessoa do ponto de vista de quem recebe. */
+  | { t: 'chat'; channel: ChatChannel; entry: ChatEntry }
+  | { t: 'chatAck'; reqId: string }
+  | { t: 'chatReject'; reqId: string; reason: ChatRejectReason }
   | { t: 'error'; reason: 'table_not_found' | 'auth' }

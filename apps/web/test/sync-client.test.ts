@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Op, ServerMessage } from '@mesa/shared'
+import { DEFAULT_SETTINGS, type Op, type ServerMessage } from '@mesa/shared'
 import { SyncClient, type ConnStatus, type WebSocketLike } from '../src/sync/SyncClient'
 
 class FakeSocket implements WebSocketLike {
@@ -22,7 +22,7 @@ class FakeSocket implements WebSocketLike {
 const welcome: ServerMessage = {
   t: 'welcome',
   self: { clientId: 'c', nickname: 'Ana', color: '#000000', role: 'player', online: true },
-  snapshot: { meta: { id: 'T', name: 'M' }, members: [], layers: [], objects: [], locks: [], notes: {} },
+  snapshot: { meta: { id: 'T', name: 'M' }, members: [], layers: [], objects: [], locks: [], notes: {}, settings: DEFAULT_SETTINGS, chat: [] },
 }
 const op: Op = { kind: 'delete', id: 'x' }
 

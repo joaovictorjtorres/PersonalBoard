@@ -191,6 +191,9 @@ function applyOptimistic<S extends TableState>(
         prev: { kind: 'member', member: s.members[op.clientId] ?? null },
         layerOrders: null,
       }
+    default:
+      // settingsUpdate e memberUpdate ganham efeito otimista na Task 6.
+      return { next: s, before: null, prev: null, layerOrders: null }
   }
 }
 
@@ -456,5 +459,8 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
 
     case 'error':
       return { ...s, fatal: msg.reason, status: 'closed' }
+    default:
+      // Configurações e membros: Task 6; chat: Task 7.
+      return s
   }
 }

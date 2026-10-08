@@ -132,6 +132,8 @@ export class TableEngine {
         return !!o && this.canSeeObject(role, o)
       }),
       notes: role === 'gm' ? this.store.listNotes() : {},
+      settings: this.store.getSettings(),
+      chat: [],
     }
   }
 
@@ -155,6 +157,10 @@ export class TableEngine {
       case 'layerMove': return this.layerMove(op.id, op.direction)
       case 'noteSet': return this.noteSet(op.objectId, op.text)
       case 'memberRemove': return this.memberRemove(op.clientId, online)
+      // Implementados na Task 4.
+      case 'settingsUpdate':
+      case 'memberUpdate':
+        return rejectInvalid()
     }
   }
 
