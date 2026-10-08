@@ -200,6 +200,24 @@ describe('travas', () => {
   })
 })
 
+describe('travar camada com trava ativa', () => {
+  beforeEach(() => {
+    engine.applyOp('A', 'player', 'op0', create(token()))
+    engine.grab('A', 'player', 'tok1')
+  })
+
+  it('solta a trava do jogador e o mestre passa a editar', () => {
+    const r = engine.applyOp('G', 'gm', 'g1', { kind: 'layerUpdate', id: 'tokens', patch: { locked: true } })
+    expect(effects(r)).toContainEqual({ kind: 'released', objectId: 'tok1', clientId: 'A' })
+    expect(engine.applyOp('G', 'gm', 'g2', update('tok1', { x: 1 }))).toMatchObject({ ok: true })
+  })
+
+  it('touchLock não renova quando o dono não pode mais editar', () => {
+    store.putLayer({ ...store.getLayers().find((l) => l.id === 'tokens')!, locked: true })
+    expect(engine.touchLock('A', 'tok1')).toBe(false)
+  })
+})
+
 describe('camadas', () => {
   it('jogador não mexe em camadas', () => {
     const ops: Op[] = [

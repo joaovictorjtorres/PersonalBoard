@@ -218,7 +218,9 @@ export class TableEngine {
     if (!before) return reject('not_found', null)
     if (id === GM_LAYER_ID && patch.visibility !== undefined) return reject('forbidden', null)
     const after: Layer = { ...before, ...patch }
-    const released = before.visibility === 'all' && after.visibility === 'gm' ? this.releasePlayerLocks(id) : []
+    const hidden = before.visibility === 'all' && after.visibility === 'gm'
+    const locked = !before.locked && after.locked
+    const released = hidden || locked ? this.releasePlayerLocks(id) : []
     return this.saveLayers(layers, layers.map((l) => (l.id === id ? after : l)), released)
   }
 
@@ -281,6 +283,11 @@ export class TableEngine {
   touchLock(clientId: string, objectId: string): boolean {
     const lock = this.locks.get(objectId)
     if (!lock || lock.clientId !== clientId || lock.expiresAt <= this.now()) return false
+    const object = this.store.getObject(objectId)
+    if (!object || !this.canSeeObject(lock.role, object) || !this.canEditObject(clientId, lock.role, object)) {
+      this.locks.delete(objectId)
+      return false
+    }
     lock.expiresAt = this.now() + LOCK_TTL_MS
     return true
   }
