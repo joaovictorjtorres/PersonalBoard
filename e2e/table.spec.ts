@@ -330,9 +330,14 @@ test('mestre remove da lista um membro offline', async ({ browser, page }) => {
   const { tableId, gmSecret } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
   const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
-  const anaRow = gm.locator('.members li', { hasText: 'Ana' })
+  const observer = await open(browser, `/t/${tableId}?debug=1`, 'Bia')
+  const row = (page: Page, name: string) =>
+    page.locator('.members li').filter({ hasText: new RegExp(`^\\s*${name}(?![\\p{L}\\d])`, 'u') })
+  const anaRow = row(gm, 'Ana')
+  const anaRowSeenByBia = row(observer, 'Ana')
 
   await expect(anaRow).toBeVisible()
+  await expect(anaRowSeenByBia).toBeVisible()
   await expect(gm.getByRole('button', { name: 'Remover Ana da lista' })).toHaveCount(0) // online: sem X
   await player.context().close()
 
@@ -340,9 +345,10 @@ test('mestre remove da lista um membro offline', async ({ browser, page }) => {
   await expect(remove).toBeVisible()
   await remove.click()
   await expect(anaRow).toHaveCount(0)
+  await expect(anaRowSeenByBia).toHaveCount(0) // propagou sem recarregar
 
   await gm.reload()
   await waitOpen(gm)
-  await expect(gm.locator('.members li', { hasText: 'Mestre' })).toBeVisible()
+  await expect(row(gm, 'Mestre')).toBeVisible()
   await expect(anaRow).toHaveCount(0)
 })
