@@ -1,12 +1,12 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { nanoid } from 'nanoid'
-import type { MemberPatch, Op, Point, Presence, SettingsPatch, ShapeKind } from '@mesa/shared'
-import { DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, canControl, cellCenter } from '@mesa/shared'
+import type { ChatChannel, ClientMessage, MemberPatch, Op, Point, Presence, RollRequest, SettingsPatch, ShapeKind } from '@mesa/shared'
+import { CHAT_TEXT_MAX, DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, canControl, cellCenter, parseCommand } from '@mesa/shared'
 import { SyncClient, type SyncClientOptions } from '../sync/SyncClient'
 import { throttle, type Throttled } from '../lib/throttle'
 import { getClientId, readClientSecret, readGmSecret, rememberClientSecret, shouldRetryAuth } from '../lib/identity'
 import { uploadAsset, wsUrl } from '../lib/api'
-import { initialSize, prepareImage, uploadErrorText, viewportCenter } from '../lib/image'
+import { initialSize, prepareChatImage, prepareImage, uploadErrorText, viewportCenter } from '../lib/image'
 import {
   makeInitialState,
   type Geometry,
@@ -19,6 +19,7 @@ import {
   type Viewport,
 } from './state'
 import { addToast, reduceServer, reduceStatus, reduceSubmitBatch } from './reducers'
+import { channelOf, closeDmTab, openDmTab, selectChatTab, setChatOpen, type ChatTab } from './chat'
 
 export interface TableActions {
   connect(nickname: string): void
@@ -60,6 +61,14 @@ export interface TableActions {
   rulerMove(p: Point): void
   rulerCancel(): void
   ping(p: Point, recenter: boolean): void
+  /** true = enviado (o campo pode ser limpo); false = vazio, fórmula inválida ou sem conexão. */
+  sendChatText(text: string): boolean
+  sendRoll(request: RollRequest, secret: boolean): boolean
+  sendChatImage(file: Blob): Promise<void>
+  openDm(clientId: string): void
+  closeDm(clientId: string): void
+  selectChatTab(tab: ChatTab): void
+  setChatOpen(open: boolean): void
 }
 
 export type TableStoreState = TableState & { actions: TableActions }
@@ -93,6 +102,19 @@ export function createTableStore(
       const items = ops.map((op) => ({ opId: `op_${nanoid()}`, op }))
       set(reduceSubmitBatch(s, items, { isUndo, groupId: `g_${nanoid()}` }))
       for (const { opId, op } of items) sync.sendOp(opId, op)
+      return true
+    }
+
+    // Mensagens de chat não entram na fila de reenvio: sem conexão, avisa e não envia.
+    const sendChat = (channel: ChatChannel, build: (reqId: string) => ClientMessage): boolean => {
+      const s = get()
+      if (s.status !== 'open' || !sync) {
+        set(addToast(s, 'Sem conexão — aguarde reconectar'))
+        return false
+      }
+      const reqId = `c_${nanoid()}`
+      set({ chatPending: { ...s.chatPending, [reqId]: channel } })
+      sync.send(build(reqId))
       return true
     }
 
@@ -254,6 +276,39 @@ export function createTableStore(
       ping(p, recenter) {
         sync?.send({ t: 'presence', p: { kind: 'ping', x: p.x, y: p.y, recenter } })
       },
+      sendChatText(text) {
+        const trimmed = text.trim()
+        if (!trimmed) return false
+        const command = parseCommand(trimmed)
+        if (command?.kind === 'invalid') {
+          set((s) => addToast(s, 'Fórmula inválida — ex.: /r 2d6+3'))
+          return false
+        }
+        if (command?.kind === 'roll') return actions.sendRoll(command.request, false)
+        const channel = channelOf(get().chatActive)
+        return sendChat(channel, (reqId) => ({ t: 'chatSend', reqId, channel, text: trimmed.slice(0, CHAT_TEXT_MAX) }))
+      },
+      sendRoll(request, secret) {
+        const channel = channelOf(get().chatActive)
+        // "Só o mestre vê" não existe na conversa privada.
+        return sendChat(channel, (reqId) => ({ t: 'roll', reqId, channel, request, secret: secret && channel === 'table' }))
+      },
+      async sendChatImage(file) {
+        // canal capturado antes do upload: trocar de aba durante o envio não muda o destino
+        const channel = channelOf(get().chatActive)
+        try {
+          const prepared = await prepareChatImage(file)
+          const assetKey = await uploadAsset(tableId, prepared.blob)
+          sendChat(channel, (reqId) => ({ t: 'chatImage', reqId, channel, assetKey, width: prepared.width, height: prepared.height }))
+        } catch (err) {
+          const { text, retry } = uploadErrorText(err)
+          set((s) => addToast(s, text, retry ? { label: 'Tentar novamente', run: () => void actions.sendChatImage(file) } : undefined))
+        }
+      },
+      openDm: (clientId) => set((s) => openDmTab(s, clientId)),
+      closeDm: (clientId) => set((s) => closeDmTab(s, clientId)),
+      selectChatTab: (tab) => set((s) => selectChatTab(s, tab)),
+      setChatOpen: (open) => set((s) => setChatOpen(s, open)),
       async addImageFile(file, at) {
         // capturado antes do primeiro await: trocar de camada/pan durante o upload não pode mudar o destino
         const s0 = get()

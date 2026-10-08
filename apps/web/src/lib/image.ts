@@ -42,3 +42,12 @@ export function uploadErrorText(err: unknown): { text: string; retry: boolean } 
   }
   return { text: 'Falha ao enviar a imagem', retry: true }
 }
+
+/** Imagem do chat: GIF vai sem conversão (mantém a animação); PNG/JPEG/WebP seguem o M1. */
+export async function prepareChatImage(file: Blob): Promise<{ blob: Blob; width: number; height: number }> {
+  if (file.type !== 'image/gif') return prepareImage(file)
+  const bitmap = await createImageBitmap(file)
+  const size = { width: bitmap.width, height: bitmap.height }
+  bitmap.close()
+  return { blob: file, ...size }
+}

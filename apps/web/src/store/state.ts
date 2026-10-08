@@ -1,5 +1,7 @@
 import {
   DEFAULT_SETTINGS,
+  type ChatChannel,
+  type ChatEntry,
   type Layer,
   type Member,
   type Op,
@@ -123,6 +125,19 @@ export interface TableState {
   cameraTarget: { x: number; y: number; seq: number } | null
   shapeKind: ShapeKind
   shapeFill: ShapeFill
+  /** Histórico da mesa (até 200), já filtrado pelo servidor. */
+  chatTable: ChatEntry[]
+  /** Histórico das conversas privadas abertas, por clientId da outra pessoa (só no cliente). */
+  chatDms: Record<string, ChatEntry[]>
+  /** Abas privadas abertas, em ordem de abertura. */
+  chatTabs: string[]
+  /** 'table' ou o clientId da conversa privada. */
+  chatActive: string
+  /** Não lidas por aba; ausente = 0. */
+  chatUnread: Record<string, number>
+  chatOpen: boolean
+  /** Canal de cada pedido de chat ainda sem chatAck/chatReject, por reqId. */
+  chatPending: Record<string, ChatChannel>
 }
 
 export function makeInitialState(): TableState {
@@ -161,5 +176,12 @@ export function makeInitialState(): TableState {
     cameraTarget: null,
     shapeKind: 'rect',
     shapeFill: { enabled: false, color: null, opacity: 0.3 },
+    chatTable: [],
+    chatDms: {},
+    chatTabs: [],
+    chatActive: 'table',
+    chatUnread: {},
+    chatOpen: true,
+    chatPending: {},
   }
 }

@@ -15,6 +15,7 @@ import {
   type TableObject,
 } from '@mesa/shared'
 import type { ConnStatus } from '../sync/SyncClient'
+import { chatRejectText, reduceChatEntry } from './chat'
 import { applyLocalOp, opTargetId } from './localOps'
 import { inverseGroupOf } from './undo'
 import type { LocalPrev, PendingOp, TableState, Toast } from './state'
@@ -221,8 +222,10 @@ function applyOptimistic<S extends TableState>(
         layerOrders: null,
       }
     }
-    default:
-      return { next: s, before: null, prev: null, layerOrders: null }
+    default: {
+      const unreachable: never = op
+      return unreachable
+    }
   }
 }
 
@@ -327,6 +330,10 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         rulers: {},
         pings: [],
         cameraTarget: null,
+        chatTable: snap.chat,
+        chatUnread: omit(s.chatUnread, 'table'),
+        // Pedidos sem resposta se perdem na reconexão; abas privadas e o histórico delas ficam.
+        chatPending: {},
         activeLayerId,
         selectedId: s.selectedId && objects[s.selectedId] ? s.selectedId : null,
       }
@@ -531,8 +538,15 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
     case 'memberUpdated':
       return withMember(s, msg.member)
 
-    default:
-      // chat: Task 7.
-      return s
+    case 'chat':
+      return reduceChatEntry(s, msg.channel, msg.entry)
+
+    case 'chatAck':
+      return { ...s, chatPending: omit(s.chatPending, msg.reqId) }
+
+    case 'chatReject': {
+      const channel = s.chatPending[msg.reqId]
+      return addToast({ ...s, chatPending: omit(s.chatPending, msg.reqId) }, chatRejectText(msg.reason, channel, s.members))
+    }
   }
 }
