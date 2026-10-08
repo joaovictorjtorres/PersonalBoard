@@ -1,11 +1,19 @@
 import {
+  GM_LAYER_ID,
   LOCK_TTL_MS,
   MEMBER_COLORS,
+  MEMBER_RECENT_MS,
   TableObjectSchema,
+  canControl,
+  changedLayers,
+  insertLayer,
   mergePatch,
+  moveLayer,
   type Layer,
+  type LayerPatch,
   type LockInfo,
   type Member,
+  type NewObject,
   type Op,
   type RejectReason,
   type Role,
@@ -14,17 +22,32 @@ import {
 } from '@mesa/shared'
 import type { StoredMember, TableStore } from './store'
 
+export type LayerChange = { before: Layer | null; after: Layer }
+
+/** O que mudou; o TableDO decide quem recebe o quê. */
+export type OpEffect =
+  | { kind: 'object'; before: TableObject | null; after: TableObject | null }
+  | { kind: 'layers'; changes: LayerChange[] }
+  | { kind: 'layerRemoved'; layer: Layer }
+  | { kind: 'note'; objectId: string; text: string }
+  | { kind: 'memberRemoved'; clientId: string }
+  | { kind: 'released'; objectId: string; clientId: string }
+
 export type OpResult =
   | { ok: true; duplicate: true; version: number }
-  | { ok: true; duplicate: false; version: number; before: TableObject | null; after: TableObject | null }
-  | { ok: false; reason: RejectReason; current: TableObject | null }
+  | { ok: true; duplicate: false; version: number; effects: OpEffect[] }
+  | { ok: false; reason: RejectReason; current?: TableObject | null }
 
 interface Lock {
   clientId: string
+  role: Role
   expiresAt: number
 }
 
 const reject = (reason: RejectReason, current: TableObject | null): OpResult => ({ ok: false, reason, current })
+// 'invalid' omite `current`: o cliente reverte para o `before` da operação pendente.
+const rejectInvalid = (): OpResult => ({ ok: false, reason: 'invalid' })
+const done = (version: number, ...effects: OpEffect[]): OpResult => ({ ok: true, duplicate: false, version, effects })
 
 export class TableEngine {
   // Travas ficam só em memória: se o DO hibernar, elas somem — aceitável, pois expiram em 10 s.
@@ -51,6 +74,10 @@ export class TableEngine {
 
   canSeeObject(role: Role, object: TableObject): boolean {
     return this.canSeeLayer(role, object.layerId)
+  }
+
+  canEditObject(clientId: string, role: Role, object: TableObject): boolean {
+    return this.canEditLayer(role, object.layerId) && canControl(object, clientId, role)
   }
 
   join(input: { clientId: string; nickname: string; role: Role; secretHash?: string }, online: Set<string>): Member {
@@ -85,79 +112,169 @@ export class TableEngine {
 
   snapshot(role: Role, online: Set<string>): Snapshot {
     const meta = this.store.getMeta()!
+    const now = this.now()
     return {
       meta: { id: meta.id, name: meta.name },
-      members: this.store.listMembers().map((m) => ({
-        clientId: m.clientId,
-        nickname: m.nickname,
-        color: m.color,
-        role: m.role,
-        online: online.has(m.clientId),
-      })),
+      members: this.store
+        .listMembers()
+        .filter((m) => online.has(m.clientId) || now - m.lastSeenAt <= MEMBER_RECENT_MS)
+        .map((m) => ({
+          clientId: m.clientId,
+          nickname: m.nickname,
+          color: m.color,
+          role: m.role,
+          online: online.has(m.clientId),
+        })),
       layers: this.store.getLayers().filter((l) => this.canSeeLayer(role, l.id)),
       objects: this.store.listObjects().filter((o) => this.canSeeObject(role, o)),
       locks: this.activeLocks().filter((l) => {
         const o = this.store.getObject(l.objectId)
         return !!o && this.canSeeObject(role, o)
       }),
-      notes: {},
+      notes: role === 'gm' ? this.store.listNotes() : {},
     }
   }
 
-  applyOp(clientId: string, role: Role, opId: string, op: Op): OpResult {
+  applyOp(clientId: string, role: Role, opId: string, op: Op, online: Set<string> = new Set()): OpResult {
     const duplicate = this.store.getAppliedOp(clientId, opId)
     if (duplicate !== null) return { ok: true, duplicate: true, version: duplicate }
-    const result = this.execute(clientId, role, op)
+    const result = this.execute(clientId, role, op, online)
     if (result.ok) this.store.recordAppliedOp(clientId, opId, result.version)
     return result
   }
 
-  private execute(clientId: string, role: Role, op: Op): OpResult {
-    if (op.kind === 'create') {
-      const { object } = op
-      if (!this.canEditLayer(role, object.layerId)) return reject('forbidden', null)
-      const existing = this.store.getObject(object.id)
-      if (existing) return reject('exists', this.canSeeObject(role, existing) ? existing : null)
-      const after = {
-        ...object,
-        control: { mode: 'list', clientIds: [clientId] },
-        ownerId: clientId,
-        version: 1,
-        updatedBy: clientId,
-      } as TableObject
-      this.store.putObject(after)
-      return { ok: true, duplicate: false, version: 1, before: null, after }
+  private execute(clientId: string, role: Role, op: Op, online: Set<string>): OpResult {
+    if (op.kind === 'create') return this.create(clientId, role, op.object)
+    if (op.kind === 'update' || op.kind === 'delete') return this.change(clientId, role, op)
+    // Camadas, anotações e membros: só o mestre.
+    if (role !== 'gm') return reject('forbidden', null)
+    switch (op.kind) {
+      case 'layerCreate': return this.layerCreate(op.layer)
+      case 'layerUpdate': return this.layerUpdate(op.id, op.patch)
+      case 'layerDelete': return this.layerDelete(op.id)
+      case 'layerMove': return this.layerMove(op.id, op.direction)
+      case 'noteSet': return this.noteSet(op.objectId, op.text)
+      case 'memberRemove': return this.memberRemove(op.clientId, online)
     }
-    // Operações de camada/anotação/membro chegam na Task 6.
-    if (op.kind !== 'update' && op.kind !== 'delete') return reject('invalid', null)
+  }
 
+  private create(clientId: string, role: Role, object: NewObject): OpResult {
+    if (!this.canEditLayer(role, object.layerId)) return reject('forbidden', null)
+    const existing = this.store.getObject(object.id)
+    if (existing) return reject('exists', this.canSeeObject(role, existing) ? existing : null)
+    const after = {
+      ...object,
+      control: { mode: 'list', clientIds: [clientId] },
+      ownerId: clientId,
+      version: 1,
+      updatedBy: clientId,
+    } as TableObject
+    this.store.putObject(after)
+    return done(1, { kind: 'object', before: null, after })
+  }
+
+  private change(clientId: string, role: Role, op: Extract<Op, { kind: 'update' | 'delete' }>): OpResult {
     const before = this.store.getObject(op.id)
     if (!before || !this.canSeeObject(role, before)) return reject('not_found', null)
-    if (!this.canEditLayer(role, before.layerId)) return reject('forbidden', before)
+    if (!this.canEditObject(clientId, role, before)) return reject('forbidden', before)
     if (this.lockHeldByOther(op.id, clientId)) return reject('locked', before)
 
     if (op.kind === 'delete') {
       this.store.deleteObject(op.id)
+      this.store.deleteNote(op.id)
       this.locks.delete(op.id)
-      return { ok: true, duplicate: false, version: 0, before, after: null }
+      return done(0, { kind: 'object', before, after: null })
     }
 
-    if (op.patch.layerId !== undefined && !this.canEditLayer(role, op.patch.layerId)) return reject('forbidden', before)
+    const { patch } = op
+    // Mudar controle ou camada é só do mestre — mesmo que o valor seja o atual.
+    if ((patch.control !== undefined || patch.layerId !== undefined) && role !== 'gm') return reject('forbidden', before)
+    if (patch.layerId !== undefined && !this.canEditLayer(role, patch.layerId)) return reject('forbidden', before)
     const parsed = TableObjectSchema.safeParse({
-      ...mergePatch(before, op.patch),
+      ...mergePatch(before, patch),
       version: before.version + 1,
       updatedBy: clientId,
     })
-    if (!parsed.success) return reject('invalid', before)
+    if (!parsed.success) return rejectInvalid()
     this.store.putObject(parsed.data)
-    return { ok: true, duplicate: false, version: parsed.data.version, before, after: parsed.data }
+    return done(parsed.data.version, { kind: 'object', before, after: parsed.data })
+  }
+
+  private saveLayers(before: Layer[], after: Layer[], extra: OpEffect[] = []): OpResult {
+    const changes = changedLayers(before, after)
+    for (const change of changes) this.store.putLayer(change.after)
+    return done(0, { kind: 'layers', changes }, ...extra)
+  }
+
+  private layerCreate(input: { id: string; name: string }): OpResult {
+    const layers = this.store.getLayers()
+    if (layers.some((l) => l.id === input.id)) return reject('exists', null)
+    return this.saveLayers(layers, insertLayer(layers, input))
+  }
+
+  private layerUpdate(id: string, patch: LayerPatch): OpResult {
+    const layers = this.store.getLayers()
+    const before = layers.find((l) => l.id === id)
+    if (!before) return reject('not_found', null)
+    if (id === GM_LAYER_ID && patch.visibility !== undefined) return reject('forbidden', null)
+    const after: Layer = { ...before, ...patch }
+    const released = before.visibility === 'all' && after.visibility === 'gm' ? this.releasePlayerLocks(id) : []
+    return this.saveLayers(layers, layers.map((l) => (l.id === id ? after : l)), released)
+  }
+
+  private layerDelete(id: string): OpResult {
+    const layers = this.store.getLayers()
+    const layer = layers.find((l) => l.id === id)
+    if (!layer) return reject('not_found', null)
+    const common = layers.filter((l) => l.id !== GM_LAYER_ID)
+    if (id === GM_LAYER_ID || common.length <= 1) return reject('forbidden', null)
+    for (const o of this.store.listObjects()) {
+      if (o.layerId !== id) continue
+      this.store.deleteObject(o.id)
+      this.store.deleteNote(o.id)
+      this.locks.delete(o.id)
+    }
+    this.store.deleteLayer(id)
+    return done(0, { kind: 'layerRemoved', layer })
+  }
+
+  private layerMove(id: string, direction: 'up' | 'down'): OpResult {
+    const layers = this.store.getLayers()
+    if (!layers.some((l) => l.id === id)) return reject('not_found', null)
+    const after = moveLayer(layers, id, direction)
+    if (!after) return reject('forbidden', null)
+    return this.saveLayers(layers, after)
+  }
+
+  private noteSet(objectId: string, text: string): OpResult {
+    if (!this.store.getObject(objectId)) return reject('not_found', null)
+    const value = text.trim() === '' ? '' : text
+    this.store.setNote(objectId, value)
+    return done(0, { kind: 'note', objectId, text: value })
+  }
+
+  private memberRemove(clientId: string, online: Set<string>): OpResult {
+    if (online.has(clientId)) return reject('forbidden', null)
+    if (!this.store.getMember(clientId)) return reject('not_found', null)
+    this.store.deleteMember(clientId)
+    return done(0, { kind: 'memberRemoved', clientId })
+  }
+
+  private releasePlayerLocks(layerId: string): OpEffect[] {
+    const out: OpEffect[] = []
+    for (const [objectId, lock] of this.locks) {
+      if (lock.role === 'gm' || this.store.getObject(objectId)?.layerId !== layerId) continue
+      this.locks.delete(objectId)
+      out.push({ kind: 'released', objectId, clientId: lock.clientId })
+    }
+    return out
   }
 
   grab(clientId: string, role: Role, objectId: string): boolean {
     const object = this.store.getObject(objectId)
-    if (!object || !this.canEditLayer(role, object.layerId)) return false
+    if (!object || !this.canSeeObject(role, object) || !this.canEditObject(clientId, role, object)) return false
     if (this.lockHeldByOther(objectId, clientId)) return false
-    this.locks.set(objectId, { clientId, expiresAt: this.now() + LOCK_TTL_MS })
+    this.locks.set(objectId, { clientId, role, expiresAt: this.now() + LOCK_TTL_MS })
     return true
   }
 

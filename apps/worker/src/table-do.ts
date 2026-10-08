@@ -139,23 +139,26 @@ export class TableDO extends DurableObject<Env> {
   }
 
   private onOp(ws: WebSocket, att: Attachment, msg: Msg<'op'>): void {
-    const res = this.engine.applyOp(att.clientId, att.role, msg.opId, msg.op)
+    const res = this.engine.applyOp(att.clientId, att.role, msg.opId, msg.op, this.onlineClientIds())
     if (!res.ok) {
-      this.send(ws, { t: 'reject', opId: msg.opId, reason: res.reason, current: res.current })
+      this.send(ws, { t: 'reject', opId: msg.opId, reason: res.reason, ...(res.current !== undefined ? { current: res.current } : {}) })
       return
     }
     this.send(ws, { t: 'ack', opId: msg.opId, version: res.version })
     if (res.duplicate) return
-    const { before, after } = res
-    this.broadcast(att.sessionId, (other) => {
-      if (after && this.engine.canSeeObject(other.role, after)) {
-        return { t: 'op', by: att.clientId, op: { kind: 'upsert', object: after } }
-      }
-      if (before && this.engine.canSeeObject(other.role, before)) {
-        return { t: 'op', by: att.clientId, op: { kind: 'delete', id: before.id } }
-      }
-      return null
-    })
+    for (const effect of res.effects) {
+      if (effect.kind !== 'object') continue
+      const { before, after } = effect
+      this.broadcast(att.sessionId, (other) => {
+        if (after && this.engine.canSeeObject(other.role, after)) {
+          return { t: 'op', by: att.clientId, op: { kind: 'upsert', object: after } }
+        }
+        if (before && this.engine.canSeeObject(other.role, before)) {
+          return { t: 'op', by: att.clientId, op: { kind: 'delete', id: before.id } }
+        }
+        return null
+      })
+    }
   }
 
   private onGrab(ws: WebSocket, att: Attachment, msg: Msg<'grab'>): void {
