@@ -3,37 +3,43 @@ import { createPingDragGuard } from '../src/canvas/ping'
 
 const plain = { shiftKey: false, ctrlKey: false, metaKey: false }
 
-// Mesma sequência dos nós: mousedown -> dragstart (grab) -> dragend (commit + release).
-function run(evt: typeof plain) {
-  const guard = createPingDragGuard()
+// Mesma sequência dos nós. `stop` imita o Konva: stopDrag() dispara dragend de forma síncrona.
+function drag(guard: ReturnType<typeof createPingDragGuard>, evt: typeof plain) {
   const grab = vi.fn()
   const commit = vi.fn()
-  const stop = vi.fn()
+  const release = vi.fn()
+  const onEnd = () => {
+    if (!guard.dragEnd()) {
+      commit()
+      release()
+    }
+  }
+  const stop = vi.fn(onEnd)
   guard.mouseDown(evt)
   if (!guard.dragStart(stop)) grab()
-  if (!guard.dragEnd()) commit()
-  return { grab, commit, stop, guard }
+  onEnd() // dragend real (ou espúrio) ao soltar
+  return { grab, commit, release, stop }
 }
 
 describe('createPingDragGuard', () => {
   it('clique de ping: cancela o arrasto e não envia grab, update nem release', () => {
+    const guard = createPingDragGuard()
     for (const evt of [{ ...plain, shiftKey: true }, { ...plain, ctrlKey: true }, { ...plain, metaKey: true }]) {
-      const r = run(evt)
+      const r = drag(guard, evt)
       expect(r.stop).toHaveBeenCalledOnce()
       expect(r.grab).not.toHaveBeenCalled()
       expect(r.commit).not.toHaveBeenCalled()
+      expect(r.release).not.toHaveBeenCalled()
     }
   })
 
-  it('arrasto normal ainda trava e confirma; a marca de ping é limpa no dragend', () => {
-    const r = run(plain)
+  it('arrasto normal depois de um ping ainda trava, confirma e libera', () => {
+    const guard = createPingDragGuard()
+    drag(guard, { ...plain, shiftKey: true })
+    const r = drag(guard, plain)
     expect(r.stop).not.toHaveBeenCalled()
     expect(r.grab).toHaveBeenCalledOnce()
     expect(r.commit).toHaveBeenCalledOnce()
-    const g = createPingDragGuard()
-    g.mouseDown({ ...plain, shiftKey: true })
-    g.dragEnd()
-    g.mouseDown(plain)
-    expect(g.dragStart(() => {})).toBe(false)
+    expect(r.release).toHaveBeenCalledOnce()
   })
 })
