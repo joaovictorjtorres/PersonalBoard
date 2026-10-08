@@ -21,13 +21,20 @@ export interface TableStore {
   getMeta(): TableMeta | null
   initTable(meta: TableMeta, layers: Layer[]): void
   getLayers(): Layer[]
+  putLayer(layer: Layer): void
+  deleteLayer(id: string): void
   getMember(clientId: string): StoredMember | null
   upsertMember(member: StoredMember): void
+  deleteMember(clientId: string): void
   listMembers(): StoredMember[]
   getObject(id: string): TableObject | null
   listObjects(): TableObject[]
   putObject(object: TableObject): void
   deleteObject(id: string): void
+  listNotes(): Record<string, string>
+  /** Texto vazio apaga a anotação. */
+  setNote(objectId: string, text: string): void
+  deleteNote(objectId: string): void
   getAppliedOp(clientId: string, opId: string): number | null
   recordAppliedOp(clientId: string, opId: string, version: number): void
 }

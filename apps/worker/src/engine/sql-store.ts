@@ -9,6 +9,7 @@ export class SqlStore implements TableStore {
     sql.exec('CREATE TABLE IF NOT EXISTS members (client_id TEXT PRIMARY KEY, data TEXT NOT NULL)')
     sql.exec('CREATE TABLE IF NOT EXISTS objects (id TEXT PRIMARY KEY, layer_id TEXT NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL, version INTEGER NOT NULL)')
     sql.exec('CREATE TABLE IF NOT EXISTS applied_ops (seq INTEGER PRIMARY KEY, client_id TEXT NOT NULL, op_id TEXT NOT NULL, version INTEGER NOT NULL, UNIQUE(client_id, op_id))')
+    sql.exec('CREATE TABLE IF NOT EXISTS gm_notes (object_id TEXT PRIMARY KEY, text TEXT NOT NULL)')
   }
 
   getMeta(): TableMeta | null {
@@ -62,6 +63,32 @@ export class SqlStore implements TableStore {
 
   deleteObject(id: string): void {
     this.sql.exec('DELETE FROM objects WHERE id = ?', id)
+  }
+
+  putLayer(layer: Layer): void {
+    this.sql.exec('INSERT OR REPLACE INTO layers (id, data) VALUES (?, ?)', layer.id, JSON.stringify(layer))
+  }
+
+  deleteLayer(id: string): void {
+    this.sql.exec('DELETE FROM layers WHERE id = ?', id)
+  }
+
+  deleteMember(clientId: string): void {
+    this.sql.exec('DELETE FROM members WHERE client_id = ?', clientId)
+  }
+
+  listNotes(): Record<string, string> {
+    const rows = this.sql.exec<{ object_id: string; text: string }>('SELECT object_id, text FROM gm_notes').toArray()
+    return Object.fromEntries(rows.map((r) => [r.object_id, r.text]))
+  }
+
+  setNote(objectId: string, text: string): void {
+    if (text === '') this.deleteNote(objectId)
+    else this.sql.exec('INSERT OR REPLACE INTO gm_notes (object_id, text) VALUES (?, ?)', objectId, text)
+  }
+
+  deleteNote(objectId: string): void {
+    this.sql.exec('DELETE FROM gm_notes WHERE object_id = ?', objectId)
   }
 
   getAppliedOp(clientId: string, opId: string): number | null {

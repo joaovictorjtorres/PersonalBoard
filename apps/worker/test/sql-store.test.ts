@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest'
 import { TableObjectSchema } from '@mesa/shared'
 import { normalizeObject } from '../src/engine/migrate'
 import { SqlStore } from '../src/engine/sql-store'
+import { MemoryStore } from '../src/engine/memory-store'
+import { checkStoreContract } from './store-contract'
 
 const freshStub = () => env.TABLES.get(env.TABLES.idFromName(`store-${crypto.randomUUID()}`))
 
@@ -41,5 +43,17 @@ describe('SqlStore — migração do M1', () => {
     expect(single).toMatchObject({ segments: [[3, 4, 3.01, 4]] })
     const current = { ...m1Image, control: { mode: 'all', clientIds: [] } }
     expect(normalizeObject(current)).toEqual(current)
+  })
+})
+
+describe('contrato do TableStore', () => {
+  it('MemoryStore', () => {
+    checkStoreContract(new MemoryStore())
+  })
+
+  it('SqlStore', async () => {
+    await runInDurableObject(freshStub(), (_instance, state) => {
+      checkStoreContract(new SqlStore(state.storage.sql))
+    })
   })
 })
