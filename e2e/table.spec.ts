@@ -302,3 +302,26 @@ test('token "só o mestre": o arrasto do jogador não move o token na tela do me
   expect(Math.round((await objects(gm))[0].y)).toBe(Math.round(moved.y))
   expect(Math.round((await objects(player))[0].y)).toBe(Math.round(moved.y))
 })
+
+test('passada de borracha no meio de uma linha deixa 2 pedaços na tela do outro', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await selectLayer(player, 'Desenhos')
+  await player.getByRole('button', { name: 'Lápis (P)' }).click()
+  await player.mouse.move(300, 300)
+  await player.mouse.down()
+  await player.mouse.move(600, 300, { steps: 10 })
+  await player.mouse.up()
+  await expect.poll(async () => (await objects(gm)).filter((o) => o.type === 'stroke').length).toBe(1)
+
+  await player.keyboard.press('e')
+  await expect(player.getByRole('button', { name: 'Borracha (E)' })).toBeVisible()
+  await player.mouse.move(450, 250)
+  await player.mouse.down()
+  await player.mouse.move(450, 350, { steps: 10 })
+  await player.mouse.up()
+
+  await expect.poll(async () => (await objects(gm)).find((o) => o.type === 'stroke')?.segments?.length).toBe(2)
+})

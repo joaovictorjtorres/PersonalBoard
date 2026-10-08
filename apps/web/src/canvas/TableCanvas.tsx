@@ -96,7 +96,11 @@ export function TableCanvas() {
         return (
           <Layer key={layer.id} listening={active && !panning} opacity={isGm && layer.visibility === 'gm' ? 0.5 : 1}>
             {list.map((o) =>
-              o.type === 'image' ? <ImageNode key={o.id} object={o} /> : <StrokeNode key={o.id} object={o} />,
+              o.type === 'image' ? (
+                <ImageNode key={o.id} object={o} />
+              ) : (
+                <StrokeNode key={o.id} object={o} segments={drawing.erasePreview[o.id]} />
+              ),
             )}
             {list.map((o) => (
               <ObjectDecorations key={`deco_${o.id}`} object={o} />
