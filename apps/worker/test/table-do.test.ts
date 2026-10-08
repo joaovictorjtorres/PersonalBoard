@@ -1,6 +1,7 @@
 import { env, exports } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
+import type { Op } from '@mesa/shared'
 import { SqlStore } from '../src/engine/sql-store'
 import { TestClient, createTable, tokenObject } from './helpers'
 
@@ -235,5 +236,163 @@ describe('TableDO — identidade (clientSecret)', () => {
     const intruder = await TestClient.connect(tableId)
     intruder.send({ t: 'hello', clientId, nickname: 'Ana' })
     expect(await intruder.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
+  })
+})
+
+describe('TableDO — M2', () => {
+  const op = (opId: string, o: Op) => ({ t: 'op' as const, opId, op: o })
+
+  async function table() {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    const p = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    const { clientId: playerId } = await p.hello('Ana')
+    return { tableId, gmSecret, gm, p, playerId }
+  }
+
+  it('responde pong ao ping sem passar pelo handler', async () => {
+    const { tableId } = await createTable()
+    const c = await TestClient.connect(tableId)
+    c.send('ping')
+    await c.waitForRaw('pong')
+  })
+
+  it('op com opId legível e schema inválido recebe reject invalid (só depois do hello)', async () => {
+    const { tableId } = await createTable()
+    const c = await TestClient.connect(tableId)
+    const bad = JSON.stringify({ t: 'op', opId: 'op_bad', op: { kind: 'create', object: { ...tokenObject(), x: 'x' } } })
+    c.send(bad)
+    await c.expectNone('reject')
+    await c.hello('Ana')
+    c.send(bad)
+    const msg = await c.waitFor('reject')
+    expect(msg).toEqual({ t: 'reject', opId: 'op_bad', reason: 'invalid' })
+    expect('current' in msg).toBe(false)
+  })
+
+  it('anotação nunca chega ao jogador: nem ao vivo nem no snapshot', async () => {
+    const { tableId, gmSecret, gm, p } = await table()
+    const gm2 = await TestClient.connect(tableId)
+    await gm2.hello('Mestre 2', { gmSecret })
+    const obj = tokenObject()
+    gm.send(op('op_1', { kind: 'create', object: obj }))
+    await gm.waitFor('ack')
+    gm.send(op('op_2', { kind: 'noteSet', objectId: obj.id, text: 'segredo do mestre' }))
+    await gm.waitFor('ack')
+    expect(await gm2.waitFor('noteSet')).toEqual({ t: 'noteSet', objectId: obj.id, text: 'segredo do mestre' })
+    await p.expectNone('noteSet')
+    expect(JSON.stringify(p.messages)).not.toContain('segredo')
+    const late = await TestClient.connect(tableId)
+    expect((await late.hello('Bia')).welcome.snapshot.notes).toEqual({})
+    const gm3 = await TestClient.connect(tableId)
+    expect((await gm3.hello('Mestre', { gmSecret })).welcome.snapshot.notes).toEqual({ [obj.id]: 'segredo do mestre' })
+  })
+
+  it('esconder e mostrar camada ao vivo: layerHidden e layerShown com os objetos', async () => {
+    const { gm, p } = await table()
+    const obj = tokenObject()
+    gm.send(op('op_1', { kind: 'create', object: obj }))
+    await p.waitFor('op')
+    gm.send(op('op_2', { kind: 'layerUpdate', id: 'tokens', patch: { visibility: 'gm' } }))
+    expect(await p.waitFor('layerHidden')).toEqual({ t: 'layerHidden', id: 'tokens' })
+    gm.send(op('op_3', { kind: 'layerUpdate', id: 'tokens', patch: { visibility: 'all' } }))
+    const shown = await p.waitFor('layerShown')
+    expect(shown.layer).toMatchObject({ id: 'tokens', visibility: 'all' })
+    expect(shown.objects.map((o) => o.id)).toEqual([obj.id])
+  })
+
+  it('esconder a camada solta a trava do jogador e avisa o mestre', async () => {
+    const { gm, p, playerId } = await table()
+    const obj = tokenObject()
+    p.send(op('op_1', { kind: 'create', object: obj }))
+    await p.waitFor('ack')
+    p.send({ t: 'grab', objectId: obj.id })
+    await gm.waitFor('grabbed')
+    gm.send(op('op_2', { kind: 'layerUpdate', id: 'tokens', patch: { visibility: 'gm' } }))
+    expect(await gm.waitFor('released')).toEqual({ t: 'released', objectId: obj.id, clientId: playerId })
+  })
+
+  it('layerCreate entra abaixo do Mestre; jogador não recebe a camada do Mestre', async () => {
+    const { tableId, gmSecret, gm, p } = await table()
+    gm.send(op('op_1', { kind: 'layerCreate', layer: { id: 'nova', name: 'Nova camada' } }))
+    await gm.waitFor('ack')
+    expect((await p.waitFor('layerUpsert')).layer).toEqual({ id: 'nova', name: 'Nova camada', order: 3, visibility: 'all', locked: false })
+    await p.expectNone('layerUpsert', (m) => m.layer.id === 'gm')
+    const gm2 = await TestClient.connect(tableId)
+    const { welcome } = await gm2.hello('Mestre', { gmSecret })
+    expect(welcome.snapshot.layers.map((l) => `${l.id}:${l.order}`)).toEqual(['map:0', 'tokens:1', 'drawings:2', 'nova:3', 'gm:4'])
+  })
+
+  it('layerMove: limites recusados; troca válida chega ao jogador', async () => {
+    const { gm, p } = await table()
+    gm.send(op('op_1', { kind: 'layerMove', id: 'drawings', direction: 'up' }))
+    expect(await gm.waitFor('reject')).toMatchObject({ opId: 'op_1', reason: 'forbidden' })
+    gm.send(op('op_2', { kind: 'layerMove', id: 'gm', direction: 'down' }))
+    expect(await gm.waitFor('reject')).toMatchObject({ opId: 'op_2', reason: 'forbidden' })
+    gm.send(op('op_3', { kind: 'layerMove', id: 'map', direction: 'up' }))
+    await gm.waitFor('ack')
+    expect((await p.waitFor('layerUpsert', (m) => m.layer.id === 'map')).layer.order).toBe(1)
+    expect((await p.waitFor('layerUpsert', (m) => m.layer.id === 'tokens')).layer.order).toBe(0)
+  })
+
+  it('layerDelete apaga objetos e anotações; Mestre e última camada comum não saem', async () => {
+    const { tableId, gmSecret, gm, p } = await table()
+    const obj = tokenObject({ layerId: 'drawings' })
+    gm.send(op('op_1', { kind: 'create', object: obj }))
+    gm.send(op('op_2', { kind: 'noteSet', objectId: obj.id, text: 'nota' }))
+    gm.send(op('op_3', { kind: 'layerDelete', id: 'drawings' }))
+    expect(await p.waitFor('layerRemoved')).toEqual({ t: 'layerRemoved', id: 'drawings' })
+    gm.send(op('op_4', { kind: 'layerDelete', id: 'gm' }))
+    expect(await gm.waitFor('reject', (m) => m.opId === 'op_4')).toMatchObject({ reason: 'forbidden' })
+    gm.send(op('op_5', { kind: 'layerDelete', id: 'map' }))
+    await gm.waitFor('ack', (m) => m.opId === 'op_5')
+    gm.send(op('op_6', { kind: 'layerDelete', id: 'tokens' }))
+    expect(await gm.waitFor('reject', (m) => m.opId === 'op_6')).toMatchObject({ reason: 'forbidden' })
+    const gm2 = await TestClient.connect(tableId)
+    const { welcome } = await gm2.hello('Mestre', { gmSecret })
+    expect(welcome.snapshot.layers.map((l) => l.id)).toEqual(['tokens', 'gm'])
+    expect(welcome.snapshot.objects).toEqual([])
+    expect(welcome.snapshot.notes).toEqual({})
+  })
+
+  it('memberRemove: online recusado; offline removido e avisado', async () => {
+    const { tableId, gm, p, playerId } = await table()
+    const other = await TestClient.connect(tableId)
+    await other.hello('Bia')
+    gm.send(op('op_1', { kind: 'memberRemove', clientId: playerId }))
+    expect(await gm.waitFor('reject')).toMatchObject({ opId: 'op_1', reason: 'forbidden' })
+    p.close()
+    await gm.waitFor('memberLeft')
+    gm.send(op('op_2', { kind: 'memberRemove', clientId: playerId }))
+    await gm.waitFor('ack', (m) => m.opId === 'op_2')
+    expect(await other.waitFor('memberRemoved')).toEqual({ t: 'memberRemoved', clientId: playerId })
+    const late = await TestClient.connect(tableId)
+    const { welcome } = await late.hello('Caio')
+    expect(welcome.snapshot.members.map((m) => m.clientId)).not.toContain(playerId)
+  })
+
+  it('jogador que controla o token não muda layerId nem control', async () => {
+    const { p } = await table()
+    const obj = tokenObject()
+    p.send(op('op_1', { kind: 'create', object: obj }))
+    await p.waitFor('ack')
+    p.send(op('op_2', { kind: 'update', id: obj.id, patch: { layerId: 'drawings' } }))
+    expect(await p.waitFor('reject')).toMatchObject({ opId: 'op_2', reason: 'forbidden', current: { id: obj.id, layerId: 'tokens' } })
+    p.send(op('op_3', { kind: 'update', id: obj.id, patch: { control: { mode: 'all', clientIds: [] } } }))
+    expect(await p.waitFor('reject')).toMatchObject({ opId: 'op_3', reason: 'forbidden' })
+  })
+
+  it('token "só o mestre": jogador não pega nem altera', async () => {
+    const { gm, p } = await table()
+    const obj = tokenObject()
+    p.send(op('op_1', { kind: 'create', object: obj }))
+    await p.waitFor('ack')
+    gm.send(op('op_2', { kind: 'update', id: obj.id, patch: { control: { mode: 'gm', clientIds: [] } } }))
+    expect((await p.waitFor('op')).op).toMatchObject({ kind: 'upsert', object: { control: { mode: 'gm' } } })
+    p.send({ t: 'grab', objectId: obj.id })
+    expect(await p.waitFor('grabDenied')).toEqual({ t: 'grabDenied', objectId: obj.id })
+    p.send(op('op_3', { kind: 'update', id: obj.id, patch: { x: 999 } }))
+    expect(await p.waitFor('reject')).toMatchObject({ opId: 'op_3', reason: 'forbidden' })
   })
 })

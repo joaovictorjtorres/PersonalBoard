@@ -2,11 +2,13 @@ import { DurableObject } from 'cloudflare:workers'
 import {
   ClientMessageSchema,
   DEFAULT_LAYERS,
+  readOpId,
   type ClientMessage,
   type Role,
   type ServerMessage,
+  type TableObject,
 } from '@mesa/shared'
-import { TableEngine } from './engine/engine'
+import { TableEngine, type LayerChange, type OpEffect } from './engine/engine'
 import { SqlStore } from './engine/sql-store'
 import { randomSecret, safeEqual, sha256Hex } from './crypto'
 
@@ -27,6 +29,8 @@ export class TableDO extends DurableObject<Env> {
     super(ctx, env)
     this.store = new SqlStore(ctx.storage.sql)
     this.engine = new TableEngine(this.store)
+    // Heartbeat: responde sem acordar o DO da hibernação.
+    ctx.setWebSocketAutoResponse(new WebSocketRequestResponsePair('ping', 'pong'))
   }
 
   async fetch(request: Request): Promise<Response> {
@@ -66,13 +70,15 @@ export class TableDO extends DurableObject<Env> {
     } catch {
       return
     }
+    const att = this.attachment(ws)
     const parsed = ClientMessageSchema.safeParse(json)
     if (!parsed.success) {
-      console.warn('mensagem inválida', parsed.error.issues[0]?.message)
+      const opId = readOpId(json)
+      if (opId && att) this.send(ws, { t: 'reject', opId, reason: 'invalid' })
+      else console.warn('mensagem inválida', parsed.error.issues[0]?.message)
       return
     }
     const msg = parsed.data
-    const att = this.attachment(ws)
     if (msg.t === 'hello') {
       if (!att) await this.onHello(ws, msg)
       return
@@ -99,6 +105,7 @@ export class TableDO extends DurableObject<Env> {
     this.onDisconnect(ws)
   }
 
+  // Regras do clientSecret: Task 4 (inalteradas aqui).
   private async onHello(ws: WebSocket, msg: Msg<'hello'>): Promise<void> {
     const meta = this.store.getMeta()
     if (!meta) return
@@ -141,24 +148,68 @@ export class TableDO extends DurableObject<Env> {
   private onOp(ws: WebSocket, att: Attachment, msg: Msg<'op'>): void {
     const res = this.engine.applyOp(att.clientId, att.role, msg.opId, msg.op, this.onlineClientIds())
     if (!res.ok) {
-      this.send(ws, { t: 'reject', opId: msg.opId, reason: res.reason, ...(res.current !== undefined ? { current: res.current } : {}) })
+      this.send(ws, { t: 'reject', opId: msg.opId, reason: res.reason, current: res.current })
       return
     }
     this.send(ws, { t: 'ack', opId: msg.opId, version: res.version })
     if (res.duplicate) return
-    for (const effect of res.effects) {
-      if (effect.kind !== 'object') continue
-      const { before, after } = effect
-      this.broadcast(att.sessionId, (other) => {
-        if (after && this.engine.canSeeObject(other.role, after)) {
-          return { t: 'op', by: att.clientId, op: { kind: 'upsert', object: after } }
-        }
-        if (before && this.engine.canSeeObject(other.role, before)) {
-          return { t: 'op', by: att.clientId, op: { kind: 'delete', id: before.id } }
-        }
-        return null
-      })
+    for (const effect of res.effects) this.broadcastEffect(att, effect)
+  }
+
+  private broadcastEffect(author: Attachment, effect: OpEffect): void {
+    switch (effect.kind) {
+      case 'object': {
+        const { before, after } = effect
+        this.broadcast(author.sessionId, (other) => {
+          if (after && this.engine.canSeeObject(other.role, after)) {
+            return { t: 'op', by: author.clientId, op: { kind: 'upsert', object: after } }
+          }
+          if (before && this.engine.canSeeObject(other.role, before)) {
+            return { t: 'op', by: author.clientId, op: { kind: 'delete', id: before.id } }
+          }
+          return null
+        })
+        return
+      }
+      case 'layers':
+        for (const change of effect.changes) this.broadcastLayerChange(author.sessionId, change)
+        return
+      case 'layerRemoved': {
+        const { layer } = effect
+        this.broadcast(author.sessionId, (other) =>
+          other.role === 'gm' || layer.visibility === 'all' ? { t: 'layerRemoved', id: layer.id } : null,
+        )
+        return
+      }
+      case 'note':
+        this.broadcast(author.sessionId, (other) =>
+          other.role === 'gm' ? { t: 'noteSet', objectId: effect.objectId, text: effect.text } : null,
+        )
+        return
+      case 'memberRemoved':
+        this.broadcast(author.sessionId, () => ({ t: 'memberRemoved', clientId: effect.clientId }))
+        return
+      case 'released':
+        this.broadcastReleased(effect.objectId, effect.clientId)
+        return
     }
+  }
+
+  // Jogadores só enxergam camadas com visibility 'all'; o mestre recebe tudo.
+  private broadcastLayerChange(excludeSessionId: string, { before, after }: LayerChange): void {
+    const wasVisible = before?.visibility === 'all'
+    const isVisible = after.visibility === 'all'
+    let shownObjects: TableObject[] | null = null
+    this.broadcast(excludeSessionId, (other) => {
+      if (other.role === 'gm') return { t: 'layerUpsert', layer: after }
+      if (isVisible && (wasVisible || before === null)) return { t: 'layerUpsert', layer: after }
+      if (isVisible) {
+        shownObjects ??= this.store.listObjects().filter((o) => o.layerId === after.id)
+        return { t: 'layerShown', layer: after, objects: shownObjects }
+      }
+      if (wasVisible) return { t: 'layerHidden', id: after.id }
+      return null
+    })
   }
 
   private onGrab(ws: WebSocket, att: Attachment, msg: Msg<'grab'>): void {

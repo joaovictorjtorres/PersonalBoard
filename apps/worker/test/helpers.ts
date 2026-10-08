@@ -29,11 +29,18 @@ type Msg<T extends ServerMessage['t']> = Extract<ServerMessage, { t: T }>
 
 export class TestClient {
   readonly messages: ServerMessage[] = []
+  /** Mensagens que não são JSON (ex.: 'pong'). */
+  readonly raw: string[] = []
   private consumed = new Set<number>()
 
   private constructor(private ws: WebSocket) {
     ws.addEventListener('message', (e) => {
-      this.messages.push(JSON.parse(e.data as string) as ServerMessage)
+      const data = e.data as string
+      try {
+        this.messages.push(JSON.parse(data) as ServerMessage)
+      } catch {
+        this.raw.push(data)
+      }
     })
   }
 
@@ -78,6 +85,14 @@ export class TestClient {
     await sleep(ms)
     const found = this.messages.some((m, idx) => !this.consumed.has(idx) && m.t === t && pred(m as Msg<T>))
     expect(found, `não esperava ${t}`).toBe(false)
+  }
+
+  async waitForRaw(text: string): Promise<void> {
+    for (let i = 0; i < 200; i++) {
+      if (this.raw.includes(text)) return
+      await sleep(10)
+    }
+    throw new Error(`timeout esperando ${text}`)
   }
 
   close(): void {
