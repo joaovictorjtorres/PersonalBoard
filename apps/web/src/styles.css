@@ -55,7 +55,7 @@ textarea { font: inherit; background: #2a2c33; color: #eee; border: 1px solid #4
 .right-column { position: absolute; top: 12px; right: 12px; bottom: 12px; width: 300px; display: flex; flex-direction: column; gap: 8px; z-index: 10; pointer-events: none; }
 .right-column > * { pointer-events: auto; }
 .right-column > .panel { position: static; }
-.right-column > .members { max-height: 25vh; overflow: auto; }
+.right-column > .members { max-height: 25vh; overflow: auto; z-index: 12; } /* acima do chat: o menu do membro (fixed) fica dentro deste contexto de empilhamento */
 .right-column > .layers { width: auto; margin-top: auto; }
 .chat { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
 .chat.open { flex: 1 1 auto; }
