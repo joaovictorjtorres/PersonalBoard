@@ -68,6 +68,8 @@ const HelloSchema = z.object({
   nickname: z.string().trim().min(1).max(32),
   gmSecret: z.string().max(128).optional(),
   clientSecret: z.string().max(128).optional(),
+  /** Versão do protocolo do cliente; 2 = guarda clientSecret (M2). */
+  v: z.number().int().optional(),
 })
 export type HelloMessage = z.infer<typeof HelloSchema>
 

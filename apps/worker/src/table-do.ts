@@ -117,14 +117,21 @@ export class TableDO extends DurableObject<Env> {
     const candidateHash = await sha256Hex(candidate)
 
     const existing = this.store.getMember(msg.clientId)
+    // Cliente M1 (sem v:2) não guarda segredo: admitido sem emitir hash, para não se trancar fora.
+    const m2 = msg.v === 2
     let issued: string | undefined
     if (existing?.secretHash) {
-      if (!providedHash || !safeEqual(providedHash, existing.secretHash)) {
-        this.send(ws, { t: 'error', reason: 'auth' })
-        ws.close(4401, 'auth')
-        return
+      const ok = providedHash !== null && safeEqual(providedHash, existing.secretHash)
+      if (!ok) {
+        if (role !== 'gm') {
+          this.send(ws, { t: 'error', reason: 'auth' })
+          ws.close(4401, 'auth')
+          return
+        }
+        // O link do mestre já prova a identidade de mestre: recupera e rotaciona o segredo.
+        if (m2) issued = candidate
       }
-    } else {
+    } else if (m2) {
       issued = candidate // membro novo ou do M1 sem hash: trust-on-first-use
     }
 

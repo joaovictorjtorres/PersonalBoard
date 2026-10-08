@@ -41,6 +41,7 @@ function ObjectMenuBody({ object, x, y, onClose }: { object: TableObject; x: num
   useDismiss(ref, onClose)
   const isGm = useTable((s) => s.self?.role === 'gm')
   const actions = useTableActions()
+  const layerEditable = useTable(() => actions.canEditLayer(object.layerId))
   const update = (patch: ObjectPatch) => actions.submit({ kind: 'update', id: object.id, patch })
 
   return (
@@ -55,15 +56,17 @@ function ObjectMenuBody({ object, x, y, onClose }: { object: TableObject; x: num
       {isGm && <PermissionsField objectId={object.id} control={object.control} onChange={(control) => update({ control })} />}
       {isGm && <NoteField objectId={object.id} />}
       {isGm && <MoveToLayer object={object} onMoved={onClose} />}
-      <button
-        className="danger"
-        onClick={() => {
-          actions.submit({ kind: 'delete', id: object.id })
-          onClose()
-        }}
-      >
-        <Trash2 size={16} aria-hidden /> Apagar
-      </button>
+      {layerEditable && (
+        <button
+          className="danger"
+          onClick={() => {
+            actions.submit({ kind: 'delete', id: object.id })
+            onClose()
+          }}
+        >
+          <Trash2 size={16} aria-hidden /> Apagar
+        </button>
+      )}
     </div>
   )
 }

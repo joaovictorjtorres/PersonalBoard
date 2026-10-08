@@ -85,6 +85,7 @@ export function createTableStore(
             sentSecret = readClientSecret(tableId)
             return {
               t: 'hello',
+              v: 2,
               clientId: getClientId(),
               nickname,
               ...(gmSecret ? { gmSecret } : {}),

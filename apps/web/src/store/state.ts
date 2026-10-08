@@ -17,7 +17,8 @@ export interface PendingOp {
   op: Op
   before: TableObject | null
   isUndo: boolean
-  inverse: Op | null
+  /** Ops que desfazem esta, na ordem de execução. */
+  inverse: Op[] | null
   group: { id: string; index: number } | null
   prev: LocalPrev | null
   /** layerMove: ordem absoluta resultante, para a reaplicação ser idempotente */
@@ -26,7 +27,7 @@ export interface PendingOp {
 
 /** Grupo de desfazer ainda esperando ack/reject de todas as ops. */
 export interface UndoGroup {
-  inverses: Array<Op | null>
+  inverses: Array<Op[] | null>
   settled: number
 }
 

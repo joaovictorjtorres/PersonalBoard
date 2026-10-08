@@ -1,4 +1,4 @@
-import type { ObjectPatch, Op, TableObject } from '@mesa/shared'
+import type { ObjectPatch, Op, Role, TableObject } from '@mesa/shared'
 
 export function inverseOf(op: Op, before: TableObject | null): Op | null {
   switch (op.kind) {
@@ -23,4 +23,17 @@ export function inverseOf(op: Op, before: TableObject | null): Op | null {
     default:
       return null
   }
+}
+
+/**
+ * Grupo de ops que desfaz `op`. Quando o mestre desfaz um delete, a recriação o torna
+ * controlador; o update extra devolve o controle anterior (o servidor permite ao mestre).
+ */
+export function inverseGroupOf(op: Op, before: TableObject | null, role: Role | undefined): Op[] | null {
+  const inv = inverseOf(op, before)
+  if (!inv) return null
+  if (op.kind === 'delete' && inv.kind === 'create' && role === 'gm' && before) {
+    return [inv, { kind: 'update', id: before.id, patch: { control: before.control } }]
+  }
+  return [inv]
 }

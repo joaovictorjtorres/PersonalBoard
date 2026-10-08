@@ -239,6 +239,66 @@ describe('TableDO — identidade (clientSecret)', () => {
   })
 })
 
+describe('TableDO — migração M1→M2 e recuperação do mestre', () => {
+  it('hello sem v (bundle M1) entra sem segredo e sem hash; v:2 depois adota um (TOFU)', async () => {
+    const { tableId } = await createTable()
+    const clientId = crypto.randomUUID()
+    const old = await TestClient.connect(tableId)
+    const { welcome } = await old.hello('Ana', { clientId, v: null })
+    expect(welcome.clientSecret).toBeUndefined()
+    const stored = await runInDurableObject(env.TABLES.get(env.TABLES.idFromName(tableId)), (_i, state) =>
+      new SqlStore(state.storage.sql).getMember(clientId),
+    )
+    expect(stored?.secretHash).toBeUndefined()
+    old.close()
+
+    const again = await TestClient.connect(tableId)
+    const { welcome: w2 } = await again.hello('Ana', { clientId, v: null })
+    expect(w2.clientSecret).toBeUndefined()
+    again.close()
+
+    const fresh = await TestClient.connect(tableId)
+    const { welcome: w3 } = await fresh.hello('Ana', { clientId })
+    expect(w3.clientSecret).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    fresh.close()
+
+    const intruder = await TestClient.connect(tableId)
+    intruder.send({ t: 'hello', v: 2, clientId, nickname: 'Ana' })
+    expect(await intruder.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
+  })
+
+  it('mestre com gmSecret válido recupera identidade e rotaciona o segredo; jogador com segredo errado leva auth', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const first = await TestClient.connect(tableId)
+    const { clientId, welcome } = await first.hello('Mestre', { gmSecret })
+    const oldSecret = welcome.clientSecret!
+    first.close()
+
+    const recovered = await TestClient.connect(tableId)
+    const { welcome: w2 } = await recovered.hello('Mestre', { clientId, gmSecret, clientSecret: 'x'.repeat(43) })
+    expect(w2.self.role).toBe('gm')
+    expect(w2.clientSecret).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(w2.clientSecret).not.toBe(oldSecret)
+    recovered.close()
+
+    const noSecret = await TestClient.connect(tableId)
+    const { welcome: w3 } = await noSecret.hello('Mestre', { clientId, gmSecret })
+    expect(w3.clientSecret).toBeDefined()
+    noSecret.close()
+
+    const stale = await TestClient.connect(tableId)
+    stale.send({ t: 'hello', v: 2, clientId, nickname: 'Mestre', clientSecret: oldSecret })
+    expect(await stale.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
+
+    const player = await TestClient.connect(tableId)
+    const { clientId: pid } = await player.hello('Ana')
+    player.close()
+    const bad = await TestClient.connect(tableId)
+    bad.send({ t: 'hello', v: 2, clientId: pid, nickname: 'Ana', clientSecret: 'b'.repeat(43), gmSecret: 'errado' })
+    expect(await bad.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
+  })
+})
+
 describe('TableDO — M2', () => {
   const op = (opId: string, o: Op) => ({ t: 'op' as const, opId, op: o })
 

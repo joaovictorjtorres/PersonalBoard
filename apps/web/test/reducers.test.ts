@@ -81,6 +81,19 @@ describe('submit / ack / reject', () => {
     expect(s.toasts.at(-1)?.text).toBe('Não foi possível desfazer')
   })
 
+  it('reject not_found com a camada removida mostra aviso de permissão', () => {
+    let s = reduceSubmit(joined([stored()]), 'op_1', { kind: 'update', id: 't1', patch: { x: 9 } }, { isUndo: false })
+    s = { ...s, layers: s.layers.filter((l) => l.id !== 'tokens'), confirmedLayers: s.confirmedLayers.filter((l) => l.id !== 'tokens') }
+    s = reduceServer(s, { t: 'reject', opId: 'op_1', reason: 'not_found', current: null }, 0)
+    expect(s.toasts.at(-1)?.text).toBe('Sem permissão nessa camada')
+  })
+
+  it('reject not_found com a camada presente mantém o texto padrão', () => {
+    let s = reduceSubmit(joined([stored()]), 'op_1', { kind: 'update', id: 't1', patch: { x: 9 } }, { isUndo: false })
+    s = reduceServer(s, { t: 'reject', opId: 'op_1', reason: 'not_found', current: null }, 0)
+    expect(s.toasts.at(-1)?.text).toBe('O objeto não existe mais')
+  })
+
   it('reject de delete por not_found não mostra toast', () => {
     let s = reduceSubmit(joined([stored()]), 'op_1', { kind: 'delete', id: 't1' }, { isUndo: false })
     s = reduceServer(s, { t: 'reject', opId: 'op_1', reason: 'not_found', current: null }, 0)

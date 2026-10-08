@@ -14,7 +14,8 @@ export function ImageNode({ object }: { object: ImageObject }) {
   const preview = useTable((s) => s.dragPreviews[object.id])
   const mayControl = useTable((s) => !!s.self && canControl(object, s.self.clientId, s.self.role))
   const g = lockedByOther && preview ? preview : object
-  const interactive = tool === 'select' && !lockedByOther && mayControl
+  const layerEditable = useTable(() => actions.canEditLayer(object.layerId))
+  const interactive = tool === 'select' && !lockedByOther && mayControl && layerEditable
 
   return (
     <KonvaImage

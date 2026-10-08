@@ -52,6 +52,8 @@ pnpm run deploy
 O deploy imprime a URL `https://mesa-virtual.<sua-conta>.workers.dev`. Mesas criadas
 localmente não vão para a nuvem automaticamente.
 
+Ao atualizar o servidor para uma versão nova, feche todas as abas da mesa antes e abra de novo depois.
+
 ## Limites do plano gratuito
 
 Durable Objects (SQLite): 100 mil linhas escritas/dia, 5 milhões lidas/dia, 5 GB no total.

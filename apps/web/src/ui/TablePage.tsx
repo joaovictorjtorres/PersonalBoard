@@ -57,7 +57,7 @@ function TableView() {
       <div className="fullscreen-msg">
         <div>
           {fatal === 'auth' ? (
-            <p>Identidade inválida — limpe os dados do site ou entre com outro navegador</p>
+            <p>Identidade inválida nesta mesa. Peça ao mestre para remover você da lista de membros e recarregue a página.</p>
           ) : (
             <>
               <p>Mesa não encontrada.</p>

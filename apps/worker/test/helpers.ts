@@ -56,12 +56,13 @@ export class TestClient {
     this.ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg))
   }
 
-  async hello(nickname: string, opts: { clientId?: string; gmSecret?: string; clientSecret?: string } = {}) {
+  async hello(nickname: string, opts: { clientId?: string; gmSecret?: string; clientSecret?: string; v?: number | null } = {}) {
     const clientId = opts.clientId ?? crypto.randomUUID()
     this.send({
       t: 'hello',
       clientId,
       nickname,
+      ...(opts.v === null ? {} : { v: opts.v ?? 2 }),
       ...(opts.gmSecret ? { gmSecret: opts.gmSecret } : {}),
       ...(opts.clientSecret ? { clientSecret: opts.clientSecret } : {}),
     })

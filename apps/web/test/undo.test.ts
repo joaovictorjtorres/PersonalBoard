@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { TableObject } from '@mesa/shared'
-import { inverseOf } from '../src/store/undo'
+import { inverseGroupOf, inverseOf } from '../src/store/undo'
 
 const obj: TableObject = {
   id: 't1', type: 'image', layerId: 'tokens', assetKey: 'a'.repeat(64),
@@ -38,5 +38,20 @@ describe('inverseOf', () => {
     expect(inverseOf({ kind: 'update', id: 't1', patch: { title: null } }, { ...obj, title: 'Orc' })).toEqual({
       kind: 'update', id: 't1', patch: { title: 'Orc' },
     })
+  })
+})
+
+describe('inverseGroupOf', () => {
+  it('mestre desfazendo delete recria e devolve o controle anterior', () => {
+    const group = inverseGroupOf({ kind: 'delete', id: 't1' }, obj, 'gm')
+    expect(group).toHaveLength(2)
+    expect(group?.[0]).toMatchObject({ kind: 'create' })
+    expect(group?.[1]).toEqual({ kind: 'update', id: 't1', patch: { control: obj.control } })
+  })
+
+  it('jogador desfazendo delete só recria; outras ops têm uma inversa', () => {
+    expect(inverseGroupOf({ kind: 'delete', id: 't1' }, obj, 'player')).toEqual([inverseOf({ kind: 'delete', id: 't1' }, obj)])
+    expect(inverseGroupOf({ kind: 'update', id: 't1', patch: { x: 5 } }, obj, 'gm')).toHaveLength(1)
+    expect(inverseGroupOf({ kind: 'delete', id: 't1' }, null, 'gm')).toBeNull()
   })
 })

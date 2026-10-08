@@ -12,7 +12,8 @@ export function StrokeNode({ object, segments }: { object: StrokeObject; segment
   const preview = useTable((s) => s.dragPreviews[object.id])
   const mayControl = useTable((s) => !!s.self && canControl(object, s.self.clientId, s.self.role))
   const pos = lockedByOther && preview ? preview : object
-  const interactive = tool === 'select' && !lockedByOther && mayControl
+  const layerEditable = useTable(() => actions.canEditLayer(object.layerId))
+  const interactive = tool === 'select' && !lockedByOther && mayControl && layerEditable
 
   // Prévia local da borracha sobrepõe o traço original; [] = apagado por inteiro.
   const shown = segments ?? object.segments

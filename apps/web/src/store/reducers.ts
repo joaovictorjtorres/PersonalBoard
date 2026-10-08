@@ -13,7 +13,7 @@ import {
 } from '@mesa/shared'
 import type { ConnStatus } from '../sync/SyncClient'
 import { applyLocalOp, opTargetId } from './localOps'
-import { inverseOf } from './undo'
+import { inverseGroupOf } from './undo'
 import type { LocalPrev, PendingOp, TableState, Toast } from './state'
 
 const REJECT_TEXT: Record<RejectReason, string> = {
@@ -24,7 +24,9 @@ const REJECT_TEXT: Record<RejectReason, string> = {
   forbidden: 'Sem permissão nessa camada',
 }
 
-export function rejectText(op: Op, reason: RejectReason): string {
+export function rejectText(op: Op, reason: RejectReason, layerGone = false): string {
+  // a camada sumiu no meio da ação: o servidor responde not_found, mas o que vale para o usuário é a permissão
+  if (reason === 'not_found' && layerGone) return REJECT_TEXT.forbidden
   if (reason === 'forbidden') {
     if (op.kind === 'memberRemove') return 'Não dá para remover quem está online'
     if (op.kind === 'layerDelete') return 'Essa camada não pode ser removida'
@@ -210,7 +212,7 @@ function revertLocal<S extends TableState>(s: S, p: PendingOp): S {
   }
 }
 
-function settleGroup<S extends TableState>(s: S, p: PendingOp, inverse: Op | null): S {
+function settleGroup<S extends TableState>(s: S, p: PendingOp, inverse: Op[] | null): S {
   if (!p.group) return s
   const group = s.undoGroups[p.group.id]
   if (!group) return s
@@ -218,7 +220,7 @@ function settleGroup<S extends TableState>(s: S, p: PendingOp, inverse: Op | nul
   inverses[p.group.index] = inverse
   const settled = group.settled + 1
   if (settled < inverses.length) return { ...s, undoGroups: { ...s.undoGroups, [p.group.id]: { inverses, settled } } }
-  const ops = inverses.filter((op): op is Op => op !== null).reverse()
+  const ops = inverses.filter((i): i is Op[] => i !== null).reverse().flat()
   return {
     ...s,
     undoGroups: omit(s.undoGroups, p.group.id),
@@ -242,7 +244,7 @@ export function reduceSubmitBatch<S extends TableState>(
       prev: applied.prev,
       layerOrders: applied.layerOrders,
       isUndo: opts.isUndo,
-      inverse: opts.isUndo ? null : inverseOf(op, applied.before),
+      inverse: opts.isUndo ? null : inverseGroupOf(op, applied.before, s.self?.role),
       group: opts.isUndo ? null : { id: opts.groupId, index },
     }
   })
@@ -342,7 +344,12 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
       }
       next = settleGroup(next, p, null)
       if (p.op.kind === 'delete' && msg.reason === 'not_found') return next
-      return addToast(next, p.isUndo ? 'Não foi possível desfazer' : rejectText(p.op, msg.reason))
+      const layerIds: string[] = []
+      if (p.op.kind === 'create') layerIds.push(p.op.object.layerId)
+      else if (p.op.kind === 'update' && p.op.patch.layerId) layerIds.push(p.op.patch.layerId)
+      if (p.before) layerIds.push(p.before.layerId)
+      const layerGone = layerIds.some((id) => !next.layers.some((l) => l.id === id))
+      return addToast(next, p.isUndo ? 'Não foi possível desfazer' : rejectText(p.op, msg.reason, layerGone))
     }
 
     case 'op': {
