@@ -14,7 +14,7 @@ const stored = (id = 't1', over: Partial<TableObject> = {}): TableObject =>
 const welcome = (objects: TableObject[] = []): ServerMessage => ({
   t: 'welcome',
   self,
-  snapshot: { meta: { id: 'T', name: 'M' }, members: [self], layers: DEFAULT_LAYERS.slice(0, 3), objects, locks: [] },
+  snapshot: { meta: { id: 'T', name: 'M' }, members: [self], layers: DEFAULT_LAYERS.slice(0, 3), objects, locks: [], notes: {} },
 })
 
 function joined(objects: TableObject[] = []): TableState {

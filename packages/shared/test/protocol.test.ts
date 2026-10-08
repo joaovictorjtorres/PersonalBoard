@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ClientMessageSchema, ObjectPatchSchema, OpSchema, TableObjectSchema } from '../src'
+import { ClientMessageSchema, ObjectPatchSchema, OpSchema, TableObjectSchema, isObjectOp, readOpId } from '../src'
 
 const uuid = '3f1c2b9e-8a4d-4c1e-9b7a-2d5e6f708192'
 const image = {
@@ -67,5 +67,56 @@ describe('TableObjectSchema', () => {
     const control = { mode: 'list', clientIds: ['c'] }
     expect(TableObjectSchema.safeParse(image).success).toBe(false)
     expect(TableObjectSchema.safeParse({ ...image, ownerId: 'c', version: 1, updatedBy: 'c', control }).success).toBe(true)
+  })
+})
+
+describe('operações do M2', () => {
+  it('aceita as operações novas', () => {
+    const ops = [
+      { kind: 'layerCreate', layer: { id: 'nova_1', name: 'Nova camada' } },
+      { kind: 'layerUpdate', id: 'map', patch: { name: 'Masmorra', visibility: 'gm', locked: true } },
+      { kind: 'layerDelete', id: 'map' },
+      { kind: 'layerMove', id: 'map', direction: 'up' },
+      { kind: 'noteSet', objectId: 'tok1', text: 'tem 3 PV' },
+      { kind: 'memberRemove', clientId: '3f1c2b9e-8a4d-4c1e-9b7a-2d5e6f708192' },
+    ]
+    for (const op of ops) expect(OpSchema.safeParse(op).success, op.kind).toBe(true)
+  })
+
+  // Review Focus #2
+  it('recusa nome de camada só com espaços ou com mais de 40 caracteres', () => {
+    expect(OpSchema.safeParse({ kind: 'layerCreate', layer: { id: 'n', name: '   ' } }).success).toBe(false)
+    expect(OpSchema.safeParse({ kind: 'layerUpdate', id: 'map', patch: { name: 'x'.repeat(41) } }).success).toBe(false)
+    expect(OpSchema.parse({ kind: 'layerUpdate', id: 'map', patch: { name: '  Cripta ' } })).toEqual({
+      kind: 'layerUpdate', id: 'map', patch: { name: 'Cripta' },
+    })
+  })
+
+  it('layerUpdate recusa campos fora do patch (ex.: order)', () => {
+    expect(OpSchema.safeParse({ kind: 'layerUpdate', id: 'map', patch: { order: 9 } }).success).toBe(false)
+  })
+
+  it('layerMove só aceita up/down e noteSet limita 2000 caracteres', () => {
+    expect(OpSchema.safeParse({ kind: 'layerMove', id: 'map', direction: 'top' }).success).toBe(false)
+    expect(OpSchema.safeParse({ kind: 'noteSet', objectId: 'tok1', text: 'x'.repeat(2001) }).success).toBe(false)
+    expect(OpSchema.safeParse({ kind: 'noteSet', objectId: 'tok1', text: '' }).success).toBe(true)
+  })
+
+  it('isObjectOp separa operações de objeto', () => {
+    expect(isObjectOp({ kind: 'delete', id: 'x' })).toBe(true)
+    expect(isObjectOp({ kind: 'layerDelete', id: 'x' })).toBe(false)
+  })
+})
+
+describe('readOpId', () => {
+  it('lê opId de op mal formada', () => {
+    expect(readOpId({ t: 'op', opId: 'op_1', op: { kind: '???' } })).toBe('op_1')
+  })
+  it('ignora o que não é op ou não tem opId legível', () => {
+    expect(readOpId({ t: 'grab', opId: 'op_1' })).toBeNull()
+    expect(readOpId({ t: 'op', opId: 42 })).toBeNull()
+    expect(readOpId({ t: 'op', opId: 'x'.repeat(65) })).toBeNull()
+    expect(readOpId('op')).toBeNull()
+    expect(readOpId(null)).toBeNull()
   })
 })

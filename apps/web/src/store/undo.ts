@@ -20,5 +20,7 @@ export function inverseOf(op: Op, before: TableObject | null): Op | null {
       }
       return { kind: 'update', id: op.id, patch: patch as ObjectPatch }
     }
+    default:
+      return null
   }
 }

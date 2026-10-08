@@ -21,7 +21,7 @@ class FakeSocket implements WebSocketLike {
 const welcome: ServerMessage = {
   t: 'welcome',
   self: { clientId: 'c', nickname: 'Ana', color: '#000000', role: 'player', online: true },
-  snapshot: { meta: { id: 'T', name: 'M' }, members: [], layers: [], objects: [], locks: [] },
+  snapshot: { meta: { id: 'T', name: 'M' }, members: [], layers: [], objects: [], locks: [], notes: {} },
 }
 const op: Op = { kind: 'delete', id: 'x' }
 

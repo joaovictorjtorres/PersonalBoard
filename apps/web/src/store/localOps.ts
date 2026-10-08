@@ -1,7 +1,8 @@
 import { mergePatch, type Op, type TableObject } from '@mesa/shared'
 
 export function opTargetId(op: Op): string {
-  return op.kind === 'create' ? op.object.id : op.id
+  if (op.kind === 'create') return op.object.id
+  return op.kind === 'update' || op.kind === 'delete' ? op.id : ''
 }
 
 export function applyLocalOp(objects: Record<string, TableObject>, op: Op, selfId: string): Record<string, TableObject> {
@@ -27,5 +28,7 @@ export function applyLocalOp(objects: Record<string, TableObject>, op: Op, selfI
       const { [op.id]: _removed, ...rest } = objects
       return rest
     }
+    default:
+      return objects
   }
 }

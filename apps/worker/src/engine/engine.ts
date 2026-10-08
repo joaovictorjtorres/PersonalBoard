@@ -92,6 +92,7 @@ export class TableEngine {
         const o = this.store.getObject(l.objectId)
         return !!o && this.canSeeObject(role, o)
       }),
+      notes: {},
     }
   }
 
@@ -119,6 +120,8 @@ export class TableEngine {
       this.store.putObject(after)
       return { ok: true, duplicate: false, version: 1, before: null, after }
     }
+    // Operações de camada/anotação/membro chegam na Task 6.
+    if (op.kind !== 'update' && op.kind !== 'delete') return reject('invalid', null)
 
     const before = this.store.getObject(op.id)
     if (!before || !this.canSeeObject(role, before)) return reject('not_found', null)

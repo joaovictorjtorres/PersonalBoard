@@ -193,5 +193,8 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
 
     case 'error':
       return { ...s, fatal: msg.reason, status: 'closed' }
+
+    default:
+      return s
   }
 }
