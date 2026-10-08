@@ -195,3 +195,36 @@ describe('rulings do controlador', () => {
     expect(s.selectedId).toBeNull()
   })
 })
+
+describe('base confirmada de camadas', () => {
+  const welcomeMsg = (layers: Layer[]): ServerMessage => ({
+    t: 'welcome',
+    self: gm,
+    snapshot: { meta: { id: 'T', name: 'M' }, members: [gm, player], layers, objects: [], locks: [], notes: {} },
+  })
+
+  it('rejeitar op1 e depois op2 não ressuscita a mudança de op1', () => {
+    let s = reduceSubmit(joined(gm, DEFAULT_LAYERS), 'op_1', { kind: 'layerUpdate', id: 'map', patch: { name: 'A' } }, { isUndo: false })
+    s = reduceSubmit(s, 'op_2', { kind: 'layerMove', id: 'drawings', direction: 'down' }, { isUndo: false })
+    s = reduceServer(s, { t: 'reject', opId: 'op_1', reason: 'invalid' }, 0)
+    s = reduceServer(s, { t: 'reject', opId: 'op_2', reason: 'invalid' }, 0)
+    expect(s.layers.map((l) => `${l.id}:${l.name}`)).toEqual(['map:Mapa', 'tokens:Tokens', 'drawings:Desenhos', 'gm:Mestre'])
+  })
+
+  it('layerMove com ack perdido + welcome já com a nova ordem move uma vez só', () => {
+    const s0 = reduceSubmit(joined(gm, DEFAULT_LAYERS), 'op_1', { kind: 'layerMove', id: 'drawings', direction: 'down' }, { isUndo: false })
+    const moved = s0.layers
+    expect(ids(s0)).toEqual(['map', 'drawings', 'tokens', 'gm'])
+    const s = reduceServer(s0, welcomeMsg(moved), 0)
+    expect(ids(s)).toEqual(['map', 'drawings', 'tokens', 'gm'])
+    expect(s.layers).toEqual(moved)
+  })
+
+  it('layerUpsert remoto com op local pendente: ambos aparecem e o remoto sobrevive ao reject', () => {
+    let s = reduceSubmit(joined(gm, DEFAULT_LAYERS), 'op_1', { kind: 'layerUpdate', id: 'map', patch: { name: 'Local' } }, { isUndo: false })
+    s = reduceServer(s, { t: 'layerUpsert', layer: { ...DEFAULT_LAYERS[1], name: 'Remoto' } }, 0)
+    expect(s.layers.map((l) => l.name)).toEqual(['Local', 'Remoto', 'Desenhos', 'Mestre'])
+    s = reduceServer(s, { t: 'reject', opId: 'op_1', reason: 'forbidden', current: null }, 0)
+    expect(s.layers.map((l) => l.name)).toEqual(['Mapa', 'Remoto', 'Desenhos', 'Mestre'])
+  })
+})

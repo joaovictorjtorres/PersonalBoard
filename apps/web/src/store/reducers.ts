@@ -85,6 +85,10 @@ export function applyLayerOp(layers: Layer[], op: Op): Layer[] {
   }
 }
 
+function isLayerOp(op: Op): boolean {
+  return op.kind === 'layerCreate' || op.kind === 'layerUpdate' || op.kind === 'layerMove' || op.kind === 'layerDelete'
+}
+
 function setNote(notes: Record<string, string>, objectId: string, text: string): Record<string, string> {
   return text === '' ? omit(notes, objectId) : { ...notes, [objectId]: text }
 }
@@ -98,6 +102,18 @@ export function topLayerId(layers: Layer[]): string {
   const sorted = sortLayers(layers)
   const visible = sorted.filter((l) => l.visibility === 'all')
   return (visible.at(-1) ?? sorted.at(-1))?.id ?? ''
+}
+
+function replayLayerOp(layers: Layer[], op: Op, orders: Record<string, number> | null): Layer[] {
+  if (op.kind === 'layerMove' && orders) return sortLayers(layers.map((l) => (l.id in orders ? { ...l, order: orders[l.id] } : l)))
+  return applyLayerOp(layers, op)
+}
+
+/** layers = confirmadas + ops de camada pendentes, em ordem de envio. */
+function recomputeLayers<S extends TableState>(s: S, pending: Record<string, PendingOp> = s.pending): S {
+  let layers = s.confirmedLayers
+  for (const p of Object.values(pending)) layers = replayLayerOp(layers, p.op, p.layerOrders)
+  return withActiveLayer({ ...s, layers })
 }
 
 function withActiveLayer<S extends TableState>(s: S): S {
@@ -120,7 +136,10 @@ function withoutLayer<S extends TableState>(s: S, layerId: string): S {
   })
 }
 
-function applyOptimistic<S extends TableState>(s: S, op: Op): { next: S; before: TableObject | null; prev: LocalPrev | null } {
+function applyOptimistic<S extends TableState>(
+  s: S,
+  op: Op,
+): { next: S; before: TableObject | null; prev: LocalPrev | null; layerOrders: Record<string, number> | null } {
   if (isObjectOp(op)) {
     const targetId = opTargetId(op)
     return {
@@ -131,52 +150,58 @@ function applyOptimistic<S extends TableState>(s: S, op: Op): { next: S; before:
       },
       before: s.objects[targetId] ?? null,
       prev: null,
+      layerOrders: null,
     }
   }
   switch (op.kind) {
     case 'layerCreate':
     case 'layerUpdate':
-    case 'layerMove':
+    case 'layerMove': {
+      const layers = applyLayerOp(s.layers, op)
+      let layerOrders: Record<string, number> | null = null
+      if (op.kind === 'layerMove') {
+        const old = new Map(s.layers.map((l) => [l.id, l.order]))
+        layerOrders = Object.fromEntries(layers.filter((l) => old.get(l.id) !== l.order).map((l) => [l.id, l.order]))
+      }
       return {
-        next: withActiveLayer({ ...s, layers: applyLayerOp(s.layers, op) }),
+        next: withActiveLayer({ ...s, layers }),
         before: null,
         prev: { kind: 'layers', layers: s.layers, objects: [], notes: {} },
+        layerOrders,
       }
+    }
     case 'layerDelete': {
       const objects = Object.values(s.objects).filter((o) => o.layerId === op.id)
       const notes = Object.fromEntries(objects.filter((o) => s.notes[o.id] !== undefined).map((o) => [o.id, s.notes[o.id]]))
-      return { next: withoutLayer(s, op.id), before: null, prev: { kind: 'layers', layers: s.layers, objects, notes } }
+      return { next: withoutLayer(s, op.id), before: null, prev: { kind: 'layers', layers: s.layers, objects, notes }, layerOrders: null }
     }
     case 'noteSet':
       return {
         next: { ...s, notes: setNote(s.notes, op.objectId, op.text.trim() === '' ? '' : op.text) },
         before: null,
         prev: { kind: 'note', objectId: op.objectId, text: s.notes[op.objectId] ?? null },
+        layerOrders: null,
       }
     case 'memberRemove':
       return {
         next: { ...s, members: omit(s.members, op.clientId) },
         before: null,
         prev: { kind: 'member', member: s.members[op.clientId] ?? null },
+        layerOrders: null,
       }
   }
 }
 
-// Volta ao estado de antes da op recusada e reaplica as ops de camada enviadas depois dela.
-function revertLocal<S extends TableState>(s: S, p: PendingOp, opId: string): S {
+// Desfaz localmente o que a op recusada tinha mudado (fora das camadas, que são recalculadas).
+function revertLocal<S extends TableState>(s: S, p: PendingOp): S {
   const prev = p.prev
   if (!prev) return s
   switch (prev.kind) {
     case 'layers': {
-      let layers = prev.layers
-      let after = false
-      for (const [id, other] of Object.entries(s.pending)) {
-        if (id === opId) after = true
-        else if (after) layers = applyLayerOp(layers, other.op)
-      }
+      // camadas são recalculadas a partir da base confirmada; aqui só voltam objetos e anotações de um layerDelete
       const objects = { ...s.objects }
       for (const o of prev.objects) objects[o.id] = o
-      return withActiveLayer({ ...s, layers, objects, notes: { ...s.notes, ...prev.notes } })
+      return { ...s, objects, notes: { ...s.notes, ...prev.notes } }
     }
     case 'note':
       return { ...s, notes: setNote(s.notes, prev.objectId, prev.text ?? '') }
@@ -215,6 +240,7 @@ export function reduceSubmitBatch<S extends TableState>(
       op,
       before: applied.before,
       prev: applied.prev,
+      layerOrders: applied.layerOrders,
       isUndo: opts.isUndo,
       inverse: opts.isUndo ? null : inverseOf(op, applied.before),
       group: opts.isUndo ? null : { id: opts.groupId, index },
@@ -239,18 +265,20 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
       const snap = msg.snapshot
       const objects = reapplyPending(Object.fromEntries(snap.objects.map((o) => [o.id, o])), s.pending, msg.self.clientId)
       const layers = sortLayers(snap.layers)
-      const activeLayerId = layers.some((l) => l.id === s.activeLayerId)
+      const pendingLayers = recomputeLayers({ ...s, confirmedLayers: layers }).layers
+      const activeLayerId = pendingLayers.some((l) => l.id === s.activeLayerId)
         ? s.activeLayerId
         : layers.some((l) => l.id === 'tokens')
           ? 'tokens'
-          : topLayerId(layers)
+          : topLayerId(pendingLayers)
       const base: S = {
         ...s,
         status: 'open',
         fatal: null,
         self: msg.self,
         meta: snap.meta,
-        layers,
+        layers: pendingLayers,
+        confirmedLayers: layers,
         objects,
         notes: snap.notes,
         members: Object.fromEntries(snap.members.map((m) => [m.clientId, m])),
@@ -267,11 +295,6 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
       for (const p of Object.values(s.pending)) {
         if (isObjectOp(p.op)) continue
         switch (p.op.kind) {
-          case 'layerCreate':
-          case 'layerUpdate':
-          case 'layerMove':
-            out = withActiveLayer({ ...out, layers: applyLayerOp(out.layers, p.op) })
-            break
           case 'layerDelete':
             out = withoutLayer(out, p.op.id)
             break
@@ -296,7 +319,10 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         if (p.op.kind === 'delete') notes = omit(notes, id)
         else if (objects[id]) objects = { ...objects, [id]: { ...objects[id], version: msg.version } }
       }
-      return settleGroup({ ...s, pending: omit(s.pending, msg.opId), objects, notes }, p, p.inverse)
+      const pending = omit(s.pending, msg.opId)
+      let acked: S = { ...s, pending, objects, notes }
+      if (isLayerOp(p.op)) acked = recomputeLayers({ ...acked, confirmedLayers: replayLayerOp(s.confirmedLayers, p.op, p.layerOrders) })
+      return settleGroup(acked, p, p.inverse)
     }
 
     case 'reject': {
@@ -312,7 +338,7 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         else delete objects[id]
         next = { ...s, pending, objects: reapplyPending(objects, pending, selfId, id) }
       } else {
-        next = { ...revertLocal(s, p, msg.opId), pending }
+        next = recomputeLayers({ ...revertLocal(s, p), pending }, pending)
       }
       next = settleGroup(next, p, null)
       if (p.op.kind === 'delete' && msg.reason === 'not_found') return next
@@ -402,17 +428,21 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
       return { ...s, members: omit(s.members, msg.clientId), cursors: omit(s.cursors, msg.clientId) }
 
     case 'layerUpsert':
-      return withActiveLayer({ ...s, layers: upsertLayer(s.layers, msg.layer) })
+      return recomputeLayers({ ...s, confirmedLayers: upsertLayer(s.confirmedLayers, msg.layer) })
 
     case 'layerShown': {
       const objects = { ...s.objects }
       for (const o of msg.objects) objects[o.id] = o
-      return { ...s, layers: upsertLayer(s.layers, msg.layer), objects: reapplyPending(objects, s.pending, selfId) }
+      return recomputeLayers({
+        ...s,
+        confirmedLayers: upsertLayer(s.confirmedLayers, msg.layer),
+        objects: reapplyPending(objects, s.pending, selfId),
+      })
     }
 
     case 'layerHidden':
     case 'layerRemoved':
-      return withoutLayer(s, msg.id)
+      return withoutLayer(recomputeLayers({ ...s, confirmedLayers: s.confirmedLayers.filter((l) => l.id !== msg.id) }), msg.id)
 
     case 'noteSet':
       return { ...s, notes: setNote(s.notes, msg.objectId, msg.text) }

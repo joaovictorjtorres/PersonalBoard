@@ -19,6 +19,8 @@ export interface PendingOp {
   inverse: Op | null
   group: { id: string; index: number } | null
   prev: LocalPrev | null
+  /** layerMove: ordem absoluta resultante, para a reaplicação ser idempotente */
+  layerOrders: Record<string, number> | null
 }
 
 /** Grupo de desfazer ainda esperando ack/reject de todas as ops. */
@@ -48,6 +50,8 @@ export interface TableState {
   meta: TableMetaPublic | null
   members: Record<string, Member>
   layers: Layer[]
+  /** camadas confirmadas pelo servidor; `layers` = confirmadas + ops de camada pendentes */
+  confirmedLayers: Layer[]
   objects: Record<string, TableObject>
   notes: Record<string, string>
   locks: Record<string, { clientId: string; expiresAt: number }>
@@ -75,6 +79,7 @@ export function makeInitialState(): TableState {
     meta: null,
     members: {},
     layers: [],
+    confirmedLayers: [],
     objects: {},
     notes: {},
     locks: {},
