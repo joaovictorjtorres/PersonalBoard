@@ -572,3 +572,61 @@ test('mestre renomeia o jogador: muda na tela dele e persiste ao recarregar', as
   await expect(memberRow(player, 'Aninha')).toContainText('(você)')
   await expect(memberRow(gm, 'Aninha')).toBeVisible()
 })
+
+test('modais e menus cabem na janela 1280x720 sem rolagem', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+
+  // modal de apelido, em um contexto novo
+  const fresh = await (await browser.newContext()).newPage()
+  await fresh.goto(`/t/${tableId}?debug=1`)
+  await expect(fresh.getByLabel('Seu apelido')).toBeVisible()
+  const noScroll = (loc: import('@playwright/test').Locator, name: string) =>
+    loc.evaluate((el) => ({ w: el.scrollWidth <= el.clientWidth, h: el.scrollHeight <= el.clientHeight }))
+      .then((r) => expect(r, name).toEqual({ w: true, h: true }))
+  await noScroll(fresh.locator('.modal'), 'nickname')
+
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  await expect(memberRow(gm, 'Ana')).toBeVisible()
+  await expect(player.locator('.members')).toBeVisible()
+  await uploadToken(gm)
+  const [token] = await objects(gm)
+
+  const dice = gm.getByRole('dialog', { name: 'Rolar dados' })
+  await gm.getByRole('button', { name: DICE_BUTTON }).click({ button: 'right' })
+  await expect(dice).toBeVisible()
+  await noScroll(dice, 'dados')
+  await gm.keyboard.press('Escape')
+
+  await gm.getByRole('button', { name: 'Grade' }).click()
+  const grid = gm.getByRole('dialog', { name: 'Grade' })
+  await expect(grid).toBeVisible()
+  await noScroll(grid, 'grade')
+  await gm.keyboard.press('Escape')
+
+  await gm.getByRole('button', { name: 'Lápis (P)' }).click({ button: 'right' })
+  const pen = gm.getByRole('dialog', { name: 'Opções da caneta' })
+  await expect(pen).toBeVisible()
+  await pen.getByRole('button', { name: 'Apagar' }).click() // estado mais alto (escopo do mestre)
+  await noScroll(pen, 'caneta')
+  await gm.keyboard.press('Escape')
+
+  await gm.getByRole('button', { name: 'Formas (S)' }).click({ button: 'right' })
+  const shape = gm.getByRole('dialog', { name: 'Opções das formas' })
+  await expect(shape).toBeVisible()
+  await noScroll(shape, 'formas')
+  await gm.keyboard.press('Escape')
+
+  const layer = await openLayerMenu(gm, 'Tokens')
+  await noScroll(layer, 'camada')
+  await gm.keyboard.press('Escape')
+
+  const member = await memberMenu(gm, 'Ana')
+  await member.getByRole('button', { name: 'Editar apelido e cor' }).click()
+  await noScroll(member, 'membro')
+  await gm.keyboard.press('Escape')
+
+  const objMenu = await openObjectMenu(gm, token)
+  await objMenu.getByRole('button', { name: /Mover para camada/ }).click()
+  await noScroll(objMenu, 'objeto')
+})

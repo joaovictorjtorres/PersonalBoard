@@ -50,4 +50,23 @@ describe('ChatEntryView', () => {
     expect(html).toContain('width="240"')
     expect(html).toContain('Alguém')
   })
+
+  it('a hora vem antes do apelido em todos os tipos de entrada', () => {
+    const base = { id: 'x', at: 0, authorId: 'a' }
+    const request = { die: 20 as const, count: 1, bonus: 0, mode: 'normal' as const }
+    const result = { rolls: [5], kept: [5], total: 5 }
+    const entries: ChatEntry[] = [
+      { ...base, kind: 'message', text: 'oi' },
+      { ...base, kind: 'image', assetKey: 'a'.repeat(64), width: 10, height: 10 },
+      { ...base, kind: 'roll', secret: false, request, result },
+      { ...base, kind: 'roll', secret: true, request, result },
+    ]
+    for (const entry of entries) {
+      const html = render(entry)
+      expect(html).toContain('class="chat-time"')
+      expect(html.indexOf('<time')).toBeGreaterThan(-1)
+      expect(html.indexOf('<time')).toBeLessThan(html.indexOf('Ana'))
+      expect(html.indexOf('</time>')).toBeLessThan(html.indexOf('Ana'))
+    }
+  })
 })

@@ -21,13 +21,13 @@ export function ChatEntryView({
 }) {
   const { nickname, color } = author ?? UNKNOWN
   const name = <strong style={{ color }}>{nickname}</strong>
-  const time = <time dateTime={new Date(entry.at).toISOString()}>{formatTime(entry.at)}</time>
+  const time = <time className="chat-time" dateTime={new Date(entry.at).toISOString()}>{formatTime(entry.at)}</time>
 
   if (entry.kind === 'roll') {
     const { request, result } = entry
     return (
       <li className={entry.secret ? 'chat-entry roll secret' : 'chat-entry roll'}>
-        {name} rolou <strong>{formatRollFormula(request)}</strong>{modeLabel(request.mode)}: [
+        {time} {name} rolou <strong>{formatRollFormula(request)}</strong>{modeLabel(request.mode)}: [
         {rollParts(request, result).map((d, i) => {
           const value = <span className={d.tone ?? undefined}>{d.value}</span>
           return (
@@ -38,7 +38,7 @@ export function ChatEntryView({
           )
         })}
         ]{bonusLabel(request.bonus)} = <strong>{result.total}</strong>
-        {entry.secret && <span className="secret-label"> (só mestre)</span>} {time}
+        {entry.secret && <span className="secret-label"> (só mestre)</span>}
       </li>
     )
   }
@@ -48,7 +48,7 @@ export function ChatEntryView({
     return (
       <li className="chat-entry">
         <div>
-          {name} {time}
+          {time} {name}
         </div>
         <button type="button" className="chat-thumb" aria-label={`Abrir imagem enviada por ${nickname}`} onClick={() => onOpenImage(assetKey)}>
           <img src={`/files/${assetKey}`} alt={`Imagem enviada por ${nickname}`} {...thumbSize(entry.width, entry.height)} />
@@ -60,7 +60,7 @@ export function ChatEntryView({
   return (
     <li className="chat-entry">
       <div>
-        {name} {time}
+        {time} {name}
       </div>
       <p className="chat-text">{entry.text}</p>
     </li>
