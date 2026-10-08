@@ -1,6 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { nanoid } from 'nanoid'
 import type { Op, Presence } from '@mesa/shared'
+import { DEFAULT_LAYER_NAME } from '@mesa/shared'
 import { SyncClient, type SyncClientOptions } from '../sync/SyncClient'
 import { throttle, type Throttled } from '../lib/throttle'
 import { getClientId, readClientSecret, readGmSecret, rememberClientSecret, shouldRetryAuth } from '../lib/identity'
@@ -26,6 +27,7 @@ export interface TableActions {
   setColor(color: string): void
   setStrokeWidth(width: number): void
   setActiveLayer(id: string): void
+  createLayer(): void
   select(id: string | null): void
   setViewport(v: Viewport): void
   toast(text: string, action?: Toast['action']): void
@@ -144,6 +146,12 @@ export function createTableStore(
       setColor: (color) => set({ color }),
       setStrokeWidth: (strokeWidth) => set({ strokeWidth }),
       setActiveLayer: (activeLayerId) => set({ activeLayerId, selectedId: null }),
+      createLayer() {
+        const id = nanoid()
+        if (actions.submit({ kind: 'layerCreate', layer: { id, name: DEFAULT_LAYER_NAME } })) {
+          set({ activeLayerId: id, selectedId: null })
+        }
+      },
       select: (selectedId) => set({ selectedId }),
       setViewport: (viewport) => set({ viewport }),
       toast: (text, action) => set((s) => addToast(s, text, action)),

@@ -5,7 +5,7 @@ import { TableStoreContext, useTable, useTableActions } from '../store/context'
 import { createTableStore } from '../store/tableStore'
 import { ConnectionBanner } from './ConnectionBanner'
 import { DebugPanel } from './DebugPanel'
-import { LayerSelect } from './LayerSelect'
+import { LayersPanel } from './LayersPanel'
 import { MembersPanel } from './MembersPanel'
 import { NicknameModal } from './NicknameModal'
 import { Toasts } from './Toasts'
@@ -88,8 +88,8 @@ function TableView() {
       <Toolbar />
       <div className="panel topbar">
         <strong>{name ?? '…'}</strong>
-        <LayerSelect />
       </div>
+      <LayersPanel />
       <MembersPanel />
       <ConnectionBanner />
       <Toasts />
