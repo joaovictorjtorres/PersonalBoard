@@ -3,6 +3,7 @@ import { TableCanvas } from '../canvas/TableCanvas'
 import { getNickname, setNickname } from '../lib/identity'
 import { TableStoreContext, useTable, useTableActions } from '../store/context'
 import { createTableStore } from '../store/tableStore'
+import { ChatPanel } from './chat/ChatPanel'
 import { ConnectionBanner } from './ConnectionBanner'
 import { DebugPanel } from './DebugPanel'
 import { LayersPanel } from './LayersPanel'
@@ -90,9 +91,12 @@ function TableView() {
       <div className="panel topbar">
         <strong>{name ?? '…'}</strong>
       </div>
-      <LayersPanel />
+      <div className="right-column">
+        <MembersPanel />
+        <ChatPanel />
+        <LayersPanel />
+      </div>
       <ObjectContextMenu />
-      <MembersPanel />
       <ConnectionBanner />
       <Toasts />
       {debug && <DebugPanel />}

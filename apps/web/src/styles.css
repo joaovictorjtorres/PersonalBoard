@@ -50,3 +50,34 @@ textarea { font: inherit; background: #2a2c33; color: #eee; border: 1px solid #4
 .context-menu { max-height: calc(100vh - 24px); overflow: auto; }
 .submenu { display: grid; gap: 4px; padding-left: 12px; margin-top: 4px; }
 .indent { padding-left: 18px; }
+
+/* M3 — coluna da direita (membros, chat, camadas), chat, dados e imagens */
+.right-column { position: absolute; top: 12px; right: 12px; bottom: 12px; width: 300px; display: flex; flex-direction: column; gap: 8px; z-index: 10; pointer-events: none; }
+.right-column > * { pointer-events: auto; }
+.right-column > .panel { position: static; }
+.right-column > .members { max-height: 25vh; overflow: auto; }
+.right-column > .layers { width: auto; margin-top: auto; }
+.chat { display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.chat.open { flex: 1 1 auto; }
+.chat-header { display: flex; align-items: center; justify-content: space-between; }
+.chat-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.chat-tab { display: inline-flex; align-items: center; gap: 2px; }
+.chat-tab button[role='tab'] { padding: 4px 8px; }
+.chat-tab button[aria-selected='true'] { background: #4363d8; border-color: #4363d8; }
+.badge { background: #e6194b; color: #fff; border-radius: 9px; padding: 0 6px; font-size: 11px; line-height: 18px; min-width: 18px; text-align: center; }
+.chat-list { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1 1 auto; min-height: 60px; display: grid; gap: 6px; align-content: start; font-size: 13px; }
+.chat-entry { padding: 4px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+.chat-entry time { opacity: 0.6; font-size: 11px; margin-left: 4px; }
+.chat-text { margin: 2px 0 0; white-space: pre-wrap; }
+.chat-entry.secret { background: #111216; border: 1px dashed #4a4d57; }
+.secret-label { opacity: 0.75; font-style: italic; }
+.chat-entry .crit { color: #3cb44b; font-weight: 700; }
+.chat-entry .fumble { color: #ff5c5c; font-weight: 700; }
+.chat-entry s { opacity: 0.55; }
+.chat-thumb { padding: 0; background: none; border: none; margin-top: 4px; }
+.chat-thumb img { max-width: 240px; max-height: 240px; object-fit: contain; border-radius: 4px; display: block; }
+.chat-input { display: flex; gap: 4px; }
+.chat-input input { flex: 1; min-width: 0; }
+.dice-modal .row button { padding: 4px 6px; }
+.dice-modal input[type='number'] { width: 72px; }
+.lightbox img { max-width: 92vw; max-height: 92vh; object-fit: contain; }
