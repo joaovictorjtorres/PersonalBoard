@@ -31,7 +31,14 @@ export function StrokeNode({ object, segments }: { object: StrokeObject; segment
       onMouseDown={(e) => {
         if (interactive && !isPingClick(e.evt)) actions.select(object.id)
       }}
-      onDragStart={() => actions.grab(object.id)}
+      onDragStart={(e) => {
+        // Clique de ping (Shift/Ctrl/⌘) não arrasta nem trava o traço.
+        if (isPingClick(e.evt as unknown as MouseEvent)) {
+          e.target.stopDrag()
+          return
+        }
+        actions.grab(object.id)
+      }}
       onDragMove={(e) =>
         actions.dragPreview(object.id, { x: e.target.x(), y: e.target.y(), width: object.width, height: object.height, rotation: 0 })
       }

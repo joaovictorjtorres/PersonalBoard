@@ -35,7 +35,7 @@ export function Overlay() {
         const member = members[lock.clientId]
         const color = member?.color ?? '#ffffff'
         return (
-          <Group key={objectId} x={g.x} y={g.y} rotation={object.type === 'image' ? g.rotation : 0}>
+          <Group key={objectId} x={g.x} y={g.y} rotation={object.type === 'stroke' ? 0 : g.rotation}>
             <Rect width={g.width} height={g.height} stroke={color} strokeWidth={2 / scale} dash={[6 / scale, 4 / scale]} />
             <Text text={member?.nickname ?? '?'} y={-16 / scale} fontSize={12 / scale} fill={color} />
           </Group>

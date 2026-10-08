@@ -22,7 +22,9 @@ export function commitNodeChange(store: TableStore, id: string, node: Konva.Node
     node.position({ x: object.x, y: object.y })
     node.scale({ x: 1, y: 1 })
     node.rotation(object.rotation)
-    if (object.type === 'image') node.size({ width: object.width, height: object.height })
+    if (object.type === 'image' || (object.type === 'shape' && object.kind !== 'line')) {
+      node.size({ width: object.width, height: object.height })
+    }
   }
 
   if (s.deniedGrabs[id]) {

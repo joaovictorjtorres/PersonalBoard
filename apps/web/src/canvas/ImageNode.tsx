@@ -32,7 +32,14 @@ export function ImageNode({ object }: { object: ImageObject }) {
       onMouseDown={(e) => {
         if (interactive && !isPingClick(e.evt)) actions.select(object.id)
       }}
-      onDragStart={() => actions.grab(object.id)}
+      onDragStart={(e) => {
+        // Clique de ping (Shift/Ctrl/⌘) não arrasta nem trava a imagem.
+        if (isPingClick(e.evt as unknown as MouseEvent)) {
+          e.target.stopDrag()
+          return
+        }
+        actions.grab(object.id)
+      }}
       onDragMove={(e) => actions.dragPreview(object.id, geometryFromNode(e.target))}
       onDragEnd={(e) => commitNodeChange(store, object.id, e.target, 'drag')}
       onTransformStart={() => actions.grab(object.id)}

@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState } from 'react'
-import { Eraser, Grid3x3, Hand, ImagePlus, MousePointer2, Pencil, Ruler, Undo2 } from 'lucide-react'
+import { Eraser, Grid3x3, Hand, ImagePlus, MousePointer2, Pencil, Ruler, Shapes, Undo2 } from 'lucide-react'
 import { useTable, useTableActions } from '../store/context'
 import { GridPopover } from './GridPopover'
 import { PenPopover } from './PenPopover'
+import { ShapePopover } from './ShapePopover'
 
 const ICON = 18
 
@@ -13,8 +14,10 @@ export function Toolbar() {
   const actions = useTableActions()
   const fileInput = useRef<HTMLInputElement>(null)
   const [penMenu, setPenMenu] = useState(false)
+  const [shapeMenu, setShapeMenu] = useState(false)
   const [gridMenu, setGridMenu] = useState(false)
   const closePenMenu = useCallback(() => setPenMenu(false), [])
+  const closeShapeMenu = useCallback(() => setShapeMenu(false), [])
   const closeGridMenu = useCallback(() => setGridMenu(false), [])
   const penLabel = penMode === 'erase' ? 'Borracha (E)' : 'Lápis (P)'
 
@@ -42,6 +45,23 @@ export function Toolbar() {
           {penMode === 'erase' ? <Eraser size={ICON} aria-hidden /> : <Pencil size={ICON} aria-hidden />}
         </button>
         {penMenu && <PenPopover onClose={closePenMenu} />}
+      </div>
+      <div className="pen-anchor">
+        <button
+          aria-label="Formas (S)"
+          title="Formas (S) — botão direito: tipo e preenchimento"
+          aria-pressed={tool === 'shape'}
+          aria-haspopup="dialog"
+          aria-expanded={shapeMenu}
+          onClick={() => actions.setTool('shape')}
+          onContextMenu={(e) => {
+            e.preventDefault()
+            setShapeMenu(true)
+          }}
+        >
+          <Shapes size={ICON} aria-hidden />
+        </button>
+        {shapeMenu && <ShapePopover onClose={closeShapeMenu} />}
       </div>
       <button
         aria-label="Régua (R)"

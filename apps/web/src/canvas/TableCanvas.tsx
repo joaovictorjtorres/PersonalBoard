@@ -12,8 +12,10 @@ import { ObjectDecorations } from './ObjectDecorations'
 import { Overlay } from './Overlay'
 import { isPingClick } from './ping'
 import { SelectionTransformer } from './SelectionTransformer'
+import { ShapeNode } from './ShapeNode'
 import { StrokeNode } from './StrokeNode'
 import { useDrawingTools } from './useDrawingTools'
+import { useShapeTool } from './useShapeTool'
 
 const MIN_SCALE = 0.1
 const MAX_SCALE = 8
@@ -49,6 +51,7 @@ export function TableCanvas() {
   const { space } = useModifierKeys()
   const size = useWindowSize()
   const drawing = useDrawingTools()
+  const shapes = useShapeTool()
   const stageRef = useRef<Konva.Stage>(null)
   const panning = tool === 'hand' || space
   // A grade fica logo acima da camada "map"; sem ela (removida pelo mestre), abaixo de tudo.
@@ -92,13 +95,18 @@ export function TableCanvas() {
     if (node) actions.openObjectMenu(node.id(), e.evt.clientX, e.evt.clientY)
   }
 
+  const finishGesture = () => {
+    drawing.onUp()
+    shapes.onUp()
+  }
+
   const cursor = panning
     ? 'grab'
     : tool === 'pencil'
       ? penMode === 'erase'
         ? 'cell'
         : 'crosshair'
-      : tool === 'ruler'
+      : tool === 'ruler' || tool === 'shape'
         ? 'crosshair'
         : 'default'
 
@@ -131,6 +139,7 @@ export function TableCanvas() {
         }
         if (tool === 'select' && e.target === e.target.getStage()) actions.select(null)
         drawing.onDown(e)
+        shapes.onDown(e)
       }}
       onMouseMove={(e) => {
         const pos = e.target.getStage()?.getRelativePointerPosition()
@@ -138,10 +147,13 @@ export function TableCanvas() {
           actions.cursor(pos.x, pos.y)
           actions.rulerMove(pos)
         }
-        if (!panning) drawing.onMove(e)
+        if (!panning) {
+          drawing.onMove(e)
+          shapes.onMove(e)
+        }
       }}
-      onMouseUp={drawing.onUp}
-      onMouseLeave={drawing.onUp}
+      onMouseUp={finishGesture}
+      onMouseLeave={finishGesture}
     >
       {!hasMapLayer && <GridLayer />}
       {layers.map((layer) => {
@@ -155,7 +167,9 @@ export function TableCanvas() {
                   <ImageNode key={o.id} object={o} />
                 ) : o.type === 'stroke' ? (
                   <StrokeNode key={o.id} object={o} segments={drawing.erasePreview[o.id]} />
-                ) : null,
+                ) : (
+                  <ShapeNode key={o.id} object={o} />
+                ),
               )}
               {list.map((o) => (
                 <ObjectDecorations key={`deco_${o.id}`} object={o} />
@@ -170,6 +184,7 @@ export function TableCanvas() {
                   listening={false}
                 />
               )}
+              {shapes.preview?.layerId === layer.id && <ShapeNode object={shapes.preview.object} preview />}
               {active && <SelectionTransformer />}
             </Layer>
             {layer.id === 'map' && <GridLayer />}

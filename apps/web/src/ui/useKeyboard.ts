@@ -24,6 +24,7 @@ export function useKeyboard(): void {
         case 'p': actions.setPen('draw'); break
         case 'e': actions.setPen('erase'); break
         case 'r': actions.setTool('ruler'); break
+        case 's': actions.setTool('shape'); break
         case 'escape': actions.rulerCancel(); break
         case 'delete':
         case 'backspace':
