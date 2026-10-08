@@ -1,6 +1,17 @@
 # Mesa Virtual
 
-Mesa colaborativa estilo Roll20: mapa, tokens, desenho e camada do mestre em tempo real.
+Mesa colaborativa estilo Roll20: mapa, tokens, desenho, formas, grade, régua, ping, chat com dados
+e camada do mestre em tempo real.
+
+## Na mesa
+
+- **Grade** (só o mestre): botão "Grade" na barra — mostrar, tamanho do quadrado e encaixe de imagens.
+- **Régua** (`R`): o clique fixa o início no centro do quadrado; novo clique ou `Esc` remove.
+- **Ping**: Shift + clique. O mestre usa Ctrl + clique para centralizar a tela de todos.
+- **Formas** (`S`): arraste; Shift força quadrado/círculo/45°; botão direito escolhe retângulo, elipse ou linha e o preenchimento.
+- **Chat**: Enter envia; `/r 2d6+3`, `/r d20+5 adv`; clique no dado rola 1d20 e o botão direito abre as opções (inclusive "Só o mestre vê"). Imagens e GIFs pelo botão, colando ou arrastando.
+- **Conversa privada**: botão direito num membro → "Conversa privada". Nada fica guardado no servidor; fechar a aba apaga.
+- **Mestre**: botão direito num membro → "Editar apelido e cor".
 
 ## Desenvolvimento
 

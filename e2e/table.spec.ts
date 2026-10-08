@@ -352,3 +352,223 @@ test('mestre remove da lista um membro offline', async ({ browser, page }) => {
   await expect(row(gm, 'Mestre')).toBeVisible()
   await expect(anaRow).toHaveCount(0)
 })
+
+// ---------------------------------------------------------------- M3
+
+const chatEntries = (page: Page) => page.locator('section[aria-label="Chat"] .chat-entry')
+
+const memberRow = (page: Page, name: string) =>
+  page.locator('.members li').filter({ hasText: new RegExp(`^\\s*${name}(?![\\p{L}\\d])`, 'u') })
+
+const chatState = (page: Page): Promise<string> =>
+  page.evaluate(() => {
+    const s = (window as any).__mesa.getState()
+    return JSON.stringify({ table: s.chatTable, dms: s.chatDms, tabs: s.chatTabs })
+  })
+
+async function memberMenu(page: Page, name: string) {
+  await memberRow(page, name).click({ button: 'right' })
+  const menu = page.getByRole('dialog', { name: `Ações para ${name}` })
+  await expect(menu).toBeVisible()
+  return menu
+}
+
+async function dragOnCanvas(page: Page, from: [number, number], to: [number, number]): Promise<void> {
+  await page.mouse.move(from[0], from[1])
+  await page.mouse.down()
+  await page.mouse.move(to[0], to[1], { steps: 8 })
+  await page.mouse.up()
+}
+
+const DICE_BUTTON = 'Rolar 1d20 (botão direito: mais opções)'
+
+test('clique no dado rola 1d20 e aparece no chat do outro', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await player.getByRole('button', { name: DICE_BUTTON }).click()
+  await expect(chatEntries(gm)).toHaveCount(1)
+  await expect(chatEntries(gm).first()).toContainText('Ana rolou 1d20: [')
+  await expect(chatEntries(player)).toHaveCount(1)
+})
+
+test('rolagem secreta do mestre não aparece para o jogador', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await gm.getByRole('button', { name: DICE_BUTTON }).click({ button: 'right' })
+  const modal = gm.getByRole('dialog', { name: 'Rolar dados' })
+  await expect(modal).toBeVisible()
+  await modal.getByRole('button', { name: 'd6', exact: true }).click()
+  await modal.getByLabel('Só o mestre vê').check()
+  await modal.getByRole('button', { name: 'Rolar', exact: true }).click()
+  await expect(modal).toHaveCount(0)
+
+  await expect(chatEntries(gm)).toHaveCount(1)
+  await expect(chatEntries(gm).first()).toContainText('rolou 1d6')
+  await expect(chatEntries(gm).first()).toContainText('(só mestre)')
+  await player.waitForTimeout(500)
+  await expect(chatEntries(player)).toHaveCount(0)
+  expect(await chatState(player)).not.toContain('"secret":true')
+})
+
+test('conversa privada chega só ao destinatário; o mestre não recebe; fechar a aba apaga', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const bia = await open(browser, `/t/${tableId}?debug=1`, 'Bia')
+
+  await expect(memberRow(ana, 'Bia')).toBeVisible()
+  await (await memberMenu(ana, 'Bia')).getByRole('button', { name: 'Conversa privada' }).click()
+  await expect(ana.getByRole('tab', { name: /^Bia/ })).toHaveAttribute('aria-selected', 'true')
+  await ana.getByLabel('Mensagem', { exact: true }).fill('segredo entre nós')
+  await ana.getByLabel('Mensagem', { exact: true }).press('Enter')
+  await expect(chatEntries(ana).last()).toContainText('segredo entre nós')
+
+  // Bia: a aba aparece sem tirar o foco da Mesa, com contador de não lidas.
+  const tabAna = bia.getByRole('tab', { name: /^Ana/ })
+  await expect(tabAna).toBeVisible()
+  await expect(tabAna).toHaveAttribute('aria-selected', 'false')
+  await expect(tabAna.locator('.badge')).toHaveText('1')
+  await expect(bia.getByRole('tab', { name: /^Mesa/ })).toHaveAttribute('aria-selected', 'true')
+  await tabAna.click()
+  await expect(chatEntries(bia).last()).toContainText('segredo entre nós')
+
+  // O mestre não participa: nada chega a ele.
+  await gm.waitForTimeout(500)
+  await expect(gm.getByRole('tab')).toHaveCount(1)
+  expect(await chatState(gm)).not.toContain('segredo')
+
+  // Fechar a aba apaga o histórico; reabrir começa vazia.
+  await bia.getByRole('button', { name: 'Fechar conversa com Ana' }).click()
+  await expect(tabAna).toHaveCount(0)
+  expect(await chatState(bia)).not.toContain('segredo')
+  await (await memberMenu(bia, 'Ana')).getByRole('button', { name: 'Conversa privada' }).click()
+  await expect(bia.getByRole('tab', { name: /^Ana/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(chatEntries(bia)).toHaveCount(0)
+})
+
+test('imagem enviada no chat aparece no outro cliente', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  const uploaded = player.waitForResponse((r) => r.url().includes('/assets') && r.status() === 201)
+  await player.getByTestId('chat-image-input').setInputFiles({ name: 'foto.png', mimeType: 'image/png', buffer: PNG })
+  await uploaded
+  const img = chatEntries(gm).locator('img')
+  await expect(img).toHaveCount(1)
+  await expect(img).toHaveAttribute('src', /^\/files\/[a-f0-9]{64}$/)
+})
+
+test('mestre liga grade e encaixe: token solto cai alinhado na tela do jogador', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await gm.getByRole('button', { name: 'Grade', exact: true }).click()
+  const pop = gm.getByRole('dialog', { name: 'Grade' })
+  await pop.getByLabel('Mostrar grade').check()
+  await pop.getByLabel('Encaixar imagens na grade').check()
+  await gm.keyboard.press('Escape')
+  await expect
+    .poll(() => player.evaluate(() => (window as any).__mesa.getState().settings.grid))
+    .toEqual({ enabled: true, size: 70, snap: true })
+
+  await uploadToken(gm)
+  await expect.poll(async () => (await objects(player)).length).toBe(1)
+  const [token] = await objects(gm)
+  // centro da tela (640, 360) − 35 → (605, 325) → encaixado em (630, 350)
+  expect(token).toMatchObject({ x: 630, y: 350, width: 70, height: 70 })
+
+  await dragObject(gm, token, 100, 50)
+  await expect
+    .poll(async () => {
+      const [o] = await objects(player)
+      return [o.x, o.y]
+    })
+    .toEqual([700, 420])
+})
+
+test('régua do mestre aparece para o jogador com nome e distância', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const labels = () => player.evaluate(() => (window as any).__stage.find('.ruler-label').map((n: any) => n.text()))
+
+  await gm.getByRole('button', { name: 'Régua (R)' }).click()
+  await gm.mouse.click(400, 300) // início no centro do quadrado (385, 315)
+  await gm.mouse.move(700, 300, { steps: 10 })
+  await expect.poll(labels).toEqual(['Mestre · 4,5 q'])
+
+  await gm.keyboard.press('Escape')
+  await expect.poll(labels).toEqual([])
+})
+
+test('retângulo, elipse e linha aparecem para o outro', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  const drawShape = async (label: string, from: [number, number], to: [number, number]) => {
+    await gm.getByRole('button', { name: 'Formas (S)' }).click({ button: 'right' })
+    const pop = gm.getByRole('dialog', { name: 'Opções das formas' })
+    await pop.getByRole('button', { name: label }).click()
+    await gm.keyboard.press('Escape')
+    await expect(pop).toHaveCount(0)
+    await dragOnCanvas(gm, from, to)
+  }
+  await drawShape('Retângulo', [200, 450], [300, 520])
+  await drawShape('Elipse', [350, 450], [450, 520])
+  await drawShape('Linha', [500, 450], [600, 520])
+
+  await expect
+    .poll(async () =>
+      (await objects(player))
+        .filter((o) => o.type === 'shape')
+        .map((o) => (o as Obj & { kind: string }).kind)
+        .sort(),
+    )
+    .toEqual(['ellipse', 'line', 'rect'])
+})
+
+test('Ctrl + clique do mestre centraliza a câmera do jogador', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await gm.keyboard.down('Control')
+  await gm.mouse.click(900, 500)
+  await gm.keyboard.up('Control')
+
+  // tela 1280×720: o ponto (900, 500) vai para o centro (640, 360), zoom mantido
+  await expect
+    .poll(() =>
+      player.evaluate(() => {
+        const v = (window as any).__mesa.getState().viewport
+        return [Math.round(v.x), Math.round(v.y), v.scale]
+      }),
+    )
+    .toEqual([-260, -140, 1])
+  expect(await gm.evaluate(() => (window as any).__mesa.getState().viewport)).toEqual({ x: 0, y: 0, scale: 1 })
+})
+
+test('mestre renomeia o jogador: muda na tela dele e persiste ao recarregar', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  const menu = await memberMenu(gm, 'Ana')
+  await menu.getByRole('button', { name: 'Editar apelido e cor' }).click()
+  await menu.getByLabel('Apelido').fill('Aninha')
+  await menu.getByRole('button', { name: 'Salvar' }).click()
+  await expect(menu).toHaveCount(0)
+  await expect(memberRow(player, 'Aninha')).toContainText('(você)')
+
+  await player.reload()
+  await waitOpen(player)
+  await expect(memberRow(player, 'Aninha')).toContainText('(você)')
+  await expect(memberRow(gm, 'Aninha')).toBeVisible()
+})
