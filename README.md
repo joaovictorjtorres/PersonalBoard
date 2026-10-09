@@ -25,6 +25,72 @@ pnpm e2e          # ponta a ponta: sobe um wrangler dev próprio em :8788 (E2E_P
                   # não interfere num `pnpm host` rodando na 8787
 ```
 
+## Publicar uma versão (pacote Windows)
+
+```bash
+pnpm release 0.4.0 --dry-run   # confere git (limpo, na main, em dia), typecheck e testes; não grava nada
+pnpm release 0.4.0             # grava a versão, commita "release: v0.4.0", cria a tag e envia
+```
+
+A tag dispara o GitHub Actions (`.github/workflows/release.yml`, em Windows): testes, build,
+montagem do `MesaVirtual-v0.4.0-win64.zip` (Node 24 portátil, `cloudflared` e servidor com as
+dependências de Windows), teste de fumaça no zip e criação da Release com notas automáticas.
+Acompanhe em https://github.com/joaovictorjtorres/PersonalBoard/actions.
+
+Se o `pnpm release` falhar antes do envio, ele restaura `package.json` e `version.txt` a partir
+do HEAD e nada é publicado. Se falhar no envio, o commit e a tag ficam só no seu computador e a
+mensagem traz o comando para reenviar (`git push --atomic origin main v0.4.0`) ou desfazer. Ele
+não tenta de novo sozinho: leia o erro antes de repetir.
+
+## Rodar no Windows (pacote)
+
+Para o mestre hospedar a mesa no próprio PC Windows, de graça, sem instalar nada.
+
+1. Baixe o `MesaVirtual-vX.Y.Z-win64.zip` mais recente em
+   https://github.com/joaovictorjtorres/PersonalBoard/releases/latest.
+2. Extraia para um caminho curto, por exemplo `C:\MesaVirtual`. Caminhos longos (acima de
+   260 caracteres) quebram o servidor. Não rode de dentro do zip.
+3. Dê dois cliques em **Iniciar Mesa**. Se o Windows mostrar "O Windows protegeu o computador"
+   (SmartScreen), clique em **Mais informações → Executar assim mesmo**. Se o antivírus perguntar,
+   permita o `node.exe` e o `cloudflared.exe` da pasta `app`.
+4. A janela verifica se há versão nova, sobe o servidor e o túnel e mostra o link
+   `https://….trycloudflare.com`. Ele já vai copiado e o navegador abre sozinho. Mande para o grupo.
+5. Para desligar, feche a janela ou aperte Ctrl+C. Ctrl+C pode mostrar "Deseja finalizar o arquivo
+   em lotes (S/N)?": responda S (ou simplesmente feche a janela).
+
+Se o servidor não subir (a janela mostra o erro e as últimas linhas do log), instale o
+"Microsoft Visual C++ Redistributable (x64)" da Microsoft e abra a mesa de novo.
+
+O link muda a cada vez que a mesa é aberta; o `/t/<id>` das mesas continua valendo. Sem internet
+(ou se o túnel falhar), a mesa funciona só no seu PC em `http://localhost:8787`. Se as portas
+8787–8797 estiverem todas ocupadas, feche o outro programa que as usa e abra de novo.
+
+Para suporte, o `Iniciar Mesa.cmd` aceita `--no-update` (pula a verificação de atualização) e
+`--port N` (porta fixa); rode-o pelo prompt de comando, por exemplo `"Iniciar Mesa.cmd" --port 8790`.
+
+**Onde ficam os dados:** em `%LOCALAPPDATA%\MesaVirtual\` (cole esse caminho na barra do Explorer):
+
+- `state\`: as mesas;
+- `backups\AAAA-MM-DD_HHMMSS\`: cópias automáticas de `state\`, uma por dia de uso e outra antes
+  de cada atualização. Ficam as 10 mais recentes; pastas que você criar ali nunca são apagadas;
+- `logs\launcher.log`: registro para suporte;
+- `config.json`: preferências.
+
+A pasta do pacote não guarda mesas. Pode apagá-la e extrair o zip de novo sem perder nada.
+
+**Atualização automática:** ao abrir, se houver versão nova, a janela pergunta
+`Atualizar agora? [S/n]` (Enter ou S atualiza; N adia). As mesas são copiadas para `backups\` antes
+da troca. Para desligar a pergunta, edite `%LOCALAPPDATA%\MesaVirtual\config.json` e deixe
+`"autoUpdate": false` (sem aspas no `false`).
+
+**Migrar as mesas do Linux:** desligue a mesa nos dois computadores. Copie todo o conteúdo de
+`apps/worker/.wrangler/state/` do Linux para `%LOCALAPPDATA%\MesaVirtual\state\` no Windows,
+substituindo o que houver, e abra a mesa.
+
+**Restaurar um backup:** desligue a mesa. Em `%LOCALAPPDATA%\MesaVirtual\`, renomeie `state` para
+`state-antigo`. Copie a pasta do backup desejado (`backups\AAAA-MM-DD_HHMMSS`) para
+`%LOCALAPPDATA%\MesaVirtual\` e renomeie a cópia para `state`. Abra a mesa.
+
 ## Opção A — rodar na sua máquina (sem conta Cloudflare)
 
 O `wrangler dev` simula Worker, Durable Object (SQLite) e R2 localmente e salva tudo em
