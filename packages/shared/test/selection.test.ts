@@ -99,6 +99,34 @@ describe('splitStrokeByRect', () => {
   })
 })
 
+describe('traços de um ponto e casos de borda', () => {
+  const rect = { x: 5, y: 0, width: 10, height: 10 }
+
+  it('ponto único no retângulo: dentro, fora e na borda', () => {
+    expect(splitStrokeByRect([8, 5], rect)).toEqual({ inside: [[8, 5]], outside: [] })
+    expect(splitStrokeByRect([50, 5], rect)).toEqual({ inside: [], outside: [[50, 5]] })
+    expect(splitStrokeByRect([5, 5], rect)).toEqual({ inside: [[5, 5]], outside: [] })
+  })
+
+  it('ponto único no laço: dentro e fora', () => {
+    expect(splitStrokeByPolygon([1, 5], BOWTIE)).toEqual({ inside: [[1, 5]], outside: [] })
+    expect(splitStrokeByPolygon([5, 1], BOWTIE)).toEqual({ inside: [], outside: [[5, 1]] })
+  })
+
+  it('traço que termina exatamente na borda do retângulo', () => {
+    expect(splitStrokeByRect([0, 5, 5, 5], rect)).toEqual({ inside: [], outside: [[0, 5, 5, 5]] })
+    expect(splitStrokeByRect([8, 5, 15, 5], rect)).toEqual({ inside: [[8, 5, 15, 5]], outside: [] })
+  })
+
+  it('traço com vários segmentos cortado pelo laço', () => {
+    // dentro do triângulo esquerdo, passa pelo meio (fora), entra no triângulo direito
+    expect(splitStrokeByPolygon([1, 2, 5, 2, 9, 2, 9, 4], BOWTIE)).toEqual({
+      inside: [[1, 2, 2, 2], [8, 2, 9, 2, 9, 4]],
+      outside: [[2, 2, 5, 2, 8, 2]],
+    })
+  })
+})
+
 describe('splitStrokeByPolygon', () => {
   it('laço que se cruza: dentro nos dois triângulos laterais, fora no meio', () => {
     expect(splitStrokeByPolygon([1, 2, 9, 2], BOWTIE)).toEqual({

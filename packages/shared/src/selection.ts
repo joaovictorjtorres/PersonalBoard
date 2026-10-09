@@ -85,12 +85,18 @@ export function insidePolygon(item: RotatedBox, polygon: number[]): boolean {
   return true
 }
 
+/** Traço de um ponto só (toque): inteiro de um lado ou do outro. */
+function splitDot(points: number[], isInside: boolean): StrokeSplit {
+  return isInside ? { inside: [points.slice()], outside: [] } : { inside: [], outside: [points.slice()] }
+}
+
 /**
  * Corta o traço (pontos planos) nas arestas do polígono, exatamente no ponto de cruzamento.
  * Cada trecho é classificado pelo seu ponto do meio (par/ímpar). Laço com menos de 3 pontos: tudo fora.
  */
 export function splitStrokeByPolygon(points: number[], polygon: number[]): StrokeSplit {
   const n = points.length / 2
+  if (n === 1) return splitDot(points, pointInPolygon(points[0], points[1], polygon))
   if (polygon.length < 6 || n < 2) return { inside: [], outside: n >= 1 ? [points.slice()] : [] }
   const inside: number[][] = []
   const outside: number[][] = []
@@ -123,5 +129,6 @@ export function splitStrokeByPolygon(points: number[], polygon: number[]): Strok
 }
 
 export function splitStrokeByRect(points: number[], rect: Box): StrokeSplit {
+  if (points.length === 2) return splitDot(points, inRect(points[0], points[1], rect))
   return splitStrokeByPolygon(points, rectPolygon(rect))
 }
