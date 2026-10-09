@@ -31,7 +31,8 @@ export function createRealDeps(launcherDir) {
     fetch: (input, init) => globalThis.fetch(input, init),
     now: () => Date.now(),
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-    sleepSync: (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms),
+    // espera limitada: NaN/negativo/Infinity nunca viram espera infinita
+    sleepSync: (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, Number.isFinite(ms) ? Math.min(Math.max(0, ms), 2_000) : 0),
     setTimer: (fn, ms) => {
       const timer = setTimeout(fn, ms)
       return () => clearTimeout(timer)

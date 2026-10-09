@@ -56,7 +56,7 @@ jobs:
           pnpm --filter @mesa/shared exec vitest run --reporter=default --reporter=github-actions 2>&1 | Tee-Object -FilePath $log
           $code = $LASTEXITCODE
           if ($code -ne 0) {
-            $tail = (Get-Content $log -Tail 60) -join "`n"
+            $tail = (Get-Content $log -Tail 250) -join "`n"
             $enc = $tail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
             Write-Output "::error title=shared tests (tail)::$enc"
             exit $code
@@ -69,7 +69,7 @@ jobs:
           pnpm --filter @mesa/launcher exec vitest run --reporter=default --reporter=github-actions 2>&1 | Tee-Object -FilePath $log
           $code = $LASTEXITCODE
           if ($code -ne 0) {
-            $tail = (Get-Content $log -Tail 60) -join "`n"
+            $tail = (Get-Content $log -Tail 250) -join "`n"
             $enc = $tail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
             Write-Output "::error title=launcher tests (tail)::$enc"
             exit $code
@@ -82,7 +82,7 @@ jobs:
           pnpm --filter @mesa/web exec vitest run --reporter=default --reporter=github-actions 2>&1 | Tee-Object -FilePath $log
           $code = $LASTEXITCODE
           if ($code -ne 0) {
-            $tail = (Get-Content $log -Tail 60) -join "`n"
+            $tail = (Get-Content $log -Tail 250) -join "`n"
             $enc = $tail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
             Write-Output "::error title=web tests (tail)::$enc"
             exit $code
@@ -96,7 +96,7 @@ jobs:
           pnpm --filter @mesa/worker exec vitest run --reporter=default --reporter=github-actions 2>&1 | Tee-Object -FilePath $log
           $code = $LASTEXITCODE
           if ($code -ne 0) {
-            $tail = (Get-Content $log -Tail 60) -join "`n"
+            $tail = (Get-Content $log -Tail 250) -join "`n"
             $enc = $tail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
             Write-Output "::error title=worker tests (tail)::$enc"
             exit $code

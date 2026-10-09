@@ -486,7 +486,10 @@ describe('run: ajustes da revisão final', () => {
 
   it('instância única: segunda janela recebe EADDRINUSE → mensagem e código 1', async () => {
     const { h, root } = setup()
-    const sock = path.join(base, 'mesa.sock')
+    // Windows: net.listen só aceita named pipe (\\.\pipe\...); um caminho de arquivo nunca vira lock
+    const sock = process.platform === 'win32'
+      ? `\\\\.\\pipe\\mesa-test-${process.pid}-${Math.random().toString(36).slice(2)}`
+      : path.join(base, 'mesa.sock')
     h.deps.net = net
     h.deps.pipePath = sock
     const first = (await startServing(h, root)).result

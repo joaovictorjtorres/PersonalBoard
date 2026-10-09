@@ -18,8 +18,15 @@ const RETRYABLE = new Set(['EBUSY', 'EPERM', 'EACCES', 'ENOTEMPTY', 'EMFILE', 'E
 const MAX_ATTEMPTS = 20
 const MAX_DELAY_MS = 2000
 const MAX_ENTRIES = 1_000_000
+/** Maior caminho possível no Windows (\\?\ incluso). Passou disso, algo está errado (fs maluco/laço). */
+const MAX_PATH_CHARS = 32_767
 
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, Number.isFinite(n) ? Math.floor(n) : lo))
+
+/** Caminho longo demais: lança (sem `code`, então não é tentado de novo) em vez de crescer sem fim. */
+function checkPathLength(p, target) {
+  if (p.length > MAX_PATH_CHARS) throw new Error(`caminho longo demais dentro de ${target.slice(0, 200)}`)
+}
 
 /** Espera síncrona curta e limitada (Atomics.wait é permitido na thread principal do Node). */
 function defaultSleepSync(ms) {
@@ -74,6 +81,7 @@ function removeOnce(fs, target, maxEntries) {
       continue
     }
     if (++seen > maxEntries) throw new Error(`itens demais para apagar em ${target}`)
+    checkPathLength(top.p, target)
     const stat = lstatOrNull(fs, top.p)
     if (!stat) {
       stack.pop()
@@ -98,9 +106,10 @@ function removeOnce(fs, target, maxEntries) {
 /**
  * Apaga arquivo ou pasta inteira; ausente não é erro. Nunca segue links/junções (apaga o link).
  * Tenta de novo em erros temporários (antivírus/indexador) e lança se, no fim, o alvo ainda existir.
- * Tentativas ≤ 20, espera ≤ 2 s cada, itens ≤ maxEntries.
+ * Tentativas ≤ 20, espera ≤ 2 s cada, itens ≤ maxEntries (≤ 1 milhão), caminho ≤ 32 767 caracteres.
  */
 export function removeTree(fs, target, { attempts = 5, delayMs = 200, sleepSync = defaultSleepSync, maxEntries = MAX_ENTRIES } = {}) {
+  maxEntries = clamp(maxEntries, 1, MAX_ENTRIES)
   const maxAttempts = clamp(attempts, 1, MAX_ATTEMPTS)
   const delay = clamp(delayMs, 0, MAX_DELAY_MS)
   for (let attempt = 1; ; attempt++) {
@@ -122,6 +131,7 @@ export function removeTree(fs, target, { attempts = 5, delayMs = 200, sleepSync 
  * especiais são ignorados (não há nenhum em state\ nem em launcher\).
  */
 export function copyTree(fs, src, dest, { maxEntries = MAX_ENTRIES } = {}) {
+  maxEntries = clamp(maxEntries, 1, MAX_ENTRIES)
   const rel = path.relative(path.resolve(src), path.resolve(dest))
   if (rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))) {
     throw new Error(`não dá para copiar ${src} para dentro dela mesma (${dest})`)
@@ -131,6 +141,8 @@ export function copyTree(fs, src, dest, { maxEntries = MAX_ENTRIES } = {}) {
   while (stack.length > 0) {
     if (++count > maxEntries) throw new Error(`itens demais para copiar em ${src}`)
     const [from, to] = /** @type {[string, string]} */ (stack.pop())
+    checkPathLength(from, src)
+    checkPathLength(to, dest)
     const stat = fs.lstatSync(from)
     if (stat.isSymbolicLink()) continue
     if (stat.isDirectory()) {

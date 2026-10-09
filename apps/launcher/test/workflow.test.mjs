@@ -88,4 +88,9 @@ describe('release.yml', () => {
     expect(uses.length).toBeGreaterThanOrEqual(3)
     for (const line of uses) expect(line).toMatch(/uses:\s*[\w.-]+\/[\w.-]+@[0-9a-f]{40}\s+# v\d+(\.\d+)*\s*$/)
   })
+
+  it('falha nos testes mostra as últimas 250 linhas do log (cabeçalho de erro fatal incluso)', () => {
+    const tails = [...readWorkflow().matchAll(/Get-Content \$log -Tail (\d+)/g)].map((m) => Number(m[1]))
+    expect(tails).toEqual([250, 250, 250, 250])
+  })
 })
