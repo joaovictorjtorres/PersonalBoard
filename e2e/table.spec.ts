@@ -575,9 +575,9 @@ test('régua do mestre aparece para o jogador com nome e distância', async ({ b
   const labels = () => player.evaluate(() => (window as any).__stage.find('.ruler-label').map((n: any) => n.text()))
 
   await gm.getByRole('button', { name: 'Régua (R)' }).click()
-  await gm.mouse.click(400, 300) // início no centro do quadrado (385, 315)
-  await gm.mouse.move(700, 300, { steps: 10 })
-  await expect.poll(labels).toEqual(['Mestre · 4,5 m'])
+  await gm.mouse.click(400, 300) // a distância conta do centro do quadrado (385, 315)…
+  await gm.mouse.move(700, 300, { steps: 10 }) // …até o centro de (735, 315)
+  await expect.poll(labels).toEqual(['Mestre · 5,0 m'])
 
   await gm.keyboard.press('Escape')
   await expect.poll(labels).toEqual([])
@@ -598,19 +598,20 @@ test('régua com dobra: botão direito dobra, o outro vê a linha quebrada com a
     })
 
   await ana.getByRole('button', { name: 'Régua (R)' }).click()
-  await ana.mouse.click(400, 300) // início no centro do quadrado (385, 315)
+  // a linha passa exatamente pelos pontos apontados; a distância conta pelo centro dos quadrados
+  await ana.mouse.click(400, 300) // quadrado de centro (385, 315)
   await ana.mouse.move(700, 300, { steps: 5 })
-  await ana.mouse.click(700, 300, { button: 'right' }) // dobra no centro do quadrado (735, 315)
-  await ana.mouse.move(735, 455, { steps: 5 })
+  await ana.mouse.click(700, 300, { button: 'right' }) // dobra; quadrado de centro (735, 315)
+  await ana.mouse.move(740, 450, { steps: 5 }) // quadrado de centro (735, 455)
   await expect.poll(seen).toEqual({
-    line: [[385, 315, 735, 315, 735, 455]],
+    line: [[400, 300, 700, 300, 740, 450]],
     total: ['Ana · 7,0 m'],
     segments: ['5,0 m', '2,0 m'],
   })
   // o botão direito medindo não abre menu nenhum
   await expect(ana.getByRole('dialog')).toHaveCount(0)
 
-  await ana.mouse.click(735, 455) // clique esquerdo termina e remove
+  await ana.mouse.click(740, 450) // clique esquerdo termina e remove
   await expect.poll(seen).toEqual({ line: [], total: [], segments: [] })
 })
 

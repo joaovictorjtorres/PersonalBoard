@@ -26,17 +26,22 @@ describe('régua', () => {
     expect(cellCenter({ x: -1, y: 0 }, 70)).toEqual({ x: -35, y: 35 })
   })
 
-  it('segmentDistance = hypot / size com uma casa', () => {
+  it('segmentDistance mede entre os centros dos quadrados dos pontos, com uma casa', () => {
     expect(segmentDistance({ x: 0, y: 0 }, { x: 210, y: 280 }, 70)).toBe(5)
-    expect(segmentDistance({ x: 0, y: 0 }, { x: 100, y: 0 }, 70)).toBe(1.4)
-    expect(segmentDistance({ x: 385, y: 315 }, { x: 700, y: 300 }, 70)).toBe(4.5)
+    // (35,35) → (105,35): 1 quadrado, não 100/70
+    expect(segmentDistance({ x: 0, y: 0 }, { x: 100, y: 0 }, 70)).toBe(1)
+    expect(segmentDistance({ x: 400, y: 300 }, { x: 700, y: 300 }, 70)).toBe(5)
+    expect(segmentDistance({ x: 1, y: 1 }, { x: 69, y: 69 }, 70)).toBe(0) // mesmo quadrado
+    expect(segmentDistance({ x: 0, y: 0 }, { x: 70, y: 70 }, 70)).toBe(1.4) // diagonal
   })
 
   it('rulerDistance soma todos os trechos e arredonda só o total', () => {
     expect(rulerDistance([{ x: 0, y: 0 }, { x: 210, y: 280 }], 70)).toBe(5)
     expect(rulerDistance([{ x: 385, y: 315 }, { x: 735, y: 315 }, { x: 735, y: 455 }], 70)).toBe(7)
-    // 3 trechos de 1,43 q: soma 4,3 (e não 3 × 1,4 = 4,2)
-    expect(rulerDistance([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 200, y: 0 }, { x: 300, y: 0 }], 70)).toBe(4.3)
+    // pontos crus em qualquer lugar do quadrado contam pelo centro
+    expect(rulerDistance([{ x: 400, y: 300 }, { x: 700, y: 300 }, { x: 740, y: 450 }], 70)).toBe(7)
+    // 5 diagonais de 1,414 m: soma 7,1 (e não 5 × 1,4 = 7,0)
+    expect(rulerDistance(Array.from({ length: 6 }, (_, i) => ({ x: i * 70, y: i * 70 })), 70)).toBe(7.1)
     expect(rulerDistance([{ x: 5, y: 5 }], 70)).toBe(0)
   })
 

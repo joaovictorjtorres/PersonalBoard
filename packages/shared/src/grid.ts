@@ -35,15 +35,27 @@ export function cellCenter(p: Point, size: number): Point {
 
 const round1 = (n: number) => Math.round(n * 10) / 10
 
-/** Distância em quadrados (= metros) de um trecho, com uma casa decimal. */
-export function segmentDistance(from: Point, to: Point, size: number): number {
-  return round1(Math.hypot(to.x - from.x, to.y - from.y) / size)
+const centerDistance = (from: Point, to: Point, size: number) => {
+  const a = cellCenter(from, size)
+  const b = cellCenter(to, size)
+  return Math.hypot(b.x - a.x, b.y - a.y)
 }
 
-/** Distância total da régua (soma de todos os trechos), em quadrados (= metros), com uma casa decimal. */
+/**
+ * Distância em quadrados (= metros) de um trecho, com uma casa decimal. Os pontos chegam crus (onde
+ * a pessoa clicou); a conta usa o centro do quadrado de cada um.
+ */
+export function segmentDistance(from: Point, to: Point, size: number): number {
+  return round1(centerDistance(from, to, size) / size)
+}
+
+/**
+ * Distância total da régua (soma de todos os trechos), em quadrados (= metros), com uma casa decimal.
+ * Cada ponto conta pelo centro do seu quadrado, como em `segmentDistance`.
+ */
 export function rulerDistance(points: readonly Point[], size: number): number {
   let total = 0
-  for (let i = 1; i < points.length; i++) total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)
+  for (let i = 1; i < points.length; i++) total += centerDistance(points[i - 1], points[i], size)
   return round1(total / size)
 }
 

@@ -57,10 +57,10 @@ export interface TableActions {
   /** Escolhe o tipo e ativa a ferramenta Formas. */
   setShapeKind(kind: ShapeKind): void
   setShapeFill(patch: Partial<ShapeFill>): void
-  /** Sem régua: começa no centro do quadrado clicado. Com régua: remove. */
+  /** Sem régua: começa no ponto clicado. Com régua: remove. */
   rulerClick(p: Point): void
   rulerMove(p: Point): void
-  /** Botão direito medindo: dobra a régua no ponto (encaixado como o início). */
+  /** Botão direito medindo: dobra a régua exatamente no ponto. */
   rulerBend(p: Point): void
   rulerCancel(): void
   ping(p: Point, recenter: boolean): void
@@ -258,8 +258,9 @@ export function createTableStore(
           actions.rulerCancel()
           return
         }
-        // Com a grade desligada o quadrado usa o tamanho configurado do mesmo jeito.
-        const ruler = rulerStart(p, s.settings.grid.size)
+        // A linha fica onde a pessoa aponta; a distância conta pelo centro dos quadrados
+        // (com a grade desligada, os quadrados do tamanho configurado, do mesmo jeito).
+        const ruler = rulerStart(p)
         set({ ownRuler: ruler })
         rulerThrottle(ruler)
       },
