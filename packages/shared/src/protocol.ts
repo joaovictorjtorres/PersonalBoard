@@ -253,6 +253,9 @@ export interface Snapshot {
   turns?: Turns
 }
 
+/** Motivos de `error` (o servidor fecha a conexão logo depois). */
+export type ServerErrorReason = 'table_not_found' | 'auth' | 'table_deleted'
+
 export type ServerMessage =
   | { t: 'welcome'; self: Member; snapshot: Snapshot; clientSecret?: string }
   | { t: 'ack'; opId: string; version: number }
@@ -282,4 +285,6 @@ export type ServerMessage =
   | { t: 'chat'; channel: ChatChannel; entry: ChatEntry }
   | { t: 'chatAck'; reqId: string }
   | { t: 'chatReject'; reqId: string; reason: ChatRejectReason }
-  | { t: 'error'; reason: 'table_not_found' | 'auth' }
+  | { t: 'error'; reason: ServerErrorReason }
+  /** O mestre renomeou a mesa na página local. */
+  | { t: 'tableRenamed'; name: string }

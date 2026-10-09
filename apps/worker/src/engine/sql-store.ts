@@ -37,6 +37,10 @@ export class SqlStore implements TableStore {
     for (const layer of layers) this.sql.exec('INSERT INTO layers (id, data) VALUES (?, ?)', layer.id, JSON.stringify(layer))
   }
 
+  renameTable(name: string): void {
+    this.sql.exec('UPDATE meta SET name = ?', name)
+  }
+
   getLayers(): Layer[] {
     return this.sql
       .exec<{ data: string }>('SELECT data FROM layers')

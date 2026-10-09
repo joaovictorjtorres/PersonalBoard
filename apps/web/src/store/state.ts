@@ -5,6 +5,7 @@ import {
   type ChatEntry,
   type Layer,
   type Member,
+  type ServerErrorReason,
   type Box,
   type Op,
   type Point,
@@ -98,7 +99,7 @@ export interface ShapeFill {
 
 export interface TableState {
   status: ConnStatus
-  fatal: 'table_not_found' | 'auth' | null
+  fatal: ServerErrorReason | null
   self: Member | null
   meta: TableMetaPublic | null
   members: Record<string, Member>

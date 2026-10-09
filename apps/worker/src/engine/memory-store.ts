@@ -30,6 +30,10 @@ export class MemoryStore implements TableStore {
     this.layers = layers.map((l) => ({ ...l }))
   }
 
+  renameTable(name: string) {
+    if (this.meta) this.meta = { ...this.meta, name }
+  }
+
   getLayers() { return [...this.layers].sort((a, b) => a.order - b.order) }
   putLayer(layer: Layer) { this.layers = [...this.layers.filter((l) => l.id !== layer.id), { ...layer }] }
   deleteLayer(id: string) { this.layers = this.layers.filter((l) => l.id !== id) }

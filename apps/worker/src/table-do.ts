@@ -13,6 +13,7 @@ import {
   type ChatRejectReason,
   type ClientMessage,
   type Role,
+  type ServerErrorReason,
   type ServerMessage,
   type TableObject,
 } from '@mesa/shared'
@@ -85,6 +86,37 @@ export class TableDO extends DurableObject<Env> {
     }
 
     return new Response('not found', { status: 404 })
+  }
+
+  /** RPC do índice: troca o nome e avisa quem está na mesa. */
+  renameTable(name: string): boolean {
+    if (!this.store.getMeta()) return false
+    this.store.renameTable(name)
+    this.broadcast(null, () => ({ t: 'tableRenamed', name }))
+    return true
+  }
+
+  /** Chaves dos arquivos que a mesa usa: imagens no mapa e no chat da mesa. */
+  listAssetKeys(): string[] {
+    const keys = new Set<string>()
+    for (const o of this.store.listObjects()) if (o.type === 'image') keys.add(o.assetKey)
+    for (const e of this.store.listChat()) if (e.kind === 'image') keys.add(e.assetKey)
+    return [...keys]
+  }
+
+  /**
+   * RPC do índice: avisa e fecha as conexões, apaga todo o armazenamento e devolve as chaves dos arquivos
+   * que a mesa usava (quem chamou decide o que sai do R2).
+   */
+  async deleteTable(): Promise<string[]> {
+    const keys = this.listAssetKeys()
+    for (const ws of this.ctx.getWebSockets()) this.closeWithError(ws, 'table_deleted', 4410)
+    await this.ctx.storage.deleteAll()
+    // deleteAll apaga também as tabelas SQLite: recria o esquema vazio (getMeta() → null = mesa não encontrada).
+    this.store = new SqlStore(this.ctx.storage.sql)
+    this.engine = new TableEngine(this.store)
+    this.strokeLayers.clear()
+    return keys
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
@@ -422,6 +454,17 @@ export class TableDO extends DurableObject<Env> {
       if (!att || att.sessionId === excludeSessionId) continue
       const msg = build(att)
       if (msg) this.send(ws, msg)
+    }
+  }
+
+  /** Avisa o motivo, desvincula a pessoa (o webSocketClose não mexe mais na mesa) e fecha o socket. */
+  private closeWithError(ws: WebSocket, reason: ServerErrorReason, code: number): void {
+    this.send(ws, { t: 'error', reason })
+    ws.serializeAttachment(null)
+    try {
+      ws.close(code, reason)
+    } catch {
+      // já fechado
     }
   }
 

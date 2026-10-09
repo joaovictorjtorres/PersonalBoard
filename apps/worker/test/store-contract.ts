@@ -61,4 +61,6 @@ export function checkStoreContract(store: TableStore): void {
   expect(store.getTurns()).toEqual(turns)
   store.getTurns().entries.pop()
   expect(store.getTurns().entries).toHaveLength(2)
+  store.renameTable('Outra mesa')
+  expect(store.getMeta()?.name).toBe('Outra mesa')
 }

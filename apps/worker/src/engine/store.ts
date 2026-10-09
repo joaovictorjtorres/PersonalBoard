@@ -24,6 +24,7 @@ export interface StoredMember {
 export interface TableStore {
   getMeta(): TableMeta | null
   initTable(meta: TableMeta, layers: Layer[]): void
+  renameTable(name: string): void
   getLayers(): Layer[]
   putLayer(layer: Layer): void
   deleteLayer(id: string): void

@@ -746,6 +746,8 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
 
     case 'error':
       return { ...s, fatal: msg.reason, status: 'closed' }
+    case 'tableRenamed':
+      return s.meta ? { ...s, meta: { ...s.meta, name: msg.name } } : s
     case 'settingsUpdated':
       return { ...s, settings: msg.settings }
 

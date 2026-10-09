@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import type { ServerErrorReason } from '@mesa/shared'
 import { TableCanvas } from '../canvas/TableCanvas'
 import { getNickname, setNickname } from '../lib/identity'
 import { TableStoreContext, useTable, useTableActions } from '../store/context'
@@ -55,22 +56,7 @@ function TableView() {
   const viewport = useTable((s) => s.viewport)
   useKeyboard()
 
-  if (fatal) {
-    return (
-      <div className="fullscreen-msg">
-        <div>
-          {fatal === 'auth' ? (
-            <p>Identidade inválida nesta mesa. Peça ao mestre para remover você da lista de membros e recarregue a página.</p>
-          ) : (
-            <>
-              <p>Mesa não encontrada.</p>
-              <a href="/" style={{ color: '#9db4ff' }}>Criar uma nova mesa</a>
-            </>
-          )}
-        </div>
-      </div>
-    )
-  }
+  if (fatal) return <FatalMessage reason={fatal} />
 
   return (
     <>
@@ -105,5 +91,41 @@ function TableView() {
       <Toasts />
       {debug && <DebugPanel />}
     </>
+  )
+}
+
+function FatalMessage({ reason }: { reason: ServerErrorReason }) {
+  if (reason === 'table_deleted') return <DeletedNotice />
+  return (
+    <div className="fullscreen-msg">
+      <div>
+        {reason === 'auth' ? (
+          <p>Identidade inválida nesta mesa. Peça ao mestre para remover você da lista de membros e recarregue a página.</p>
+        ) : (
+          <>
+            <p>Mesa não encontrada.</p>
+            <a href="/" style={{ color: '#9db4ff' }}>Voltar à página inicial</a>
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const DELETED_REDIRECT_MS = 3_000
+
+/** A mesa foi apagada pelo mestre: avisa e volta sozinho para a página inicial. */
+function DeletedNotice() {
+  useEffect(() => {
+    const timer = setTimeout(() => window.location.assign('/'), DELETED_REDIRECT_MS)
+    return () => clearTimeout(timer)
+  }, [])
+  return (
+    <div className="fullscreen-msg">
+      <div>
+        <p>A mesa foi apagada</p>
+        <a href="/" style={{ color: '#9db4ff' }}>Voltar à página inicial</a>
+      </div>
+    </div>
   )
 }

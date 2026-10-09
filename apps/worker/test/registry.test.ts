@@ -1,8 +1,8 @@
-import { exports } from 'cloudflare:workers'
+import { env, exports } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
 import type { RegistryView } from '@mesa/shared'
 import { isJsonRequest, isLocalRequest } from '../src/local'
-import { LOCAL, createTable } from './helpers'
+import { LOCAL, TestClient, createTable, tokenObject } from './helpers'
 
 const SELF = exports.default
 const TUNNEL_HEADERS = { 'cf-ray': '8f00000000000000-GRU', 'cf-connecting-ip': '200.100.50.25' }
@@ -117,5 +117,70 @@ describe('índice de mesas', () => {
     expect((await registryView()).tunnelUrl).toBe('https://abc-def.trycloudflare.com')
     expect((await postTunnel('{"url":null}')).status).toBe(204)
     expect((await registryView()).tunnelUrl).toBeNull()
+  })
+})
+
+const patchName = (id: string, body: string, headers: Record<string, string> = {}) =>
+  SELF.fetch(`${LOCAL}/api/registry/tables/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json', ...headers }, body })
+const deleteTable = (id: string) =>
+  SELF.fetch(`${LOCAL}/api/registry/tables/${id}`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' } })
+
+async function uploadRandom(tableId: string): Promise<string> {
+  const res = await SELF.fetch(`${LOCAL}/api/tables/${tableId}/assets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'image/png' },
+    body: crypto.getRandomValues(new Uint8Array(64)),
+  })
+  expect(res.status).toBe(201)
+  return (await res.json<{ assetKey: string }>()).assetKey
+}
+
+describe('renomear e apagar mesa', () => {
+  it('renomear: nome novo no índice, aviso para quem está na mesa e no snapshot de quem entra depois', async () => {
+    const { tableId } = await createTable('Antigo')
+    const p = await TestClient.connect(tableId)
+    await p.hello('Ana')
+    expect((await patchName(tableId, JSON.stringify({ name: '  Nova  ' }))).status).toBe(204)
+    expect((await registryView()).tables.find((t) => t.id === tableId)?.name).toBe('Nova')
+    expect(await p.waitFor('tableRenamed')).toEqual({ t: 'tableRenamed', name: 'Nova' })
+    const late = await TestClient.connect(tableId)
+    expect((await late.hello('Bia')).welcome.snapshot.meta.name).toBe('Nova')
+  })
+
+  it('renomear: só espaços, mais de 60, corpo inválido → 400 sem mudar; mesa fora do índice → 404; pelo túnel → 404', async () => {
+    const { tableId } = await createTable('Fica')
+    for (const body of ['{"name":"   "}', JSON.stringify({ name: 'x'.repeat(61) }), '{}', 'lixo']) {
+      expect((await patchName(tableId, body)).status, body).toBe(400)
+    }
+    expect((await registryView()).tables.find((t) => t.id === tableId)?.name).toBe('Fica')
+    expect((await patchName('ZZZZZZZZZZ', '{"name":"x"}')).status).toBe(404)
+    expect((await patchName(tableId, '{"name":"x"}', { 'cf-ray': 'x' })).status).toBe(404)
+  })
+
+  // Review Focus #2
+  it('apagar: quem está na mesa recebe table_deleted; some do índice; reconexão vê mesa não encontrada; arquivo só dela sai do R2, compartilhado fica', async () => {
+    const a = await createTable('Apagar')
+    const b = await createTable('Fica')
+    const pa = await TestClient.connect(a.tableId)
+    await pa.hello('Ana')
+    const pb = await TestClient.connect(b.tableId)
+    await pb.hello('Bia')
+    const onlyA = await uploadRandom(a.tableId)
+    const shared = await uploadRandom(a.tableId)
+    pa.send({ t: 'op', opId: 'a1', op: { kind: 'create', object: tokenObject({ assetKey: onlyA }) } })
+    pa.send({ t: 'op', opId: 'a2', op: { kind: 'create', object: tokenObject({ assetKey: shared }) } })
+    pb.send({ t: 'op', opId: 'b1', op: { kind: 'create', object: tokenObject({ assetKey: shared }) } })
+    await pa.waitFor('ack', (m) => m.opId === 'a2')
+    await pb.waitFor('ack', (m) => m.opId === 'b1')
+
+    expect((await deleteTable(a.tableId)).status).toBe(204)
+    expect(await pa.waitFor('error')).toEqual({ t: 'error', reason: 'table_deleted' })
+    expect((await registryView()).tables.some((t) => t.id === a.tableId)).toBe(false)
+    expect(await env.FILES.head(onlyA)).toBeNull()
+    expect(await env.FILES.head(shared)).not.toBeNull()
+
+    const again = await TestClient.connect(a.tableId)
+    expect(await again.waitFor('error')).toEqual({ t: 'error', reason: 'table_not_found' })
+    expect((await deleteTable(a.tableId)).status).toBe(404)
   })
 })
