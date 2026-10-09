@@ -974,6 +974,70 @@ describe('TableDO — vínculo entre sessões', () => {
     expect(welcome.snapshot.members.filter((m) => m.role === 'gm')).toHaveLength(1)
   })
 
+  it('link de mestre num navegador onde a pessoa entrou como jogador: volta ao membro mestre e o registro do jogador fica intacto', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm1 = await TestClient.connect(tableId)
+    const { clientId: gmId } = await gm1.hello('Mestre', { gmSecret })
+    const a = await TestClient.connect(tableId)
+    const { clientId: anaId, welcome: w1 } = await a.hello('Ana')
+    const tok = tokenObject()
+    a.send({ t: 'op', opId: 'op_1', op: { kind: 'create', object: tok } })
+    await a.waitFor('ack')
+    a.close()
+    await gm1.waitFor('memberLeft', (m) => m.clientId === anaId)
+    gm1.close()
+
+    const same = await TestClient.connect(tableId)
+    const { welcome } = await same.hello('Mestre', { gmSecret, clientId: anaId, clientSecret: w1.clientSecret })
+    expect(welcome.self).toMatchObject({ clientId: gmId, role: 'gm' })
+    expect(welcome.snapshot.members.find((m) => m.clientId === anaId)).toMatchObject({ role: 'player', nickname: 'Ana' })
+    expect(welcome.snapshot.members.filter((m) => m.role === 'gm')).toHaveLength(1)
+    expect(welcome.snapshot.objects.find((o) => o.id === tok.id)).toMatchObject({ ownerId: anaId })
+    // o segredo do jogador continua valendo para ele
+    const back = await TestClient.connect(tableId)
+    const { welcome: w2 } = await back.hello('Ana', { clientId: anaId, clientSecret: w1.clientSecret })
+    expect(w2.self).toMatchObject({ clientId: anaId, role: 'player' })
+  })
+
+  it('link de mestre com o clientId de um jogador numa mesa sem mestre: vira um mestre novo, o jogador fica jogador', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const a = await TestClient.connect(tableId)
+    const { clientId: anaId, welcome: w1 } = await a.hello('Ana')
+    const g = await TestClient.connect(tableId)
+    const { welcome } = await g.hello('Mestre', { gmSecret, clientId: anaId, clientSecret: w1.clientSecret })
+    expect(welcome.self.role).toBe('gm')
+    expect(welcome.self.clientId).not.toBe(anaId)
+    expect(welcome.snapshot.members.find((m) => m.clientId === anaId)).toMatchObject({ role: 'player', nickname: 'Ana' })
+  })
+
+  it('dois navegadores novos assumindo o mesmo apelido ao mesmo tempo: um entra, o outro recebe nickname_taken', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    const a = await TestClient.connect(tableId)
+    const { clientId: anaId } = await a.hello('Ana')
+    a.close()
+    await gm.waitFor('memberLeft', (m) => m.clientId === anaId)
+
+    const c1 = await TestClient.connect(tableId)
+    const c2 = await TestClient.connect(tableId)
+    c1.send({ t: 'hello', v: 2, clientId: crypto.randomUUID(), nickname: 'Ana' })
+    c2.send({ t: 'hello', v: 2, clientId: crypto.randomUUID(), nickname: 'ana' })
+    const outcome = async (c: TestClient) => {
+      for (let i = 0; i < 200; i++) {
+        const m = c.messages.find((x) => x.t === 'welcome' || x.t === 'error')
+        if (m) return m
+        await new Promise((r) => setTimeout(r, 10))
+      }
+      throw new Error('sem resposta')
+    }
+    const results = await Promise.all([outcome(c1), outcome(c2)])
+    expect(results.filter((m) => m.t === 'welcome')).toHaveLength(1)
+    expect(results.filter((m) => m.t === 'error')).toEqual([{ t: 'error', reason: 'nickname_taken' }])
+    const welcome = results.find((m) => m.t === 'welcome')
+    expect(welcome?.t === 'welcome' && welcome.self.clientId).toBe(anaId)
+  })
+
   it('GET /api/tables/:id/members (também pelo túnel): só jogadores fora da mesa, sem clientId; mesa inexistente → vazio', async () => {
     const { tableId, gmSecret } = await createTable()
     const gm = await TestClient.connect(tableId)

@@ -212,11 +212,17 @@ export class TableDO extends DurableObject<Env> {
         clientId = targetId
         adopted = true
       }
+    } else if (existing && existing.role !== 'gm' && role === 'gm') {
+      // Link de mestre num navegador onde a pessoa entrou como jogador: o registro do jogador fica
+      // intacto; volta ao membro mestre (ou a um mestre novo, se a mesa ainda não tem).
+      clientId = this.engine.gmMember()?.clientId ?? crypto.randomUUID()
+      adopted = true
     }
 
     let issued: string | undefined
     if (adopted) {
-      issued = candidate // segredo novo para este navegador; o do navegador antigo deixa de valer
+      // segredo novo para este navegador; o do navegador antigo deixa de valer
+      if (m2) issued = candidate
     } else if (existing?.secretHash) {
       const ok = providedHash !== null && safeEqual(providedHash, existing.secretHash)
       if (!ok) {
