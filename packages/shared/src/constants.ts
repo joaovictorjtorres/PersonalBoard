@@ -51,5 +51,9 @@ export const PING_RATE_PER_SEC = 3
 export const PING_DURATION_MS = 2000
 export const CAMERA_GLIDE_MS = 400
 export const RULER_THROTTLE_MS = 33
+/** Início + dobras + ponta (botão direito adiciona dobras). */
+export const RULER_MAX_POINTS = 32
+/** Folga sobre o throttle do cliente (~30/s); acima disso o servidor descarta. */
+export const RULER_RATE_PER_SEC = 40
 export const DICE_MAX_COUNT = 50
 export const DICE_MAX_BONUS = 100

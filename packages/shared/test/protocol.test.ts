@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ClientMessageSchema, ObjectPatchSchema, OpSchema, TableObjectSchema, isObjectOp, readChatReqId, readOpId } from '../src'
+import { ClientMessageSchema, ObjectPatchSchema, OpSchema, RULER_MAX_POINTS, TableObjectSchema, isObjectOp, readChatReqId, readOpId } from '../src'
 
 const uuid = '3f1c2b9e-8a4d-4c1e-9b7a-2d5e6f708192'
 const image = {
@@ -173,7 +173,17 @@ describe('protocolo do M3', () => {
   })
 
   it('presença de régua e ping', () => {
-    expect(ClientMessageSchema.safeParse({ t: 'presence', p: { kind: 'ruler', from: { x: 1, y: 2 }, to: { x: 3, y: 4 } } }).success).toBe(true)
+    const ruler = (points: unknown) => ClientMessageSchema.safeParse({ t: 'presence', p: { kind: 'ruler', points } }).success
+    const pts = (n: number) => Array.from({ length: n }, (_, i) => ({ x: i, y: -i }))
+    expect(ruler(pts(2))).toBe(true)
+    expect(ruler(pts(RULER_MAX_POINTS))).toBe(true)
+    expect(ruler(pts(1))).toBe(false)
+    expect(ruler(pts(RULER_MAX_POINTS + 1))).toBe(false)
+    expect(ruler([{ x: 0, y: 0 }, { x: Infinity, y: 0 }])).toBe(false)
+    expect(ruler([{ x: 0, y: 0 }, { x: NaN, y: 0 }])).toBe(false)
+    expect(ruler([{ x: 0, y: 0 }, { x: '1', y: 0 }])).toBe(false)
+    // formato antigo (from/to) não é mais aceito
+    expect(ClientMessageSchema.safeParse({ t: 'presence', p: { kind: 'ruler', from: { x: 1, y: 2 }, to: { x: 3, y: 4 } } }).success).toBe(false)
     expect(ClientMessageSchema.safeParse({ t: 'presence', p: { kind: 'rulerEnd' } }).success).toBe(true)
     expect(ClientMessageSchema.safeParse({ t: 'presence', p: { kind: 'ping', x: 1, y: 2, recenter: true } }).success).toBe(true)
     expect(ClientMessageSchema.safeParse({ t: 'presence', p: { kind: 'ping', x: 1, y: 2 } }).success).toBe(false)

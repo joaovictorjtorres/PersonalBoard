@@ -75,7 +75,7 @@ export function Toolbar() {
       </div>
       <button
         aria-label="Régua (R)"
-        title="Régua (R) — clique fixa o início; novo clique ou Esc remove"
+        title="Régua (R) — clique fixa o início; botão direito dobra; novo clique ou Esc remove"
         aria-pressed={tool === 'ruler'}
         onClick={() => actions.setTool('ruler')}
       >

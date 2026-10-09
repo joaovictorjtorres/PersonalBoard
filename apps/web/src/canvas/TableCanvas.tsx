@@ -52,6 +52,7 @@ export function TableCanvas() {
   const size = useWindowSize()
   const drawing = useDrawingTools()
   const shapes = useShapeTool()
+  const store = useTableStore()
   const stageRef = useRef<Konva.Stage>(null)
   const panning = tool === 'hand' || space
   // A grade fica logo acima da camada "map"; sem ela (removida pelo mestre), abaixo de tudo.
@@ -88,9 +89,10 @@ export function TableCanvas() {
   }
 
   // O menu do navegador fica desativado sobre o canvas; sobre um objeto, abre o nosso.
+  // Medindo com a régua, o botão direito é a dobra: nenhum menu abre.
   const onContextMenu = (e: KonvaEventObject<PointerEvent>) => {
     e.evt.preventDefault()
-    if (panning) return
+    if (panning || (tool === 'ruler' && store.getState().ownRuler)) return
     const node = e.target.findAncestor('.object', true)
     if (node) actions.openObjectMenu(node.id(), e.evt.clientX, e.evt.clientY)
   }
@@ -135,6 +137,7 @@ export function TableCanvas() {
         if (panning) return
         if (tool === 'ruler') {
           if (pos && e.evt.button === 0) actions.rulerClick(pos)
+          if (pos && e.evt.button === 2) actions.rulerBend(pos)
           return
         }
         if (tool === 'select' && e.target === e.target.getStage()) actions.select(null)

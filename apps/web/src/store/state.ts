@@ -66,8 +66,8 @@ export interface StrokePreview {
 }
 
 export interface Ruler {
-  from: Point
-  to: Point
+  /** Início, dobras e ponta (o cursor), em coordenadas do mapa. */
+  points: Point[]
 }
 
 export interface Ping {

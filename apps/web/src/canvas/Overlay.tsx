@@ -4,7 +4,7 @@ import { useTable } from '../store/context'
 import type { Ruler } from '../store/state'
 import { useFrameClock, useNow } from './hooks'
 import { pingRing } from './ping'
-import { rulerLabel } from './ruler'
+import { rulerLabel, rulerSegmentLabels } from './ruler'
 
 export function Overlay() {
   const now = useNow(1000)
@@ -79,21 +79,43 @@ function RulerMark({
 }) {
   const color = member?.color ?? '#ffffff'
   const k = 1 / scale
+  const pts = ruler.points
+  const end = pts[pts.length - 1]
   return (
     <Group>
       <Line
-        points={[ruler.from.x, ruler.from.y, ruler.to.x, ruler.to.y]}
+        name="ruler-line"
+        points={pts.flatMap((p) => [p.x, p.y])}
         stroke={color}
         strokeWidth={2 * k}
         dash={[8 * k, 6 * k]}
         lineCap="round"
+        lineJoin="round"
       />
-      <Circle x={ruler.from.x} y={ruler.from.y} radius={3 * k} fill={color} />
+      {/* início e dobras */}
+      {pts.slice(0, -1).map((p, i) => (
+        <Circle key={i} x={p.x} y={p.y} radius={3 * k} fill={color} />
+      ))}
+      {rulerSegmentLabels(ruler, size).map((s, i) => (
+        <Text
+          key={i}
+          name="ruler-segment-label"
+          text={s.text}
+          x={s.x + 6 * k}
+          y={s.y - 16 * k}
+          fontSize={11 * k}
+          fill={color}
+          opacity={0.85}
+          stroke="#111111"
+          strokeWidth={3 * k}
+          fillAfterStrokeEnabled
+        />
+      ))}
       <Text
         name="ruler-label"
         text={rulerLabel(member?.nickname ?? '?', ruler, size)}
-        x={ruler.to.x + 12 * k}
-        y={ruler.to.y + 12 * k}
+        x={end.x + 12 * k}
+        y={end.y + 12 * k}
         fontSize={13 * k}
         fill={color}
         stroke="#111111"

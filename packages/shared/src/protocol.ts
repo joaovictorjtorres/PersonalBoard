@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ASSET_KEY_RE, LAYER_NAME_MAX, NOTE_MAX } from './constants'
+import { ASSET_KEY_RE, LAYER_NAME_MAX, NOTE_MAX, RULER_MAX_POINTS } from './constants'
 import {
   ChatChannelSchema,
   ChatImageSideSchema,
@@ -82,7 +82,8 @@ export const PresenceSchema = z.discriminatedUnion('kind', [
     strokeWidth: z.number().min(1).max(100),
   }),
   z.object({ kind: z.literal('strokeEnd'), strokeId: IdSchema }),
-  z.object({ kind: z.literal('ruler'), from: PointSchema, to: PointSchema }),
+  /** Início, dobras e ponta (o cursor); a distância é a soma dos trechos. */
+  z.object({ kind: z.literal('ruler'), points: z.array(PointSchema).min(2).max(RULER_MAX_POINTS) }),
   z.object({ kind: z.literal('rulerEnd') }),
   z.object({ kind: z.literal('ping'), x: z.number(), y: z.number(), recenter: z.boolean() }),
 ])

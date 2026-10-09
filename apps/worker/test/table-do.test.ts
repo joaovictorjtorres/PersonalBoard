@@ -612,10 +612,9 @@ describe('TableDO — M3: chat, dados e presença', () => {
 
   it('régua vai só para os outros; ping vai para todos; recenter de jogador vira false', async () => {
     const { gm, a, b, gmId, aId } = await trio()
-    a.send({ t: 'presence', p: { kind: 'ruler', from: { x: 35, y: 35 }, to: { x: 200, y: 35 } } })
-    expect(await b.waitFor('presence')).toEqual({
-      t: 'presence', clientId: aId, p: { kind: 'ruler', from: { x: 35, y: 35 }, to: { x: 200, y: 35 } },
-    })
+    const points = [{ x: 35, y: 35 }, { x: 105, y: 35 }, { x: 200, y: 90 }]
+    a.send({ t: 'presence', p: { kind: 'ruler', points } })
+    expect(await b.waitFor('presence')).toEqual({ t: 'presence', clientId: aId, p: { kind: 'ruler', points } })
     a.send({ t: 'presence', p: { kind: 'rulerEnd' } })
     expect((await b.waitFor('presence')).p).toEqual({ kind: 'rulerEnd' })
     await a.expectNone('presence')
@@ -631,5 +630,21 @@ describe('TableDO — M3: chat, dados e presença', () => {
     for (let i = 0; i < 5; i++) a.send({ t: 'presence', p: { kind: 'ping', x: i, y: 0, recenter: false } })
     await b.waitFor('presence', (m) => m.p.kind === 'ping' && m.p.x === 2)
     await b.expectNone('presence', (m) => m.p.kind === 'ping' && m.p.x >= 3)
+  })
+
+  it('régua: no máximo 40 por segundo por pessoa; fim da régua sempre passa; formato inválido não chega', async () => {
+    const { a, b } = await trio()
+    const at = (x: number) => [{ x: 0, y: 0 }, { x, y: 0 }]
+    for (let i = 0; i < 45; i++) a.send({ t: 'presence', p: { kind: 'ruler', points: at(i) } })
+    a.send({ t: 'presence', p: { kind: 'rulerEnd' } })
+    await b.waitFor('presence', (m) => m.p.kind === 'rulerEnd')
+    const xs = b.messages.flatMap((m) => (m.t === 'presence' && m.p.kind === 'ruler' ? [m.p.points[1].x] : []))
+    expect(xs).toEqual(Array.from({ length: 40 }, (_, i) => i))
+
+    const seen = b.messages.length
+    a.send({ t: 'presence', p: { kind: 'ruler', points: [{ x: 0, y: 0 }] } })
+    a.send({ t: 'presence', p: { kind: 'ruler', points: Array.from({ length: 33 }, () => ({ x: 1, y: 1 })) } })
+    await new Promise((r) => setTimeout(r, 300))
+    expect(b.messages.slice(seen).filter((m) => m.t === 'presence')).toEqual([])
   })
 })

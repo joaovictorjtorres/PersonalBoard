@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { nanoid } from 'nanoid'
 import type { ChatChannel, ClientMessage, MemberPatch, Op, Point, Presence, RollRequest, SettingsPatch, ShapeKind } from '@mesa/shared'
-import { CHAT_TEXT_MAX, DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, canControl, cellCenter, parseCommand, snapToGrid } from '@mesa/shared'
+import { CHAT_TEXT_MAX, DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, canControl, parseCommand, snapToGrid } from '@mesa/shared'
 import { SyncClient, type SyncClientOptions } from '../sync/SyncClient'
 import { throttle, type Throttled } from '../lib/throttle'
 import { getClientId, readClientSecret, readGmSecret, rememberClientSecret, shouldRetryAuth } from '../lib/identity'
@@ -18,6 +18,7 @@ import {
   type Tool,
   type Viewport,
 } from './state'
+import { rulerBend as bendRuler, rulerMoveTo, rulerStart } from '../canvas/ruler'
 import { addToast, reduceServer, reduceStatus, reduceSubmitBatch } from './reducers'
 import { channelOf, closeDmTab, openDmTab, selectChatTab, setChatOpen, type ChatTab } from './chat'
 
@@ -59,6 +60,8 @@ export interface TableActions {
   /** Sem régua: começa no centro do quadrado clicado. Com régua: remove. */
   rulerClick(p: Point): void
   rulerMove(p: Point): void
+  /** Botão direito medindo: dobra a régua no ponto (encaixado como o início). */
+  rulerBend(p: Point): void
   rulerCancel(): void
   ping(p: Point, recenter: boolean): void
   /** true = enviado (o campo pode ser limpo); false = vazio, fórmula inválida ou sem conexão. */
@@ -89,7 +92,7 @@ export function createTableStore(
     }, 66)
 
     const rulerThrottle = throttle((ruler: Ruler) => {
-      sync?.send({ t: 'presence', p: { kind: 'ruler', from: ruler.from, to: ruler.to } })
+      sync?.send({ t: 'presence', p: { kind: 'ruler', points: ruler.points } })
     }, RULER_THROTTLE_MS)
 
     const submitMany = (ops: Op[], isUndo: boolean): boolean => {
@@ -256,14 +259,22 @@ export function createTableStore(
           return
         }
         // Com a grade desligada o quadrado usa o tamanho configurado do mesmo jeito.
-        const ruler: Ruler = { from: cellCenter(p, s.settings.grid.size), to: p }
+        const ruler = rulerStart(p, s.settings.grid.size)
         set({ ownRuler: ruler })
         rulerThrottle(ruler)
       },
       rulerMove(p) {
         const current = get().ownRuler
         if (!current) return
-        const ruler: Ruler = { from: current.from, to: p }
+        const ruler = rulerMoveTo(current, p)
+        set({ ownRuler: ruler })
+        rulerThrottle(ruler)
+      },
+      rulerBend(p) {
+        const s = get()
+        if (!s.ownRuler) return
+        const ruler = bendRuler(s.ownRuler, p, s.settings.grid.size)
+        if (!ruler) return
         set({ ownRuler: ruler })
         rulerThrottle(ruler)
       },

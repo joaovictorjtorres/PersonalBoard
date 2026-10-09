@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cellCenter, formatDistance, rulerDistance, snapPatch, snapToGrid } from '../src'
+import { cellCenter, formatDistance, rulerDistance, segmentDistance, snapPatch, snapToGrid } from '../src'
 
 describe('snapToGrid', () => {
   it('posição vai ao múltiplo mais próximo; lado ao múltiplo, com mínimo de um quadrado', () => {
@@ -26,10 +26,18 @@ describe('régua', () => {
     expect(cellCenter({ x: -1, y: 0 }, 70)).toEqual({ x: -35, y: 35 })
   })
 
-  it('rulerDistance = hypot / size com uma casa', () => {
-    expect(rulerDistance({ x: 0, y: 0 }, { x: 210, y: 280 }, 70)).toBe(5)
-    expect(rulerDistance({ x: 0, y: 0 }, { x: 100, y: 0 }, 70)).toBe(1.4)
-    expect(rulerDistance({ x: 385, y: 315 }, { x: 700, y: 300 }, 70)).toBe(4.5)
+  it('segmentDistance = hypot / size com uma casa', () => {
+    expect(segmentDistance({ x: 0, y: 0 }, { x: 210, y: 280 }, 70)).toBe(5)
+    expect(segmentDistance({ x: 0, y: 0 }, { x: 100, y: 0 }, 70)).toBe(1.4)
+    expect(segmentDistance({ x: 385, y: 315 }, { x: 700, y: 300 }, 70)).toBe(4.5)
+  })
+
+  it('rulerDistance soma todos os trechos e arredonda só o total', () => {
+    expect(rulerDistance([{ x: 0, y: 0 }, { x: 210, y: 280 }], 70)).toBe(5)
+    expect(rulerDistance([{ x: 385, y: 315 }, { x: 735, y: 315 }, { x: 735, y: 455 }], 70)).toBe(7)
+    // 3 trechos de 1,43 q: soma 4,3 (e não 3 × 1,4 = 4,2)
+    expect(rulerDistance([{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 200, y: 0 }, { x: 300, y: 0 }], 70)).toBe(4.3)
+    expect(rulerDistance([{ x: 5, y: 5 }], 70)).toBe(0)
   })
 
   it('formatDistance usa vírgula decimal e "q"', () => {

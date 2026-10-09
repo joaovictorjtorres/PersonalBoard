@@ -4,6 +4,7 @@ import {
   ClientMessageSchema,
   DEFAULT_LAYERS,
   PING_RATE_PER_SEC,
+  RULER_RATE_PER_SEC,
   readChatReqId,
   readOpId,
   type ChatMessage,
@@ -44,6 +45,7 @@ export class TableDO extends DurableObject<Env> {
   // Limites por pessoa (clientId), só em memória.
   private chatLimiter = new RateLimiter(CHAT_RATE_PER_SEC, 1000)
   private pingLimiter = new RateLimiter(PING_RATE_PER_SEC, 1000)
+  private rulerLimiter = new RateLimiter(RULER_RATE_PER_SEC, 1000)
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -320,6 +322,10 @@ export class TableDO extends DurableObject<Env> {
         this.broadcast(att.sessionId, (other) => (this.engine.canSeeLayer(other.role, p.layerId) ? out : null))
         return
       case 'ruler':
+        // Cada mensagem traz a régua inteira (até 32 pontos): descartar excesso não perde estado.
+        if (!this.rulerLimiter.allow(att.clientId)) return
+        this.broadcast(att.sessionId, () => out)
+        return
       case 'rulerEnd':
         this.broadcast(att.sessionId, () => out)
         return

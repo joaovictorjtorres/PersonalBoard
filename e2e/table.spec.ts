@@ -579,6 +579,37 @@ test('régua do mestre aparece para o jogador com nome e distância', async ({ b
   await expect.poll(labels).toEqual([])
 })
 
+test('régua com dobra: botão direito dobra, o outro vê a linha quebrada com a soma', async ({ browser, page }) => {
+  const { tableId } = await newTable(page)
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const bia = await open(browser, `/t/${tableId}?debug=1`, 'Bia')
+  const seen = () =>
+    bia.evaluate(() => {
+      const stage = (window as any).__stage
+      return {
+        line: stage.find('.ruler-line').map((n: any) => n.points()),
+        total: stage.find('.ruler-label').map((n: any) => n.text()),
+        segments: stage.find('.ruler-segment-label').map((n: any) => n.text()),
+      }
+    })
+
+  await ana.getByRole('button', { name: 'Régua (R)' }).click()
+  await ana.mouse.click(400, 300) // início no centro do quadrado (385, 315)
+  await ana.mouse.move(700, 300, { steps: 5 })
+  await ana.mouse.click(700, 300, { button: 'right' }) // dobra no centro do quadrado (735, 315)
+  await ana.mouse.move(735, 455, { steps: 5 })
+  await expect.poll(seen).toEqual({
+    line: [[385, 315, 735, 315, 735, 455]],
+    total: ['Ana · 7,0 q'],
+    segments: ['5,0 q', '2,0 q'],
+  })
+  // o botão direito medindo não abre menu nenhum
+  await expect(ana.getByRole('dialog')).toHaveCount(0)
+
+  await ana.mouse.click(735, 455) // clique esquerdo termina e remove
+  await expect.poll(seen).toEqual({ line: [], total: [], segments: [] })
+})
+
 test('retângulo, elipse e linha aparecem para o outro', async ({ browser, page }) => {
   const { tableId, gmSecret } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')

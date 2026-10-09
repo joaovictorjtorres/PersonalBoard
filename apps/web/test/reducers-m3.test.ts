@@ -75,13 +75,14 @@ describe('membros', () => {
 })
 
 describe('régua', () => {
-  const ruler: Presence = { kind: 'ruler', from: { x: 35, y: 35 }, to: { x: 100, y: 35 } }
+  const ruler: Presence = { kind: 'ruler', points: [{ x: 35, y: 35 }, { x: 100, y: 35 }] }
 
   it('guarda uma régua por pessoa; rulerEnd remove', () => {
     let s = presence(joined(gm), 'p1', ruler)
-    expect(s.rulers).toEqual({ p1: { from: { x: 35, y: 35 }, to: { x: 100, y: 35 } } })
-    s = presence(s, 'p1', { kind: 'ruler', from: { x: 35, y: 35 }, to: { x: 200, y: 35 } })
-    expect(s.rulers.p1.to).toEqual({ x: 200, y: 35 })
+    expect(s.rulers).toEqual({ p1: { points: [{ x: 35, y: 35 }, { x: 100, y: 35 }] } })
+    const bent = [{ x: 35, y: 35 }, { x: 105, y: 35 }, { x: 200, y: 90 }]
+    s = presence(s, 'p1', { kind: 'ruler', points: bent })
+    expect(s.rulers.p1.points).toEqual(bent)
     s = presence(s, 'p1', { kind: 'rulerEnd' })
     expect(s.rulers).toEqual({})
   })

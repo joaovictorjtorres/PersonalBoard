@@ -468,7 +468,7 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         case 'strokeEnd':
           return { ...s, strokePreviews: omit(s.strokePreviews, p.strokeId) }
         case 'ruler':
-          return { ...s, rulers: { ...s.rulers, [msg.clientId]: { from: p.from, to: p.to } } }
+          return { ...s, rulers: { ...s.rulers, [msg.clientId]: { points: p.points } } }
         case 'rulerEnd':
           return { ...s, rulers: omit(s.rulers, msg.clientId) }
         case 'ping': {
