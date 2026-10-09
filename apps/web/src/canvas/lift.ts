@@ -19,6 +19,27 @@ export function liftedIds(s: Pick<TableState, 'draggingId' | 'selection' | 'sele
   return [...ids].sort((a, b) => rank(a) - rank(b) || s.objects[a].zIndex - s.objects[b].zIndex)
 }
 
+/**
+ * Recoloca os nós de objeto de uma camada na ordem de `rank` (posição de cada id na lista da sua camada),
+ * nos mesmos lugares que já ocupavam; os outros filhos (títulos, prévias, Transformer) ficam onde estão.
+ * Conserta a inserção do react-konva, que usa o índice do vizinho: com o vizinho levantado, o item novo
+ * cai no lugar errado. Devolve true se mudou algo.
+ */
+export function sortObjectNodes(container: Konva.Container, rank: ReadonlyMap<string, number>): boolean {
+  const slots: number[] = []
+  const nodes: Konva.Node[] = []
+  container.children.forEach((child, i) => {
+    if (!rank.has(child.id())) return
+    slots.push(i)
+    nodes.push(child)
+  })
+  const sorted = [...nodes].sort((a, b) => rank.get(a.id())! - rank.get(b.id())!)
+  if (sorted.every((node, i) => node === nodes[i])) return false
+  sorted.forEach((node, i) => (container.children[slots[i]] = node))
+  container._setChildrenIndices()
+  return true
+}
+
 interface Lifted {
   node: Konva.Node
   home: Konva.Container

@@ -1754,15 +1754,15 @@ test('caneta: a ponta de borracha apaga ao longo da passada com a Mão escolhida
   expect(await player.evaluate(() => (window as any).__mesa.getState().tool)).toBe('hand')
 })
 
-/** Imagem criada pela store (no topo da camada), com a mesma imagem de um token já enviado. */
-async function addImageAt(page: Page, id: string, layerId: string, x: number, y: number, assetKey: string): Promise<void> {
+/** Imagem criada pela store (no topo da camada, ou no zIndex pedido), com a mesma imagem de um token já enviado. */
+async function addImageAt(page: Page, id: string, layerId: string, x: number, y: number, assetKey: string, z?: number): Promise<void> {
   await page.evaluate(
-    ({ id, layerId, x, y, assetKey }) => {
+    ({ id, layerId, x, y, assetKey, z }) => {
       const { actions } = (window as any).__mesa.getState()
-      const object = { id, type: 'image', layerId, assetKey, x, y, width: 70, height: 70, rotation: 0, zIndex: actions.nextZ(layerId) }
+      const object = { id, type: 'image', layerId, assetKey, x, y, width: 70, height: 70, rotation: 0, zIndex: z ?? actions.nextZ(layerId) }
       actions.submit({ kind: 'create', object })
     },
-    { id, layerId, x, y, assetKey },
+    { id, layerId, x, y, assetKey, z },
   )
   await page.waitForFunction(() => Object.keys((window as any).__mesa.getState().pending).length === 0)
 }
@@ -1880,4 +1880,52 @@ test('arrastar o grupo da seleção: os itens passam por cima enquanto arrasta e
   await settled(gm)
   await gm.keyboard.press('Control+z')
   for (const p of [gm, ana]) await expect.poll(() => drawOrder(p, ids)).toEqual([a.id, 'b', 'c'])
+})
+
+test('arrastar: item criado por outra pessoa na mesma camada no meio do meu arrasto fica na ordem certa depois de soltar', async ({ browser, page }) => {
+  const { tableId, gmSecret, playerKey } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, playerPath({ tableId, playerKey }), 'Ana')
+
+  await uploadToken(gm) // "a": camada Tokens, x 605..675
+  const [a] = await objects(gm)
+  await addImageAt(gm, 'c', 'tokens', 300, 100, a.assetKey!, a.zIndex - 1) // abaixo de "a"
+  await addImageAt(gm, 'b', 'tokens', 645, 325, a.assetKey!) // acima de "a"
+  await expect.poll(async () => (await objects(ana)).length).toBe(3)
+  const ids = ['c', a.id, 'b', 'novo']
+
+  await gm.mouse.move(615, 360)
+  await gm.mouse.down()
+  await gm.mouse.move(615, 460, { steps: 5 })
+  await expect.poll(() => drawOrder(gm, ['c', a.id, 'b'])).toEqual(['c', 'b', a.id])
+  // Entre "c" e "a": o React o insere logo antes do nó levantado.
+  await addImageAt(ana, 'novo', 'tokens', 100, 500, a.assetKey!, a.zIndex - 0.5)
+  await expect.poll(async () => (await objects(gm)).length).toBe(4)
+  await gm.mouse.move(615, 480, { steps: 2 })
+  await gm.mouse.up()
+
+  for (const p of [gm, ana]) await expect.poll(() => drawOrder(p, ids)).toEqual(['c', 'novo', 'b', a.id])
+})
+
+test('arrastar: o sistema cancela o ponteiro no meio do arrasto (caneta): o arrasto termina onde estava e a trava é solta', async ({ browser, page }) => {
+  const { tableId, gmSecret, playerKey } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, playerPath({ tableId, playerKey }), 'Ana')
+  await uploadToken(gm) // x 605..675, y 325..395
+  const [a] = await objects(gm)
+  await expect.poll(async () => (await objects(ana)).length).toBe(1)
+
+  await gm.mouse.move(640, 360)
+  await gm.mouse.down()
+  await gm.mouse.move(690, 360, { steps: 5 })
+  await expect.poll(() => gm.evaluate(() => (window as any).__mesa.getState().draggingId)).toBe(a.id)
+  // O mouse do Playwright é o ponteiro 1.
+  await gm.evaluate(() =>
+    document.querySelector('.konvajs-content')!.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1, pointerType: 'mouse', bubbles: true })),
+  )
+
+  await expect.poll(() => gm.evaluate(() => (window as any).__mesa.getState().draggingId)).toBeNull()
+  for (const p of [gm, ana]) await expect.poll(async () => (await objects(p))[0].x).toBe(655)
+  await expect.poll(() => ana.evaluate(() => Object.keys((window as any).__mesa.getState().locks).length)).toBe(0)
+  await gm.mouse.up()
 })

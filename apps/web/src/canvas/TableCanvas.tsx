@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef } from 'react'
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { Group, Layer, Line, Stage } from 'react-konva'
@@ -11,7 +11,7 @@ import { useModifierKeys, useWindowSize } from './hooks'
 import { ImageNode } from './ImageNode'
 import { ObjectDecorations } from './ObjectDecorations'
 import { Overlay } from './Overlay'
-import { LIFT_GROUP_NAME, liftedIds, useLiftManager } from './lift'
+import { LIFT_GROUP_NAME, liftedIds, sortObjectNodes, useLiftManager } from './lift'
 import { isPingClick } from './ping'
 import { isHover, pointerAction } from './pointer'
 import { SelectionLayer } from './SelectionLayer'
@@ -87,6 +87,15 @@ export function TableCanvas() {
     return groups
   }, [objects])
 
+  // Depois de cada mudança nos objetos, o Konva fica na ordem da store (cada camada só tem objetos dela).
+  useLayoutEffect(() => {
+    const stage = stageRef.current
+    if (!stage) return
+    const rank = new Map<string, number>()
+    for (const list of Object.values(byLayer)) list.forEach((o, i) => rank.set(o.id, i))
+    for (const layer of stage.getLayers()) if (sortObjectNodes(layer, rank)) layer.batchDraw()
+  }, [byLayer])
+
   const onWheel = (e: KonvaEventObject<WheelEvent>) => {
     e.evt.preventDefault()
     const stage = e.target.getStage()
@@ -124,9 +133,13 @@ export function TableCanvas() {
   }
 
   // Soltar, cancelar (o sistema tomou o ponteiro) ou perder a captura: o gesto termina com o que já foi feito.
-  const endGesture = (pointerId: number) => {
+  // `aborted`: o arrasto do Konva (que só escuta o mouse) não percebe o cancelamento; ele é encerrado aqui
+  // e confirma onde o objeto está, como os outros gestos.
+  const endGesture = (pointerId: number, aborted = false) => {
     if (activePointer.current !== pointerId) return
     activePointer.current = null
+    const dragging = store.getState().draggingId
+    if (aborted && dragging) stageRef.current?.findOne(`#${dragging}`)?.stopDrag()
     eraserGesture.current = false
     select.onUp()
     drawing.onUp()
@@ -138,7 +151,7 @@ export function TableCanvas() {
   useEffect(() => {
     const content = stageRef.current?.content
     if (!content) return
-    const onLost = (e: PointerEvent) => endGestureRef.current(e.pointerId)
+    const onLost = (e: PointerEvent) => endGestureRef.current(e.pointerId, true)
     content.addEventListener('lostpointercapture', onLost)
     return () => content.removeEventListener('lostpointercapture', onLost)
   }, [])
@@ -240,7 +253,7 @@ export function TableCanvas() {
         }
       }}
       onPointerUp={(e) => endGesture(e.evt.pointerId)}
-      onPointerCancel={(e) => endGesture(e.evt.pointerId)}
+      onPointerCancel={(e) => endGesture(e.evt.pointerId, true)}
       onPointerLeave={(e) => endGesture(e.evt.pointerId)}
     >
       {!hasMapLayer && <GridLayer />}
