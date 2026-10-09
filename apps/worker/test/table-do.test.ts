@@ -186,7 +186,8 @@ describe('TableDO', () => {
   it('POST /api/tables recusa id malformado em rotas e cria com nome padrão', async () => {
     const bad = await SELF.fetch('https://mesa.test/api/tables/abc/ws', { headers: { Upgrade: 'websocket' } })
     expect(bad.status).toBe(400)
-    const res = await SELF.fetch('https://mesa.test/api/tables', { method: 'POST' })
+    expect((await SELF.fetch('https://mesa.test/api/tables', { method: 'POST' })).status).toBe(404) // não local
+    const res = await SELF.fetch('http://localhost/api/tables', { method: 'POST' })
     expect(res.status).toBe(201)
     const body = await res.json<{ tableId: string; gmSecret: string }>()
     expect(body.tableId).toMatch(/^[A-Za-z0-9]{10}$/)

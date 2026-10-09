@@ -9,9 +9,15 @@
     "run_worker_first": ["/api/*", "/files/*"]
   },
   "durable_objects": {
-    "bindings": [{ "name": "TABLES", "class_name": "TableDO" }]
+    "bindings": [
+      { "name": "TABLES", "class_name": "TableDO" },
+      { "name": "REGISTRY", "class_name": "RegistryDO" }
+    ]
   },
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["TableDO"] }],
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["TableDO"] },
+    { "tag": "v2", "new_sqlite_classes": ["RegistryDO"] }
+  ],
   "r2_buckets": [{ "binding": "FILES", "bucket_name": "mesa-virtual-files" }],
   "observability": { "enabled": true }
 }

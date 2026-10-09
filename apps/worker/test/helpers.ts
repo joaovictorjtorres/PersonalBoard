@@ -3,7 +3,9 @@ import { expect } from 'vitest'
 import type { ClientMessage, NewObject, ServerMessage } from '@mesa/shared'
 
 const SELF = exports.default
-const BASE = 'https://mesa.test'
+/** Origem local: as rotas do índice e o POST /api/tables só respondem a pedidos locais. */
+export const LOCAL = 'http://localhost'
+const BASE = LOCAL
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 export async function createTable(name = 'Teste'): Promise<{ tableId: string; gmSecret: string }> {

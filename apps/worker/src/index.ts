@@ -1,17 +1,18 @@
-import { TABLE_ID_RE } from '@mesa/shared'
+import { TABLE_ID_RE, TABLE_NAME_MAX } from '@mesa/shared'
 import { randomId, randomSecret, sha256Hex } from './crypto'
 import { serveFile, uploadAsset } from './files'
+import { isLocalRequest } from './local'
+import { handleRegistry, json, notFound } from './registry-api'
+import { registryStub } from './registry-do'
 
 export { TableDO } from './table-do'
-
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+export { RegistryDO } from './registry-do'
 
 async function createTable(request: Request, env: Env): Promise<Response> {
   let name = 'Nova mesa'
   try {
     const body = await request.json<{ name?: unknown }>()
-    if (typeof body.name === 'string' && body.name.trim()) name = body.name.trim().slice(0, 60)
+    if (typeof body.name === 'string' && body.name.trim()) name = body.name.trim().slice(0, TABLE_NAME_MAX)
   } catch {
     // body ausente ou inválido → nome padrão
   }
@@ -23,7 +24,10 @@ async function createTable(request: Request, env: Env): Promise<Response> {
       method: 'POST',
       body: JSON.stringify({ id: tableId, name, gmSecretHash: await sha256Hex(gmSecret) }),
     })
-    if (res.status === 201) return json({ tableId, gmSecret }, 201)
+    if (res.status === 201) {
+      await registryStub(env).register({ id: tableId, name, gmSecret, playerKey: null })
+      return json({ tableId, gmSecret }, 201)
+    }
   }
   return json({ error: 'could_not_create' }, 500)
 }
@@ -33,8 +37,13 @@ export default {
     const url = new URL(request.url)
     const parts = url.pathname.split('/').filter(Boolean)
 
+    // Índice e criação: só do próprio PC (nunca pelo túnel).
+    if (parts[0] === 'api' && parts[1] === 'registry') {
+      return isLocalRequest(request) ? handleRegistry(request, env, parts.slice(2)) : notFound()
+    }
+
     if (parts[0] === 'api' && parts[1] === 'tables') {
-      if (parts.length === 2 && request.method === 'POST') return createTable(request, env)
+      if (parts.length === 2 && request.method === 'POST') return isLocalRequest(request) ? createTable(request, env) : notFound()
       const tableId = parts[2]
       if (!tableId || !TABLE_ID_RE.test(tableId)) return json({ error: 'invalid_table' }, 400)
       const stub = env.TABLES.get(env.TABLES.idFromName(tableId))
@@ -50,6 +59,6 @@ export default {
       return serveFile(parts[1], env)
     }
 
-    return json({ error: 'not_found' }, 404)
+    return notFound()
   },
 } satisfies ExportedHandler<Env>
