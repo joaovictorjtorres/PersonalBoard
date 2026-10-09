@@ -3,6 +3,7 @@ import type { KonvaEventObject } from 'konva/lib/Node'
 import { rectFromPoints, type Point } from '@mesa/shared'
 import { useTableStore } from '../store/context'
 import { pointInBox, type SelectionArea } from '../selection/model'
+import { eventWorldPoints } from './pointer'
 
 /** Abaixo disso (px de tela) o gesto é clique, não arrasto (o mesmo limiar da ferramenta Formas). */
 export const CLICK_SLOP_PX = 3
@@ -38,10 +39,10 @@ export function useSelectTool() {
       ? { kind: 'lasso', points: [...g.points] }
       : { kind: 'rect', rect: rectFromPoints(g.start, g.end) }
 
-  /** true = o gesto é da seleção (o resto do mousedown do Stage não roda). */
+  /** Aperto principal; true = o gesto é da seleção (o resto do pointerdown do Stage não roda). */
   const onDown = (e: KonvaEventObject<MouseEvent>): boolean => {
     const s = store.getState()
-    if (s.tool !== 'select' || e.evt.button !== 0 || e.evt.ctrlKey || e.evt.metaKey) return false
+    if (s.tool !== 'select' || e.evt.ctrlKey || e.evt.metaKey) return false
     const stage = e.target.getStage()
     const pos = stage?.getRelativePointerPosition()
     if (!stage || !pos) return false
@@ -76,7 +77,8 @@ export function useSelectTool() {
       return
     }
     g.end = pos
-    g.points.push(pos.x, pos.y)
+    // No laço, todos os pontos juntados pelo navegador (caneta rápida) entram no contorno.
+    for (const p of eventWorldPoints(e)) g.points.push(p.x, p.y)
     setArea(areaOf(g))
   }
 

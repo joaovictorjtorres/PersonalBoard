@@ -13,12 +13,12 @@ export function pingRing(ageMs: number): { radius: number; opacity: number } | n
   return { radius: 6 + 34 * t, opacity: 1 - t }
 }
 
-/** Guarda de arrasto: um clique de ping (modificador no mousedown) nunca arrasta, trava nem confirma o objeto. */
+/** Guarda de arrasto: um clique de ping (modificador no pointerdown) nunca arrasta, trava nem confirma o objeto. */
 export function createPingDragGuard() {
-  // 'ping': mousedown com modificador; 'cancelled': arrasto já cancelado (dragend tratado). Só o próximo mousedown limpa.
+  // 'ping': pointerdown com modificador; 'cancelled': arrasto já cancelado (dragend tratado). Só o próximo pointerdown limpa.
   let state: 'none' | 'ping' | 'cancelled' = 'none'
   return {
-    mouseDown(evt: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): void {
+    pointerDown(evt: { shiftKey: boolean; ctrlKey: boolean; metaKey: boolean }): void {
       state = isPingClick(evt) ? 'ping' : 'none'
     },
     /** true = ping: o chamador não deve enviar nada. `stop` pode disparar dragend de forma síncrona (Konva), por isso o estado é lido antes. */

@@ -12,6 +12,7 @@ import { ImageNode } from './ImageNode'
 import { ObjectDecorations } from './ObjectDecorations'
 import { Overlay } from './Overlay'
 import { isPingClick } from './ping'
+import { isHover, pointerAction } from './pointer'
 import { SelectionLayer } from './SelectionLayer'
 import { SelectionTransformer } from './SelectionTransformer'
 import { ShapeNode } from './ShapeNode'
@@ -59,6 +60,9 @@ export function TableCanvas() {
   const select = useSelectTool()
   const store = useTableStore()
   const stageRef = useRef<Konva.Stage>(null)
+  const activePointer = useRef<number | null>(null)
+  // Último aperto da caneta foi o botão lateral (vale como botão direito).
+  const penBarrel = useRef(false)
   const panning = tool === 'hand' || space
   // A grade fica logo acima da camada "map"; sem ela (removida pelo mestre), abaixo de tudo.
   const hasMapLayer = layers.some((l) => l.id === 'map')
@@ -97,6 +101,8 @@ export function TableCanvas() {
   // Medindo com a régua, o botão direito é a dobra: nenhum menu abre.
   const onContextMenu = (e: KonvaEventObject<PointerEvent>) => {
     e.evt.preventDefault()
+    // Caneta parada encostada (Windows Ink) vira "botão direito": só o botão lateral da caneta abre menu.
+    if (e.evt.pointerType === 'pen' && !penBarrel.current) return
     if (panning || (tool === 'ruler' && store.getState().ownRuler)) return
     // Botão direito na caixa da seleção: menu do grupo.
     const sel = store.getState().selection
@@ -109,11 +115,24 @@ export function TableCanvas() {
     if (node) actions.openObjectMenu(node.id(), e.evt.clientX, e.evt.clientY)
   }
 
-  const finishGesture = () => {
+  // Soltar, cancelar (o sistema tomou o ponteiro) ou perder a captura: o gesto termina com o que já foi feito.
+  const endGesture = (pointerId: number) => {
+    if (activePointer.current !== pointerId) return
+    activePointer.current = null
     select.onUp()
     drawing.onUp()
     shapes.onUp()
   }
+  const endGestureRef = useRef(endGesture)
+  endGestureRef.current = endGesture
+
+  useEffect(() => {
+    const content = stageRef.current?.content
+    if (!content) return
+    const onLost = (e: PointerEvent) => endGestureRef.current(e.pointerId)
+    content.addEventListener('lostpointercapture', onLost)
+    return () => content.removeEventListener('lostpointercapture', onLost)
+  }, [])
 
   const cursor = panning
     ? 'grab'
@@ -135,40 +154,69 @@ export function TableCanvas() {
       scaleX={viewport.scale}
       scaleY={viewport.scale}
       draggable={panning}
-      style={{ position: 'absolute', inset: 0, cursor }}
+      // Sem gestos do navegador (rolar, selecionar texto) sobre o canvas: a caneta desenha em vez de arrastar a página.
+      style={{ position: 'absolute', inset: 0, cursor, touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
       onWheel={onWheel}
       onDragMove={onStageDrag}
       onDragEnd={onStageDrag}
       onContextMenu={onContextMenu}
-      onMouseDown={(e) => {
+      onPointerDown={(e) => {
+        const evt = e.evt
+        // Um ponteiro por gesto: outro dedo ou caneta no meio do traço é ignorado.
+        if (activePointer.current !== null && activePointer.current !== evt.pointerId) return
+        const action = pointerAction(evt)
+        if (evt.pointerType === 'pen') penBarrel.current = action === 'secondary'
+        if (!action) return
+        activePointer.current = evt.pointerId
+        // Captura: a caneta rápida, ou saindo e voltando ao canvas, não interrompe o traço.
+        try {
+          stageRef.current?.content.setPointerCapture(evt.pointerId)
+        } catch {
+          // ponteiro já solto: o gesto acaba no pointerup
+        }
         const pos = e.target.getStage()?.getRelativePointerPosition()
+        const primary = action === 'primary'
         // Com o Selecionar, Shift é da seleção (Shift + arrastar soma área); o ping do Shift + clique sai ao soltar.
-        const selectShift = tool === 'select' && !panning && e.evt.shiftKey && !e.evt.ctrlKey && !e.evt.metaKey
+        const selectShift = tool === 'select' && !panning && evt.shiftKey && !evt.ctrlKey && !evt.metaKey
         // Shift/Ctrl + clique: ping em qualquer ferramenta (inclusive Mão e Espaço), sem selecionar, desenhar nem medir.
-        if (pos && e.evt.button === 0 && isPingClick(e.evt) && !selectShift) {
-          actions.ping(pos, e.evt.ctrlKey || e.evt.metaKey)
+        if (pos && primary && isPingClick(evt) && !selectShift) {
+          actions.ping(pos, evt.ctrlKey || evt.metaKey)
+          return
+        }
+        // Ponta de trás da caneta: apaga como a Borracha, seja qual for a ferramenta escolhida.
+        if (action === 'eraser') {
+          drawing.onDown(e, true)
           return
         }
         if (panning) return
         if (tool === 'ruler') {
-          if (pos && e.evt.button === 0) actions.rulerClick(pos)
-          if (pos && e.evt.button === 2) actions.rulerBend(pos)
+          if (pos && primary) actions.rulerClick(pos)
+          if (pos && action === 'secondary') actions.rulerBend(pos)
           return
         }
+        if (!primary) return
         if (select.onDown(e)) return
         // Shift + clique que a seleção em área não pega (ex.: alças do Transformer): ping na hora, como nas outras ferramentas.
-        if (selectShift && pos && e.evt.button === 0) {
+        if (selectShift && pos) {
           actions.ping(pos, false)
           return
         }
         drawing.onDown(e)
         shapes.onDown(e)
       }}
-      onMouseMove={(e) => {
+      onPointerMove={(e) => {
+        const evt = e.evt
+        if (activePointer.current !== null && activePointer.current !== evt.pointerId) return
         const pos = e.target.getStage()?.getRelativePointerPosition()
         if (pos) {
           actions.cursor(pos.x, pos.y)
           actions.rulerMove(pos)
+        }
+        if (activePointer.current === null) return
+        // Nada mais apertado (o pointerup se perdeu): o gesto acaba; pairar nunca desenha.
+        if (isHover(evt)) {
+          endGesture(evt.pointerId)
+          return
         }
         if (!panning) {
           select.onMove(e)
@@ -176,8 +224,9 @@ export function TableCanvas() {
           shapes.onMove(e)
         }
       }}
-      onMouseUp={finishGesture}
-      onMouseLeave={finishGesture}
+      onPointerUp={(e) => endGesture(e.evt.pointerId)}
+      onPointerCancel={(e) => endGesture(e.evt.pointerId)}
+      onPointerLeave={(e) => endGesture(e.evt.pointerId)}
     >
       {!hasMapLayer && <GridLayer />}
       {layers.map((layer) => {

@@ -9,6 +9,7 @@ import { isInSelection } from '../selection/model'
 import { useGroupOffset } from './hooks'
 import { commitNodeChange, geometryFromNode } from './nodeChange'
 import { isPingClick, usePingDragGuard } from './ping'
+import { pointerAction } from './pointer'
 import { hexToRgba } from './shapes'
 
 function drawEllipse(ctx: Context, shape: KonvaShape): void {
@@ -46,9 +47,9 @@ export function ShapeNode({ object, preview = false }: { object: ShapeObject; pr
     hitStrokeWidth: Math.max(object.strokeWidth, 12),
     listening: !preview,
     draggable: interactive,
-    onMouseDown: (e: KonvaEventObject<MouseEvent>) => {
-      pingGuard.mouseDown(e.evt)
-      if (interactive && !isPingClick(e.evt)) actions.select(object.id)
+    onPointerDown: (e: KonvaEventObject<PointerEvent>) => {
+      pingGuard.pointerDown(e.evt)
+      if (interactive && !isPingClick(e.evt) && pointerAction(e.evt) !== 'eraser') actions.select(object.id)
     },
     onDragStart: (e: KonvaEventObject<DragEvent>) => {
       if (pingGuard.dragStart(() => e.target.stopDrag())) return

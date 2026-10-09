@@ -7,6 +7,7 @@ import { isInSelection } from '../selection/model'
 import { useGroupOffset } from './hooks'
 import { commitNodeChange, geometryFromNode } from './nodeChange'
 import { isPingClick, usePingDragGuard } from './ping'
+import { pointerAction } from './pointer'
 
 export function ImageNode({ object }: { object: ImageObject }) {
   const [image] = useImage(`/files/${object.assetKey}`)
@@ -35,9 +36,9 @@ export function ImageNode({ object }: { object: ImageObject }) {
       height={g.height}
       rotation={g.rotation}
       draggable={interactive}
-      onMouseDown={(e) => {
-        pingGuard.mouseDown(e.evt)
-        if (interactive && !isPingClick(e.evt)) actions.select(object.id)
+      onPointerDown={(e) => {
+        pingGuard.pointerDown(e.evt)
+        if (interactive && !isPingClick(e.evt) && pointerAction(e.evt) !== 'eraser') actions.select(object.id)
       }}
       onDragStart={(e) => {
         if (pingGuard.dragStart(() => e.target.stopDrag())) return

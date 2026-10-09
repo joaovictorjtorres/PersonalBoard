@@ -15,7 +15,7 @@ function drag(guard: ReturnType<typeof createPingDragGuard>, evt: typeof plain) 
     }
   }
   const stop = vi.fn(onEnd)
-  guard.mouseDown(evt)
+  guard.pointerDown(evt)
   if (!guard.dragStart(stop)) grab()
   onEnd() // dragend real (ou espúrio) ao soltar
   return { grab, commit, release, stop }

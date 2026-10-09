@@ -1623,3 +1623,111 @@ test('card da lista: enquanto gera um link, os botões de gerar, renomear e apag
   for (const b of buttons) await expect(b).toBeEnabled()
   expect(rotations).toBe(1)
 })
+
+interface PenInput {
+  x: number
+  y: number
+  /** 0 ponta, 2 botão lateral, 5 borracha; -1 = nenhum botão mudou (movimento). */
+  button?: number
+  /** 0 pairando, 1 ponta, 2 botão lateral, 32 borracha. */
+  buttons?: number
+  /** Pontos intermediários que o navegador juntaria no movimento (getCoalescedEvents). */
+  coalesced?: [number, number][]
+}
+
+/** Mesa digitalizadora simulada: PointerEvents com pointerType 'pen' direto no canvas. */
+async function pen(page: Page, type: 'pointerdown' | 'pointermove' | 'pointerup', input: PenInput): Promise<void> {
+  await page.evaluate(
+    ({ type, input }) => {
+      const content = document.querySelector('.konvajs-content')!
+      const base = { pointerId: 7, pointerType: 'pen', isPrimary: true, bubbles: true, cancelable: true, composed: true }
+      const at = (x: number, y: number) => ({ clientX: x, clientY: y, screenX: x, screenY: y })
+      const buttons = input.buttons ?? 0
+      const coalescedEvents = (input.coalesced ?? []).map(
+        ([x, y]) => new PointerEvent('pointermove', { ...base, ...at(x, y), buttons, pressure: buttons ? 0.5 : 0 }),
+      )
+      content.dispatchEvent(
+        new PointerEvent(type, {
+          ...base,
+          ...at(input.x, input.y),
+          button: input.button ?? -1,
+          buttons,
+          pressure: buttons ? 0.5 : 0,
+          coalescedEvents,
+        }),
+      )
+    },
+    { type, input },
+  )
+}
+
+/** Traço de caneta reto de (x1, y1) a (x2, y2), em passos, com um botão segurado. */
+async function penStroke(page: Page, from: [number, number], to: [number, number], button = 0, buttons = 1): Promise<void> {
+  await pen(page, 'pointermove', { x: from[0], y: from[1] })
+  await pen(page, 'pointerdown', { x: from[0], y: from[1], button, buttons })
+  for (let i = 1; i <= 10; i++) {
+    await pen(page, 'pointermove', { x: from[0] + ((to[0] - from[0]) * i) / 10, y: from[1] + ((to[1] - from[1]) * i) / 10, buttons })
+  }
+  await pen(page, 'pointerup', { x: to[0], y: to[1], button, buttons: 0 })
+}
+
+test('caneta: o traço aparece para o outro com os pontos juntados pelo navegador; pairar não desenha', async ({ browser, page }) => {
+  const { tableId, gmSecret, playerKey } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
+
+  await selectLayer(player, 'Desenhos')
+  await pickPencil(player)
+  // pairando sobre a mesa: nada é desenhado
+  await pen(player, 'pointermove', { x: 200, y: 200 })
+  await pen(player, 'pointermove', { x: 260, y: 240 })
+  await pen(player, 'pointerdown', { x: 300, y: 300, button: 0, buttons: 1 })
+  // um único evento com três pontos juntados: o do meio desce até y = 380
+  await pen(player, 'pointermove', { x: 400, y: 300, buttons: 1, coalesced: [[340, 340], [350, 380], [400, 300]] })
+  await pen(player, 'pointermove', { x: 450, y: 300, buttons: 1 })
+  await pen(player, 'pointerup', { x: 450, y: 300, button: 0, buttons: 0 })
+  await pen(player, 'pointermove', { x: 600, y: 500 })
+
+  await expect.poll(async () => (await objects(gm)).filter((o) => o.type === 'stroke').length).toBe(1)
+  const stroke = (await objects(gm)).find((o) => o.type === 'stroke')!
+  expect(Math.round(stroke.x)).toBe(300)
+  expect(Math.round(stroke.y)).toBe(300)
+  expect(Math.round(stroke.x + stroke.width)).toBe(450)
+  expect(Math.round(stroke.y + stroke.height)).toBe(380)
+})
+
+test('caneta: a ponta de borracha apaga com o Selecionar escolhido, que continua escolhido', async ({ browser, page }) => {
+  const { tableId, gmSecret, playerKey } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
+
+  await selectLayer(player, 'Desenhos')
+  await pickPencil(player)
+  await penStroke(player, [300, 300], [600, 300])
+  await expect.poll(async () => (await objects(gm)).filter((o) => o.type === 'stroke').length).toBe(1)
+
+  await player.keyboard.press('v')
+  await expect(player.getByRole('button', { name: 'Selecionar (V)' })).toHaveAttribute('aria-pressed', 'true')
+  await penStroke(player, [450, 250], [450, 350], 5, 32)
+
+  await expect.poll(async () => (await objects(gm)).find((o) => o.type === 'stroke')?.segments?.length).toBe(2)
+  expect(await player.evaluate(() => (window as any).__mesa.getState().tool)).toBe('select')
+  expect(await player.evaluate(() => (window as any).__mesa.getState().selectedId)).toBeNull()
+})
+
+test('caneta: o botão lateral dobra a régua, sem abrir menu', async ({ browser, page }) => {
+  const { tableId, playerKey } = await newTable(page)
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
+  const bia = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Bia')
+  const line = () => bia.evaluate(() => (window as any).__stage.find('.ruler-line').map((n: any) => n.points()))
+
+  await ana.getByRole('button', { name: 'Régua (R)' }).click()
+  await pen(ana, 'pointerdown', { x: 400, y: 300, button: 0, buttons: 1 })
+  await pen(ana, 'pointerup', { x: 400, y: 300, button: 0, buttons: 0 })
+  await pen(ana, 'pointermove', { x: 700, y: 300 })
+  await pen(ana, 'pointerdown', { x: 700, y: 300, button: 2, buttons: 2 })
+  await pen(ana, 'pointerup', { x: 700, y: 300, button: 2, buttons: 0 })
+  await pen(ana, 'pointermove', { x: 740, y: 450 })
+  await expect.poll(line).toEqual([[400, 300, 700, 300, 740, 450]])
+  await expect(ana.getByRole('dialog')).toHaveCount(0)
+})

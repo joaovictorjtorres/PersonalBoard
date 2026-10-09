@@ -34,7 +34,7 @@ export function useShapeTool() {
 
   const onDown = (e: KonvaEventObject<MouseEvent>) => {
     const s = store.getState()
-    if (s.tool !== 'shape' || e.evt.button !== 0) return
+    if (s.tool !== 'shape') return
     if (s.status !== 'open' || !s.actions.canEditLayer(s.activeLayerId)) return
     const pos = e.target.getStage()?.getRelativePointerPosition()
     if (!pos) return

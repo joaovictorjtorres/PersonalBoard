@@ -6,6 +6,7 @@ import { throttle } from '../lib/throttle'
 import { useTableStore } from '../store/context'
 import { canUseLayer, isLockedByOther } from '../store/reducers'
 import { chunk, planErase } from './eraser'
+import { eventWorldPoints } from './pointer'
 
 interface OwnPreview {
   layerId: string
@@ -90,13 +91,14 @@ export function useDrawingTools() {
     else actions.submitGroup(ops)
   }
 
-  const onDown = (e: KonvaEventObject<MouseEvent>) => {
+  /** Aperto principal com o Lápis; `eraserEnd` = ponta de trás da caneta: apaga em qualquer ferramenta, sem trocar a escolhida. */
+  const onDown = (e: KonvaEventObject<MouseEvent>, eraserEnd = false) => {
     const s = store.getState()
-    if (s.tool !== 'pencil' || e.evt.button !== 0) return
+    if (!eraserEnd && s.tool !== 'pencil') return
     if (s.status !== 'open' || !s.actions.canEditLayer(s.activeLayerId)) return
     const pos = e.target.getStage()?.getRelativePointerPosition()
     if (!pos) return
-    if (s.penMode === 'erase') {
+    if (eraserEnd || s.penMode === 'erase') {
       const layerIds = s.eraseAllLayers ? new Set(s.layers.filter((l) => canUseLayer(l, s.self?.role)).map((l) => l.id)) : null
       erasing.current = { layerId: s.activeLayerId, layerIds, path: [pos.x, pos.y] }
       scheduleErasePreview()
@@ -108,18 +110,20 @@ export function useDrawingTools() {
   }
 
   const onMove = (e: KonvaEventObject<MouseEvent>) => {
-    const pos = e.target.getStage()?.getRelativePointerPosition()
-    if (!pos) return
     const er = erasing.current
+    const cur = current.current
+    if (!er && !cur) return
+    // Caneta rápida: o navegador junta vários pontos num evento; todos entram no traço.
+    const points = eventWorldPoints(e).flatMap((p) => [p.x, p.y])
+    if (points.length === 0) return
     if (er) {
-      er.path.push(pos.x, pos.y)
+      er.path.push(...points)
       scheduleErasePreview()
       return
     }
-    const cur = current.current
     if (!cur) return
-    cur.points.push(pos.x, pos.y)
-    cur.unsent.push(pos.x, pos.y)
+    cur.points.push(...points)
+    cur.unsent.push(...points)
     setOwnPreview((p) => (p ? { ...p, points: [...cur.points] } : p))
     flushPreview()
   }

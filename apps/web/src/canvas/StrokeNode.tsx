@@ -6,6 +6,7 @@ import { isInSelection } from '../selection/model'
 import { useGroupOffset } from './hooks'
 import { commitNodeChange } from './nodeChange'
 import { isPingClick, usePingDragGuard } from './ping'
+import { pointerAction } from './pointer'
 
 export function StrokeNode({ object, segments }: { object: StrokeObject; segments?: number[][] }) {
   const store = useTableStore()
@@ -38,9 +39,9 @@ export function StrokeNode({ object, segments }: { object: StrokeObject; segment
       x={pos.x + (groupOffset?.x ?? 0)}
       y={pos.y + (groupOffset?.y ?? 0)}
       draggable={interactive}
-      onMouseDown={(e) => {
-        pingGuard.mouseDown(e.evt)
-        if (interactive && !isPingClick(e.evt)) actions.select(object.id)
+      onPointerDown={(e) => {
+        pingGuard.pointerDown(e.evt)
+        if (interactive && !isPingClick(e.evt) && pointerAction(e.evt) !== 'eraser') actions.select(object.id)
       }}
       onDragStart={(e) => {
         if (pingGuard.dragStart(() => e.target.stopDrag())) return
