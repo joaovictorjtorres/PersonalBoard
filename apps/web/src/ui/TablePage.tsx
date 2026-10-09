@@ -10,6 +10,7 @@ import { LayersPanel } from './LayersPanel'
 import { ObjectContextMenu } from './ObjectContextMenu'
 import { MembersPanel } from './MembersPanel'
 import { NicknameModal } from './NicknameModal'
+import { SelectionContextMenu } from './SelectionContextMenu'
 import { Toasts } from './Toasts'
 import { Toolbar } from './Toolbar'
 import { TurnsWindow } from './turns/TurnsWindow'
@@ -99,6 +100,7 @@ function TableView() {
         <LayersPanel />
       </div>
       <ObjectContextMenu />
+      <SelectionContextMenu />
       <ConnectionBanner />
       <Toasts />
       {debug && <DebugPanel />}

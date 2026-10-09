@@ -801,6 +801,24 @@ test('modais e menus cabem na janela 1280x720 sem rolagem', async ({ browser, pa
   const objMenu = await openObjectMenu(gm, token)
   await objMenu.getByRole('button', { name: /Mover para camada/ }).click()
   await noScroll(objMenu, 'objeto')
+  await gm.keyboard.press('Escape')
+
+  // menu do grupo do mestre com token: camadas abertas e permissões (estado mais alto)
+  await pickSelect(gm)
+  await dragPath(gm, [[token.x - 20, token.y - 20], [token.x + token.width + 20, token.y + token.height + 20]])
+  expect(await selectionOf(gm)).toEqual({ whole: [token.id], parts: [] })
+  await gm.mouse.click(token.x + token.width / 2, token.y + token.height / 2, { button: 'right' })
+  const groupMenu = gm.getByRole('dialog', { name: 'Menu da seleção' })
+  await expect(groupMenu).toBeVisible()
+  await expect(groupMenu.getByRole('group', { name: 'Controle e permissões' })).toBeVisible()
+  await groupMenu.getByRole('button', { name: /Mover para camada/ }).click()
+  await expect(groupMenu.getByRole('group', { name: 'Camadas de destino' })).toBeVisible()
+  await noScroll(groupMenu, 'grupo')
+  const groupBox = await groupMenu.boundingBox()
+  expect(
+    groupBox && groupBox.x >= 0 && groupBox.y >= 0 && groupBox.x + groupBox.width <= 1280 && groupBox.y + groupBox.height <= 720,
+    'grupo na janela',
+  ).toBe(true)
 })
 
 // ── Limpar desenhos ─────────────────────────────────────────────────────────
@@ -835,6 +853,59 @@ async function addStroke(page: Page, id: string, layerId: string): Promise<void>
 
 const objectIds = async (page: Page) => (await objects(page)).map((o) => o.id).sort()
 const confirmDialog = (page: Page) => page.getByRole('alertdialog')
+
+/** Traço criado pela store a partir de pontos do mapa (com o zoom inicial, mapa = tela). */
+async function addStrokeAt(page: Page, id: string, layerId: string, points: number[]): Promise<void> {
+  const xs = points.filter((_, i) => i % 2 === 0)
+  const ys = points.filter((_, i) => i % 2 === 1)
+  const x = Math.min(...xs)
+  const y = Math.min(...ys)
+  const object = {
+    id, type: 'stroke', layerId, x, y, width: Math.max(...xs) - x, height: Math.max(...ys) - y, rotation: 0, zIndex: 1,
+    segments: [points.map((v, i) => v - (i % 2 === 0 ? x : y))], color: '#ffffff', strokeWidth: 4,
+  }
+  await page.evaluate((o) => (window as any).__mesa.getState().actions.submit({ kind: 'create', object: o }), object)
+  await page.waitForFunction(() => Object.keys((window as any).__mesa.getState().pending).length === 0)
+}
+
+/** Clica no Selecionar e afasta o mouse (o menu abre ao passar o mouse e fecha ao sair). */
+async function pickSelect(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Selecionar (V)' }).click()
+  await page.mouse.move(900, 600)
+  await expect(page.getByRole('dialog', { name: 'Opções da seleção' })).toHaveCount(0)
+}
+
+async function selectOptions(page: Page, opts: { shape?: 'Retângulo' | 'Laço'; allLayers?: boolean }): Promise<void> {
+  await page.getByRole('button', { name: 'Selecionar (V)' }).hover()
+  const pop = page.getByRole('dialog', { name: 'Opções da seleção' })
+  await expect(pop).toBeVisible()
+  if (opts.shape) await pop.getByRole('button', { name: opts.shape }).click()
+  if (opts.allLayers !== undefined) await pop.getByLabel('Todas as camadas').setChecked(opts.allLayers)
+  await page.mouse.move(900, 600)
+  await expect(pop).toHaveCount(0)
+}
+
+/** Arrasta pelos pontos (retângulo: início e fim; laço: o contorno). */
+async function dragPath(page: Page, points: Array<[number, number]>, opts: { shift?: boolean } = {}): Promise<void> {
+  if (opts.shift) await page.keyboard.down('Shift')
+  await page.mouse.move(points[0][0], points[0][1])
+  await page.mouse.down()
+  for (const [x, y] of points.slice(1)) await page.mouse.move(x, y, { steps: 5 })
+  await page.mouse.up()
+  if (opts.shift) await page.keyboard.up('Shift')
+}
+
+const selectionOf = (page: Page) =>
+  page.evaluate(() => {
+    const sel = (window as any).__mesa.getState().selection
+    return sel ? { whole: [...sel.whole].sort(), parts: Object.keys(sel.parts).sort() } : null
+  })
+
+const settled = (page: Page) =>
+  page.waitForFunction(() => {
+    const s = (window as any).__mesa.getState()
+    return Object.keys(s.pending).length === 0 && s.undoStack.length > 0
+  })
 
 test('jogador apaga os próprios desenhos na camada e em todas, pelo aviso; o resto fica', async ({ browser, page }) => {
   const { tableId, gmSecret } = await newTable(page)
@@ -1109,4 +1180,125 @@ test('turnos: cada um minimiza a própria janela (lembrada ao recarregar); o mes
   await expect(turnsWindow(player)).toHaveCount(0)
   await expect(turnsWindow(gm)).toHaveCount(0)
   await expect(toolbarButton).toHaveAttribute('aria-pressed', 'false')
+})
+
+// ── Seleção em área ─────────────────────────────────────────────────────────
+
+test('seleção em retângulo corta o traço e move junto com o token; o outro vê; Ctrl+Z desfaz tudo', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await uploadToken(ana) // camada Tokens, centro da tela: x 605..675, y 325..395
+  await addStrokeAt(ana, 'risco', 'tokens', [450, 300, 850, 300])
+  await expect.poll(async () => (await objects(gm)).length).toBe(2)
+  const [token] = (await objects(ana)).filter((o) => o.type === 'image')
+
+  await pickSelect(ana)
+  await dragPath(ana, [[550, 250], [720, 420]])
+  expect(await selectionOf(ana)).toEqual({ whole: [token.id], parts: ['risco'] })
+
+  await dragPath(ana, [[640, 360], [640, 510]]) // arrasta pelo token: move o grupo 150 px para baixo
+  await expect.poll(async () => (await objects(gm)).filter((o) => o.type === 'stroke').length).toBe(2)
+  const strokes = (await objects(gm)).filter((o) => o.type === 'stroke')
+  const moved = strokes.find((o) => Math.round(o.y) === 450)!
+  expect([Math.round(moved.x), Math.round(moved.width)]).toEqual([550, 170])
+  expect(strokes.find((o) => Math.round(o.y) === 300)!.segments).toHaveLength(2)
+  await expect.poll(async () => Math.round((await objects(gm)).find((o) => o.id === token.id)!.y)).toBe(Math.round(token.y + 150))
+
+  await settled(ana)
+  await ana.keyboard.press('Control+z')
+  await expect.poll(() => objectIds(gm)).toEqual([token.id, 'risco'].sort())
+  expect(Math.round((await objects(gm)).find((o) => o.id === token.id)!.y)).toBe(Math.round(token.y))
+})
+
+test('seleção em laço apaga só a parte de dentro do traço (Delete)', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await selectLayer(gm, 'Desenhos')
+  await addStrokeAt(gm, 'linha', 'drawings', [300, 300, 700, 300])
+  await expect.poll(async () => (await objects(ana)).length).toBe(1)
+  await pickSelect(gm)
+  await selectOptions(gm, { shape: 'Laço' })
+  await dragPath(gm, [[450, 250], [550, 250], [550, 350], [450, 350], [452, 252]])
+  expect(await selectionOf(gm)).toEqual({ whole: [], parts: ['linha'] })
+
+  await gm.keyboard.press('Delete')
+  await expect.poll(async () => (await objects(ana)).map((o) => [o.id === 'linha', o.segments?.length])).toEqual([[false, 2]])
+})
+
+test('seleção em todas as camadas: o mestre leva itens de duas camadas para o Mapa pelo menu do grupo', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await addStrokeAt(gm, 'a', 'drawings', [300, 300, 400, 300])
+  await addStrokeAt(gm, 'b', 'tokens', [300, 350, 400, 350])
+  await pickSelect(gm)
+  await selectOptions(gm, { allLayers: true })
+  await dragPath(gm, [[250, 250], [450, 400]])
+  expect(await selectionOf(gm)).toEqual({ whole: ['a', 'b'], parts: [] })
+
+  await gm.mouse.click(350, 325, { button: 'right' })
+  const menu = gm.getByRole('dialog', { name: 'Menu da seleção' })
+  await expect(menu).toContainText('2 itens selecionados')
+  await menu.getByRole('button', { name: 'Mover para camada' }).click()
+  await menu.getByRole('group', { name: 'Camadas de destino' }).getByRole('button', { name: 'Mapa', exact: true }).click()
+  await expect.poll(async () => (await objects(ana)).map((o) => o.layerId)).toEqual(['map', 'map'])
+})
+
+test('seleção: jogador não pega o token do mestre', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await uploadToken(gm)
+  await expect.poll(async () => (await objects(ana)).length).toBe(1)
+  const [token] = await objects(gm)
+  await pickSelect(ana)
+  await dragPath(ana, [[550, 250], [720, 420]])
+  expect(await selectionOf(ana)).toBeNull()
+  await dragPath(ana, [[640, 360], [640, 500]])
+  await ana.waitForTimeout(300)
+  expect(Math.round((await objects(gm))[0].y)).toBe(Math.round(token.y))
+  // nada foi enviado nem selecionado (o teste não passa por não ter feito nada)
+  expect(
+    await ana.evaluate(() => {
+      const s = (window as any).__mesa.getState()
+      return { pending: Object.keys(s.pending).length, undo: s.undoStack.length, selection: s.selection }
+    }),
+  ).toEqual({ pending: 0, undo: 0, selection: null })
+})
+
+test('seleção: Shift + arrastar soma; Shift + clique pinga sem mexer na seleção; Esc desfaz', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await addStrokeAt(ana, 'a', 'tokens', [300, 300, 400, 300])
+  await addStrokeAt(ana, 'b', 'tokens', [300, 500, 400, 500])
+  await pickSelect(ana)
+  await dragPath(ana, [[250, 250], [450, 350]])
+  expect(await selectionOf(ana)).toEqual({ whole: ['a'], parts: [] })
+  await dragPath(ana, [[250, 450], [450, 550]], { shift: true })
+  expect(await selectionOf(ana)).toEqual({ whole: ['a', 'b'], parts: [] })
+
+  await ana.keyboard.down('Shift')
+  await ana.mouse.click(600, 620)
+  await ana.keyboard.up('Shift')
+  await expect.poll(() => gm.evaluate(() => (window as any).__mesa.getState().pings.length)).toBe(1)
+  expect(await selectionOf(ana)).toEqual({ whole: ['a', 'b'], parts: [] })
+
+  // Esc no meio do arrasto do grupo: cancela (nada é enviado) e desfaz a seleção
+  await ana.mouse.move(350, 300)
+  await ana.mouse.down()
+  await ana.mouse.move(350, 400, { steps: 5 })
+  await ana.keyboard.press('Escape')
+  await ana.mouse.up()
+  expect(await selectionOf(ana)).toBeNull()
+  await ana.waitForTimeout(300)
+  expect(await ana.evaluate(() => Object.keys((window as any).__mesa.getState().pending).length)).toBe(0)
+  expect((await objects(gm)).map((o) => Math.round(o.y)).sort()).toEqual([300, 500])
 })

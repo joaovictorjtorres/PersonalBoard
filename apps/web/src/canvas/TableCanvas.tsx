@@ -3,6 +3,7 @@ import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { Layer, Line, Stage } from 'react-konva'
 import { CAMERA_GLIDE_MS, type TableObject } from '@mesa/shared'
+import { pointInBox } from '../selection/model'
 import { useTable, useTableActions, useTableStore } from '../store/context'
 import { centerOn, glideStep } from './camera'
 import { GridLayer } from './GridLayer'
@@ -11,11 +12,13 @@ import { ImageNode } from './ImageNode'
 import { ObjectDecorations } from './ObjectDecorations'
 import { Overlay } from './Overlay'
 import { isPingClick } from './ping'
+import { SelectionLayer } from './SelectionLayer'
 import { SelectionTransformer } from './SelectionTransformer'
 import { ShapeNode } from './ShapeNode'
 import { StrokeNode } from './StrokeNode'
 import { TurnHighlights } from './TurnHighlights'
 import { useDrawingTools } from './useDrawingTools'
+import { GRAB_PAD_PX, useSelectTool } from './useSelectTool'
 import { useShapeTool } from './useShapeTool'
 
 const MIN_SCALE = 0.1
@@ -53,6 +56,7 @@ export function TableCanvas() {
   const size = useWindowSize()
   const drawing = useDrawingTools()
   const shapes = useShapeTool()
+  const select = useSelectTool()
   const store = useTableStore()
   const stageRef = useRef<Konva.Stage>(null)
   const panning = tool === 'hand' || space
@@ -94,11 +98,19 @@ export function TableCanvas() {
   const onContextMenu = (e: KonvaEventObject<PointerEvent>) => {
     e.evt.preventDefault()
     if (panning || (tool === 'ruler' && store.getState().ownRuler)) return
+    // Botão direito na caixa da seleção: menu do grupo.
+    const sel = store.getState().selection
+    const pos = e.target.getStage()?.getRelativePointerPosition()
+    if (tool === 'select' && sel && pos && pointInBox(pos, sel.bounds, GRAB_PAD_PX / viewport.scale)) {
+      actions.openSelectionMenu(e.evt.clientX, e.evt.clientY)
+      return
+    }
     const node = e.target.findAncestor('.object', true)
     if (node) actions.openObjectMenu(node.id(), e.evt.clientX, e.evt.clientY)
   }
 
   const finishGesture = () => {
+    select.onUp()
     drawing.onUp()
     shapes.onUp()
   }
@@ -130,8 +142,10 @@ export function TableCanvas() {
       onContextMenu={onContextMenu}
       onMouseDown={(e) => {
         const pos = e.target.getStage()?.getRelativePointerPosition()
+        // Com o Selecionar, Shift é da seleção (Shift + arrastar soma área); o ping do Shift + clique sai ao soltar.
+        const selectShift = tool === 'select' && !panning && e.evt.shiftKey && !e.evt.ctrlKey && !e.evt.metaKey
         // Shift/Ctrl + clique: ping em qualquer ferramenta (inclusive Mão e Espaço), sem selecionar, desenhar nem medir.
-        if (pos && e.evt.button === 0 && isPingClick(e.evt)) {
+        if (pos && e.evt.button === 0 && isPingClick(e.evt) && !selectShift) {
           actions.ping(pos, e.evt.ctrlKey || e.evt.metaKey)
           return
         }
@@ -141,7 +155,12 @@ export function TableCanvas() {
           if (pos && e.evt.button === 2) actions.rulerBend(pos)
           return
         }
-        if (tool === 'select' && e.target === e.target.getStage()) actions.select(null)
+        if (select.onDown(e)) return
+        // Shift + clique que a seleção em área não pega (ex.: alças do Transformer): ping na hora, como nas outras ferramentas.
+        if (selectShift && pos && e.evt.button === 0) {
+          actions.ping(pos, false)
+          return
+        }
         drawing.onDown(e)
         shapes.onDown(e)
       }}
@@ -152,6 +171,7 @@ export function TableCanvas() {
           actions.rulerMove(pos)
         }
         if (!panning) {
+          select.onMove(e)
           drawing.onMove(e)
           shapes.onMove(e)
         }
@@ -196,6 +216,7 @@ export function TableCanvas() {
         )
       })}
       <TurnHighlights />
+      <SelectionLayer area={select.area} />
       <Overlay />
     </Stage>
   )

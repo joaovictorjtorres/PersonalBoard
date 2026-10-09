@@ -45,15 +45,24 @@ export function floatingStyle(x: number, y: number, width: number): CSSPropertie
   }
 }
 
-/** Overlay fixo: depois de medido, desliza para dentro da janela (a altura real só se sabe após o layout). */
+/**
+ * Overlay fixo: depois de medido, desliza para dentro da janela (a altura real só se sabe após o layout).
+ * Também quando cresce depois (ex.: um submenu que abre dentro dele).
+ */
 function useKeepInView(ref: RefObject<HTMLElement | null>): void {
   useLayoutEffect(() => {
     const el = ref.current
     if (!el || getComputedStyle(el).position !== 'fixed') return
-    const r = el.getBoundingClientRect()
-    const left = Math.max(8, Math.min(r.left, window.innerWidth - r.width - 8))
-    const top = Math.max(8, Math.min(r.top, window.innerHeight - r.height - 8))
-    if (Math.abs(left - r.left) > 0.5) el.style.left = `${left}px`
-    if (Math.abs(top - r.top) > 0.5) el.style.top = `${top}px`
+    const fit = () => {
+      const r = el.getBoundingClientRect()
+      const left = Math.max(8, Math.min(r.left, window.innerWidth - r.width - 8))
+      const top = Math.max(8, Math.min(r.top, window.innerHeight - r.height - 8))
+      if (Math.abs(left - r.left) > 0.5) el.style.left = `${left}px`
+      if (Math.abs(top - r.top) > 0.5) el.style.top = `${top}px`
+    }
+    fit()
+    const observer = new ResizeObserver(fit)
+    observer.observe(el)
+    return () => observer.disconnect()
   })
 }

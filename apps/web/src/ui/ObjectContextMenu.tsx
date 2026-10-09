@@ -56,7 +56,15 @@ function ObjectMenuBody({ object, x, y, onClose }: { object: TableObject; x: num
       <TitleField title={object.title} onSave={(title) => update({ title })} />
       {isGm && <PermissionsField objectId={object.id} control={object.control} onChange={(control) => update({ control })} />}
       {isGm && <NoteField objectId={object.id} />}
-      {isGm && <MoveToLayer object={object} onMoved={onClose} />}
+      {isGm && (
+        <MoveToLayerField
+          exclude={object.layerId}
+          onPick={(layerId) => {
+            actions.moveObjectToLayer(object.id, layerId)
+            onClose()
+          }}
+        />
+      )}
       {isGm && object.type === 'image' && <AddToTurns objectId={object.id} onDone={onClose} />}
       {layerEditable && (
         <button
@@ -95,14 +103,16 @@ function TitleField({ title, onSave }: { title: string | undefined; onSave: (tit
   )
 }
 
-function PermissionsField({
+export function PermissionsField({
   objectId,
   control,
   onChange,
+  legend = 'Permissões',
 }: {
   objectId: string
   control: Control
   onChange: (control: Control) => void
+  legend?: string
 }) {
   const members = useTable((s) => s.members)
   const players = Object.values(members)
@@ -117,7 +127,7 @@ function PermissionsField({
 
   return (
     <fieldset className="field">
-      <legend>Permissões</legend>
+      <legend>{legend}</legend>
       {MODES.map((m) => (
         <label key={m.mode}>
           <input
@@ -166,12 +176,11 @@ function NoteField({ objectId }: { objectId: string }) {
   )
 }
 
-function MoveToLayer({ object, onMoved }: { object: TableObject; onMoved: () => void }) {
+/** "Mover para camada" e a lista de destino (da mais alta para a mais baixa, sem `exclude`): menu do objeto e do grupo. */
+export function MoveToLayerField({ exclude, onPick }: { exclude?: string; onPick: (layerId: string) => void }) {
   const [open, setOpen] = useState(false)
   const layers = useTable((s) => s.layers)
-  const actions = useTableActions()
-  // da mais alta para a mais baixa, sem a camada atual
-  const targets = [...layers].reverse().filter((l) => l.id !== object.layerId)
+  const targets = [...layers].reverse().filter((l) => l.id !== exclude)
 
   return (
     <div className="field">
@@ -181,13 +190,7 @@ function MoveToLayer({ object, onMoved }: { object: TableObject; onMoved: () => 
       {open && (
         <div className="submenu" role="group" aria-label="Camadas de destino">
           {targets.map((layer) => (
-            <button
-              key={layer.id}
-              onClick={() => {
-                actions.moveObjectToLayer(object.id, layer.id)
-                onMoved()
-              }}
-            >
+            <button key={layer.id} onClick={() => onPick(layer.id)}>
               {layer.name}
             </button>
           ))}

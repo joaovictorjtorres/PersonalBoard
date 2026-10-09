@@ -5,6 +5,7 @@ import { Line, Rect, Shape } from 'react-konva'
 import { canControl, type ShapeObject } from '@mesa/shared'
 import { useTable, useTableActions, useTableStore } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
+import { useGroupOffset } from './hooks'
 import { commitNodeChange, geometryFromNode } from './nodeChange'
 import { isPingClick, usePingDragGuard } from './ping'
 import { hexToRgba } from './shapes'
@@ -29,13 +30,16 @@ export function ShapeNode({ object, preview = false }: { object: ShapeObject; pr
   const mayControl = useTable((s) => !!s.self && canControl(object, s.self.clientId, s.self.role))
   const layerEditable = useTable(() => actions.canEditLayer(object.layerId))
   const g = lockedByOther && dragPreview ? dragPreview : object
-  const interactive = !preview && tool === 'select' && !lockedByOther && mayControl && layerEditable
+  // Na seleção em área, o item se move com o grupo (não sozinho) e não é selecionado pelo clique.
+  const grouped = useTable((s) => !!s.selection && (s.selection.whole.includes(object.id) || object.id in s.selection.parts))
+  const groupOffset = useGroupOffset(object.id)
+  const interactive = !preview && tool === 'select' && !lockedByOther && mayControl && layerEditable && !grouped
 
   const common = {
     id: preview ? undefined : object.id,
     name: preview ? undefined : 'object shape',
-    x: g.x,
-    y: g.y,
+    x: g.x + (groupOffset?.x ?? 0),
+    y: g.y + (groupOffset?.y ?? 0),
     stroke: object.stroke,
     strokeWidth: object.strokeWidth,
     hitStrokeWidth: Math.max(object.strokeWidth, 12),

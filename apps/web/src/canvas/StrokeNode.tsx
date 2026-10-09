@@ -2,6 +2,7 @@ import { Group, Line } from 'react-konva'
 import { canControl, type StrokeObject } from '@mesa/shared'
 import { useTable, useTableActions, useTableStore } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
+import { useGroupOffset } from './hooks'
 import { commitNodeChange } from './nodeChange'
 import { isPingClick, usePingDragGuard } from './ping'
 
@@ -15,10 +16,17 @@ export function StrokeNode({ object, segments }: { object: StrokeObject; segment
   const mayControl = useTable((s) => !!s.self && canControl(object, s.self.clientId, s.self.role))
   const pos = lockedByOther && preview ? preview : object
   const layerEditable = useTable(() => actions.canEditLayer(object.layerId))
-  const interactive = tool === 'select' && !lockedByOther && mayControl && layerEditable
+  // Na seleção em área, o item se move com o grupo (não sozinho) e não é selecionado pelo clique.
+  const grouped = useTable((s) => !!s.selection && (s.selection.whole.includes(object.id) || object.id in s.selection.parts))
+  const groupOffset = useGroupOffset(object.id)
+  const interactive = tool === 'select' && !lockedByOther && mayControl && layerEditable && !grouped
+  const draggedPart = useTable((s) => (s.selectionOffset ? s.selection?.parts[object.id] : undefined))
 
   // Prévia local da borracha sobrepõe o traço original; [] = apagado por inteiro.
-  const shown = segments ?? object.segments
+  // No arrasto do grupo, o traço cortado mostra só os pedaços de fora (os de dentro andam na SelectionLayer).
+  const shown =
+    segments ??
+    (draggedPart ? draggedPart.outside.map((seg) => seg.map((v, i) => v - (i % 2 === 0 ? object.x : object.y))) : object.segments)
   if (shown.length === 0) return null
 
   // Um Group com uma Line por pedaço: clique e arrasto valem para o traço inteiro.
@@ -26,8 +34,8 @@ export function StrokeNode({ object, segments }: { object: StrokeObject; segment
     <Group
       id={object.id}
       name="object stroke"
-      x={pos.x}
-      y={pos.y}
+      x={pos.x + (groupOffset?.x ?? 0)}
+      y={pos.y + (groupOffset?.y ?? 0)}
       draggable={interactive}
       onMouseDown={(e) => {
         pingGuard.mouseDown(e.evt)

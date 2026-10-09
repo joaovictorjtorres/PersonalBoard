@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { TableObject } from '@mesa/shared'
+import type { Point, TableObject } from '@mesa/shared'
 import { useTable } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
 import { isTypingTarget } from '../ui/useKeyboard'
@@ -68,13 +68,20 @@ export function useFrameClock(active: boolean): number {
   return now
 }
 
+/** Deslocamento do arrasto do grupo, se o item inteiro está na seleção em área; senão null. */
+export function useGroupOffset(id: string): Point | null {
+  return useTable((s) => (s.selectionOffset && s.selection?.whole.includes(id) ? s.selectionOffset : null))
+}
+
 /**
- * Geometria ao vivo do objeto: acompanha o meu arrasto/redimensionamento a cada movimento
- * e o de quem trava o objeto; fora disso, o próprio objeto.
+ * Geometria ao vivo do objeto: acompanha o meu arrasto/redimensionamento a cada movimento,
+ * o de quem trava o objeto e o arrasto do grupo da seleção; fora disso, o próprio objeto.
  */
 export function useLiveGeometry<T extends TableObject>(object: T): T {
   const lockedByOther = useTable((s) => isLockedByOther(s, object.id, Date.now()))
   const preview = useTable((s) => s.dragPreviews[object.id])
   const own = useTable((s) => s.ownDragPreviews[object.id])
-  return (own ?? (lockedByOther && preview ? preview : object)) as T
+  const groupOffset = useGroupOffset(object.id)
+  const base = (own ?? (lockedByOther && preview ? preview : object)) as T
+  return groupOffset ? { ...base, x: base.x + groupOffset.x, y: base.y + groupOffset.y } : base
 }

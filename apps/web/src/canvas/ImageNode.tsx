@@ -3,6 +3,7 @@ import useImage from 'use-image'
 import { canControl, type ImageObject } from '@mesa/shared'
 import { useTable, useTableActions, useTableStore } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
+import { useGroupOffset } from './hooks'
 import { commitNodeChange, geometryFromNode } from './nodeChange'
 import { isPingClick, usePingDragGuard } from './ping'
 
@@ -17,15 +18,18 @@ export function ImageNode({ object }: { object: ImageObject }) {
   const mayControl = useTable((s) => !!s.self && canControl(object, s.self.clientId, s.self.role))
   const g = lockedByOther && preview ? preview : object
   const layerEditable = useTable(() => actions.canEditLayer(object.layerId))
-  const interactive = tool === 'select' && !lockedByOther && mayControl && layerEditable
+  // Na seleção em área, o item se move com o grupo (não sozinho) e não é selecionado pelo clique.
+  const grouped = useTable((s) => !!s.selection && (s.selection.whole.includes(object.id) || object.id in s.selection.parts))
+  const groupOffset = useGroupOffset(object.id)
+  const interactive = tool === 'select' && !lockedByOther && mayControl && layerEditable && !grouped
 
   return (
     <KonvaImage
       id={object.id}
       name="object image"
       image={image}
-      x={g.x}
-      y={g.y}
+      x={g.x + (groupOffset?.x ?? 0)}
+      y={g.y + (groupOffset?.y ?? 0)}
       width={g.width}
       height={g.height}
       rotation={g.rotation}
