@@ -50,8 +50,22 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
-      - name: Testes unitários (o e2e não roda no CI)
-        run: pnpm test
+      - name: "Testes: shared"
+        run: pnpm --filter @mesa/shared exec vitest run --reporter=default --reporter=github-actions
+
+      - name: "Testes: launcher"
+        if: ${{ !cancelled() }}
+        run: pnpm --filter @mesa/launcher exec vitest run --reporter=default --reporter=github-actions
+
+      - name: "Testes: web"
+        if: ${{ !cancelled() }}
+        run: pnpm --filter @mesa/web exec vitest run --reporter=default --reporter=github-actions
+
+      - name: "Testes: worker"
+        if: ${{ !cancelled() }}
+        run: |
+          pnpm --filter @mesa/worker run ensure-assets
+          pnpm --filter @mesa/worker exec vitest run --reporter=default --reporter=github-actions
 
       - name: Build do front
         run: pnpm build

@@ -25,7 +25,8 @@ describe('release.yml', () => {
   it('confere a tag, testa, monta, faz a fumaça no zip extraído e publica', () => {
     const yml = fs.readFileSync(workflowFile, 'utf8')
     const order = [
-      'version.txt', 'pnpm typecheck', 'pnpm test', 'pnpm build', 'pnpm win:package',
+      'version.txt', 'pnpm typecheck', '@mesa/shared exec vitest', '@mesa/launcher exec vitest',
+      '@mesa/web exec vitest', '@mesa/worker exec vitest', 'pnpm build', 'pnpm win:package',
       '--smoke --port 18787', 'gh release create',
     ].map((s) => yml.indexOf(s))
     expect(order.every((i) => i >= 0)).toBe(true)
@@ -58,8 +59,16 @@ describe('release.yml', () => {
     const versionStep = steps.find((s) => s.includes('Get-Content version.txt'))
     expect(versionStep).not.toContain('if:')
     expect(versionStep).toContain('VERSION=$version')
+    // os testes por pacote: o primeiro roda sempre; os demais rodam mesmo se um anterior falhar
+    const testSteps = steps.filter((s) => s.includes('name: "Testes: '))
+    expect(testSteps).toHaveLength(4)
+    testSteps.forEach((s, i) => {
+      expect(s).toContain('--reporter=github-actions')
+      if (i === 0) expect(s).not.toMatch(/^\s+if:/m)
+      else expect(s).toContain('if: ${{ !cancelled() }}')
+    })
     // os demais passos rodam sempre
-    for (const s of steps.filter((s) => /^(name|uses):/.test(s) && s !== tagStep && s !== releaseStep)) {
+    for (const s of steps.filter((s) => /^(name|uses):/.test(s) && s !== tagStep && s !== releaseStep && !testSteps.includes(s))) {
       expect(s).not.toMatch(/^\s+if:/m)
     }
   })
