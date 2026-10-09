@@ -1,0 +1,74 @@
+name: Release (pacote Windows)
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows-package:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tag confere com version.txt
+        run: |
+          $version = (Get-Content version.txt -Raw).Trim()
+          if ("v$version" -ne $env:GITHUB_REF_NAME) { throw "Tag $env:GITHUB_REF_NAME diferente de version.txt ($version)" }
+          "VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.10.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.12.0
+          cache: pnpm
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Testes unitários (o e2e não roda no CI)
+        run: pnpm test
+
+      - name: Build do front
+        run: pnpm build
+
+      - name: Montar o pacote (Node e cloudflared com SHA-256 conferido)
+        run: pnpm win:package
+
+      - name: Teste de fumaça no zip extraído
+        run: |
+          $zip = "dist-win\MesaVirtual-v$env:VERSION-win64.zip"
+          $dir = Join-Path $env:RUNNER_TEMP 'fumaca com espaco'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          & "$env:SystemRoot\System32\tar.exe" -xf $zip -C $dir
+          if ($LASTEXITCODE -ne 0) { throw 'falha ao extrair o zip' }
+          $env:MESA_DATA_DIR = Join-Path $env:RUNNER_TEMP 'dados da fumaca'
+          $pkg = Join-Path $dir 'MesaVirtual'
+          & "$pkg\app\node\node.exe" "$pkg\app\launcher\launcher.mjs" --root $pkg --smoke --port 18787
+          if ($LASTEXITCODE -ne 0) { throw "teste de fumaça falhou (código $LASTEXITCODE)" }
+
+      - name: Criar a Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create $env:GITHUB_REF_NAME
+          "dist-win\MesaVirtual-v$env:VERSION-win64.zip"
+          --title "Mesa Virtual $env:GITHUB_REF_NAME"
+          --generate-notes
+          --verify-tag
