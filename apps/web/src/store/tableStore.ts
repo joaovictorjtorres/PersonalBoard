@@ -4,7 +4,9 @@ import type { Box, ChatChannel, ClientMessage, Control, MemberPatch, ObjectOp, O
 import { BATCH_MAX, CHAT_TEXT_MAX, DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, TURNS_MAX, canControl, parseCommand, snapToGrid } from '@mesa/shared'
 import { SyncClient, type SyncClientOptions } from '../sync/SyncClient'
 import { throttle, type Throttled } from '../lib/throttle'
-import { getClientId, readClientSecret, readGmSecret, rememberClientSecret, shouldRetryAuth } from '../lib/identity'
+import {
+  getTableClientId, readClientSecret, readGmSecret, rememberClientSecret, rememberTableClientId, shouldRetryAuth,
+} from '../lib/identity'
 import { uploadAsset, wsUrl } from '../lib/api'
 import { initialSize, prepareChatImage, prepareImage, uploadErrorText, viewportCenter } from '../lib/image'
 import {
@@ -189,7 +191,9 @@ export function createTableStore(
     const actions: TableActions = {
       connect(nickname) {
         sync?.close()
+        set({ fatal: null })
         let sentSecret: string | undefined
+        let sentClientId = ''
         // Callbacks de um cliente antigo (ex.: o close assíncrono do StrictMode)
         // são ignorados para não sobrescrever o status do cliente atual.
         const client: SyncClient = new SyncClient({
@@ -197,10 +201,11 @@ export function createTableStore(
           hello: () => {
             const gmSecret = readGmSecret(tableId)
             sentSecret = readClientSecret(tableId)
+            sentClientId = getTableClientId(tableId)
             return {
               t: 'hello',
               v: 2,
-              clientId: getClientId(),
+              clientId: sentClientId,
               nickname,
               ...(gmSecret ? { gmSecret } : {}),
               ...(sentSecret ? { clientSecret: sentSecret } : {}),
@@ -209,7 +214,11 @@ export function createTableStore(
           onMessage: (msg) => {
             if (sync !== client) return
             if (msg.t === 'ack') writes++
-            if (msg.t === 'welcome' && msg.clientSecret) rememberClientSecret(tableId, msg.clientSecret)
+            if (msg.t === 'welcome') {
+              // Navegador novo que assumiu um membro (apelido ou link de mestre): guarda o id dele para esta mesa.
+              if (msg.self.clientId !== sentClientId) rememberTableClientId(tableId, msg.self.clientId)
+              if (msg.clientSecret) rememberClientSecret(tableId, msg.clientSecret)
+            }
             if (msg.t === 'error' && msg.reason === 'auth' && shouldRetryAuth(sentSecret, readClientSecret(tableId), authRetried)) {
               authRetried = true
               actions.connect(nickname)

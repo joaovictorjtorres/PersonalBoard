@@ -39,6 +39,20 @@ export function getClientId(): string {
   return memoryClientId
 }
 
+const tableClientKey = (tableId: string) => `mesa:clientId:${tableId}`
+// fallback em memória quando o localStorage está bloqueado
+const memoryTableClient = new Map<string, string>()
+
+/** Id do membro nesta mesa: o assumido (apelido ou link de mestre) ou, sem ele, o id global do navegador. */
+export function getTableClientId(tableId: string): string {
+  return memoryTableClient.get(tableId) ?? safeGet(tableClientKey(tableId)) ?? getClientId()
+}
+
+export function rememberTableClientId(tableId: string, clientId: string): void {
+  memoryTableClient.set(tableId, clientId)
+  safeSet(tableClientKey(tableId), clientId)
+}
+
 export function getNickname(): string | null {
   return safeGet(NICK_KEY)
 }

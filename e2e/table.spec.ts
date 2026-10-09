@@ -18,7 +18,7 @@ interface Obj {
   control: { mode: string; clientIds: string[] }
 }
 
-async function newTable(page: Page): Promise<{ tableId: string; gmSecret: string }> {
+async function newTable(page: Page): Promise<{ tableId: string; gmSecret: string; playerKey?: string }> {
   const res = await page.request.post('/api/tables', { data: { name: 'E2E' } })
   expect(res.status()).toBe(201)
   return res.json()
@@ -26,6 +26,12 @@ async function newTable(page: Page): Promise<{ tableId: string; gmSecret: string
 
 const waitOpen = (page: Page) =>
   page.waitForFunction(() => (window as any).__mesa?.getState().status === 'open')
+
+/** Caminho do jogador; a partir da chave de jogador (#j=), leva a chave da mesa. */
+const playerPath = (t: { tableId: string; playerKey?: string }) =>
+  `/t/${t.tableId}?debug=1${t.playerKey ? `#j=${t.playerKey}` : ''}`
+
+const selfId = (page: Page): Promise<string> => page.evaluate(() => (window as any).__mesa.getState().self.clientId)
 
 const objects = (page: Page): Promise<Obj[]> =>
   page.evaluate(() => Object.values((window as any).__mesa.getState().objects))
@@ -1345,4 +1351,42 @@ test('borracha em todas as camadas corta traços de duas camadas numa passada', 
   await ana.mouse.move(450, 380, { steps: 10 })
   await ana.mouse.up()
   await expect.poll(async () => (await objects(gm)).map((o) => `${o.id}:${o.segments?.length}`).sort()).toEqual(['a:2', 'b:2'])
+})
+
+// ---------------------------------------------------------------- vínculo entre sessões
+
+test('jogador volta com navegador limpo pelo "Já jogou aqui?": mesmo membro e controle do próprio token', async ({ browser, page }) => {
+  const t = await newTable(page)
+  const gm = await open(browser, `/t/${t.tableId}?debug=1#gm=${t.gmSecret}`, 'Mestre')
+  const player = await open(browser, playerPath(t), 'Ana')
+  const anaId = await selfId(player)
+  await uploadToken(player)
+  await expect.poll(async () => (await objects(gm)).length).toBe(1)
+  await player.context().close()
+  await expect
+    .poll(() => gm.evaluate((id) => (window as any).__mesa.getState().members[id]?.online, anaId))
+    .toBe(false)
+
+  const back = await (await browser.newContext()).newPage()
+  await back.goto(playerPath(t))
+  await expect(back.getByText('Já jogou aqui? Clique no seu nome')).toBeVisible()
+  await back.getByRole('button', { name: 'Ana', exact: true }).click()
+  await waitOpen(back)
+  expect(await selfId(back)).toBe(anaId)
+  const [token] = await objects(back)
+  await dragObject(back, token, 100, 50)
+  await expect.poll(async () => Math.round((await objects(gm))[0].x)).toBe(Math.round(token.x + 100))
+})
+
+test('mestre com navegador limpo pelo link de mestre recupera a autoria', async ({ browser, page }) => {
+  const t = await newTable(page)
+  const gm = await open(browser, `/t/${t.tableId}?debug=1#gm=${t.gmSecret}`, 'Mestre')
+  const gmId = await selfId(gm)
+  await uploadToken(gm)
+  await expect.poll(async () => (await objects(gm)).length).toBe(1)
+  await gm.context().close()
+  const again = await open(browser, `/t/${t.tableId}?debug=1#gm=${t.gmSecret}`, 'Mestre')
+  expect(await selfId(again)).toBe(gmId)
+  const owner = await again.evaluate(() => (Object.values((window as any).__mesa.getState().objects)[0] as any).ownerId)
+  expect(owner).toBe(gmId)
 })

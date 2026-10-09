@@ -178,3 +178,7 @@ input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-o
 .turns-add { display: flex; gap: 4px; min-width: 0; }
 .turns-add input { flex: 1 1 auto; min-width: 0; }
 .turns-buttons { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.known-players p { margin: 0 0 6px; }
+.known-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.form-error { color: #f88; margin: 0; }
