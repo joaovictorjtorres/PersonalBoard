@@ -1,7 +1,7 @@
 import { Ellipse, Layer } from 'react-konva'
 import type { ImageObject } from '@mesa/shared'
 import { useTable } from '../store/context'
-import { currentTurnToken, linkedImage } from '../store/turns'
+import { currentTurnToken, hoveredTurnImage } from '../store/turns'
 import { rotatedBounds } from './bounds'
 import { useFrameClock, useLiveGeometry } from './hooks'
 import { turnRing, turnRingPulse } from './turnRing'
@@ -15,7 +15,7 @@ const HOVER_COLOR = '#9db4ff'
  */
 export function TurnHighlights() {
   const current = useTable(currentTurnToken)
-  const hovered = useTable((s) => linkedImage(s, s.turnHover) ?? null)
+  const hovered = useTable(hoveredTurnImage)
   if (!current && !hovered) return null
   return (
     <Layer listening={false}>

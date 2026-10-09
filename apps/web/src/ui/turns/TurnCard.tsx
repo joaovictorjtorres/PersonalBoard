@@ -2,9 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { Copy, GripVertical, Trash2 } from 'lucide-react'
 import { nanoid } from 'nanoid'
 import { TURN_NAME_MAX, type TurnEntry } from '@mesa/shared'
-import { useTable, useTableActions } from '../../store/context'
+import { useTable, useTableActions, useTableStore } from '../../store/context'
 import { linkedImage } from '../../store/turns'
-import { initiativeLabel, parseInitiativeInput } from './format'
+import { initiativeLabel, onActivateKey, parseInitiativeInput } from './format'
 
 /** Tipo do arrasto entre cards (não se mistura com arquivos soltos na mesa). */
 const TURN_DRAG_TYPE = 'application/x-mesa-turn'
@@ -20,11 +20,20 @@ interface TurnCardProps {
 
 export function TurnCard({ entry, index, current, isGm, full }: TurnCardProps) {
   const actions = useTableActions()
+  const store = useTableStore()
   // Miniatura só se eu tenho o token (imagem) no estado: apagado ou em camada oculta, sem miniatura.
   const assetKey = useTable((s) => linkedImage(s, entry.tokenId)?.assetKey ?? null)
   const [editing, setEditing] = useState<'name' | 'initiative' | null>(null)
   const [dropTarget, setDropTarget] = useState(false)
   const ref = useRef<HTMLLIElement>(null)
+
+  // Card removido com o mouse em cima não dispara pointerleave: o destaque no mapa não fica preso.
+  useEffect(
+    () => () => {
+      if (entry.tokenId && store.getState().turnHover === entry.tokenId) actions.setTurnHover(null)
+    },
+    [store, actions, entry.tokenId],
+  )
 
   // A lista rola até o card da vez quando a vez muda.
   useEffect(() => {
@@ -84,7 +93,7 @@ export function TurnCard({ entry, index, current, isGm, full }: TurnCardProps) {
         <span
           className={`turn-name${isGm ? ' editable' : ''}`}
           title={isGm ? 'Clique para editar o nome' : entry.name}
-          onClick={isGm ? () => setEditing('name') : undefined}
+          {...(isGm && editableProps(() => setEditing('name')))}
         >
           {entry.name}
         </span>
@@ -118,13 +127,18 @@ export function TurnCard({ entry, index, current, isGm, full }: TurnCardProps) {
         <span
           className={`turn-init${isGm ? ' editable' : ''}`}
           title={isGm ? 'Clique para editar a iniciativa' : 'Iniciativa'}
-          onClick={isGm ? () => setEditing('initiative') : undefined}
+          {...(isGm && editableProps(() => setEditing('initiative')))}
         >
           {initiativeLabel(entry.initiative)}
         </span>
       )}
     </li>
   )
+}
+
+/** Texto clicável do mestre: também alcançável e acionável pelo teclado. */
+function editableProps(edit: () => void) {
+  return { role: 'button', tabIndex: 0, onClick: edit, onKeyDown: onActivateKey(edit) }
 }
 
 /** Enter ou sair do campo salva; Esc cancela; vazio volta ao nome anterior. */

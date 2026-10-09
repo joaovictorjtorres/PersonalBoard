@@ -20,3 +20,12 @@ export function turnsSummary(turns: Turns): string {
   const current = turns.entries.find((e) => e.id === turns.currentId)
   return `Rodada ${turns.round} · Vez de: ${current?.name ?? '?'}`
 }
+
+/** Enter ou Espaço ativam um elemento com role="button" (que não é um <button>). */
+export function onActivateKey(action: () => void) {
+  return (e: { key: string; preventDefault(): void }) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    action()
+  }
+}

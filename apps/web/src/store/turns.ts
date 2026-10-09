@@ -35,3 +35,14 @@ export function currentTurnToken(s: Pick<TableState, 'turns' | 'objects'>): Imag
 export function turnNameFor(title: string | undefined): string {
   return (title ?? '').trim().slice(0, TURN_NAME_MAX).trim() || 'Token'
 }
+
+/** Imagem sob o card em foco: só enquanto o card ainda existe (remover o card sob o mouse não dispara pointerleave). */
+export function hoveredTurnImage(s: Pick<TableState, 'turns' | 'objects' | 'turnHover'>): ImageObject | null {
+  if (!s.turnHover || !s.turns.entries.some((e) => e.tokenId === s.turnHover)) return null
+  return linkedImage(s, s.turnHover) ?? null
+}
+
+/** Há uma rolagem de iniciativa esperando o servidor (evita rolar duas vezes com clique duplo). */
+export function isRollPending(s: Pick<TableState, 'pending'>): boolean {
+  return Object.values(s.pending).some((p) => p.op.kind === 'turnsRoll')
+}

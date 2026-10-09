@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid'
 import { TURNS_MAX, TURN_NAME_MAX, type Turns } from '@mesa/shared'
 import { useTable, useTableActions } from '../../store/context'
 import { askChoice } from '../confirm'
+import { isRollPending } from '../../store/turns'
 import { turnsSummary } from './format'
 import { TurnCard } from './TurnCard'
 import {
@@ -159,6 +160,7 @@ function TurnsFooter({ turns }: { turns: Turns }) {
   const [name, setName] = useState('')
   const full = turns.entries.length >= TURNS_MAX
   const empty = turns.entries.length === 0
+  const rolling = useTable(isRollPending)
   const missing = turns.entries.some((e) => e.initiative === null)
 
   const add = () => {
@@ -205,10 +207,10 @@ function TurnsFooter({ turns }: { turns: Turns }) {
       <footer className="turns-footer">
         {addForm}
         <div className="turns-buttons">
-          <button type="button" disabled={!missing} onClick={() => actions.submit({ kind: 'turnsRoll', all: false })}>
+          <button type="button" disabled={!missing || rolling} onClick={() => actions.submit({ kind: 'turnsRoll', all: false })}>
             Rolar iniciativa
           </button>
-          <button type="button" disabled={empty} onClick={() => actions.submit({ kind: 'turnsRoll', all: true })}>
+          <button type="button" disabled={empty || rolling} onClick={() => actions.submit({ kind: 'turnsRoll', all: true })}>
             Rolar de novo para todos
           </button>
           <button type="button" className="primary" disabled={empty} onClick={() => actions.submit({ kind: 'turnsStart' })}>
