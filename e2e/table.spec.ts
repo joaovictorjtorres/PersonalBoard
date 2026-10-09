@@ -948,3 +948,157 @@ test('olho e cadeado na linha da camada; a camada ativa do jogador muda quando f
   await expect.poll(active).toBe('map')
   await expect(layersPanel(gm).getByRole('button', { name: 'Mostrar Desenhos para jogadores' })).toHaveAttribute('aria-pressed', 'true')
 })
+
+// ── Turnos ──────────────────────────────────────────────────────────────────
+
+const turnsWindow = (page: Page) => page.getByRole('region', { name: 'Turnos' })
+const turnCards = (page: Page) => turnsWindow(page).locator('.turn-card')
+const turnNames = (page: Page) => turnsWindow(page).locator('.turn-name')
+const turnInits = (page: Page) => turnsWindow(page).locator('.turn-init')
+const turnsState = (page: Page) => page.evaluate(() => (window as any).__mesa.getState().turns)
+const ringCount = (page: Page): Promise<number> => page.evaluate(() => (window as any).__stage.find('.turn-ring').length)
+
+test('turnos: mestre monta pelo token, duplica, rola e inicia; jogador acompanha a vez e o anel; encerrar mantendo participantes', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const dialogs = trackNativeDialogs(gm, player)
+
+  await uploadToken(gm)
+  await expect.poll(async () => (await objects(player)).length).toBe(1)
+  const [token] = await objects(gm)
+
+  // jogador não tem o botão da barra; ninguém vê a janela ainda
+  await expect(player.getByRole('button', { name: 'Turnos', exact: true })).toHaveCount(0)
+  await expect(turnsWindow(player)).toHaveCount(0)
+
+  // botão direito no token: adicionar abre a janela para todos
+  const menu = await openObjectMenu(gm, token)
+  await menu.getByRole('button', { name: 'Adicionar à ordem de turnos' }).click()
+  await expect(turnsWindow(player)).toBeVisible()
+  await expect(turnNames(player)).toHaveText(['Token'])
+  await expect(turnInits(player)).toHaveText(['?'])
+
+  // duplicar (o botão aparece com o mouse sobre o card) e um participante livre
+  const first = turnCards(gm).first()
+  await first.hover()
+  await first.getByRole('button', { name: 'Duplicar Token', exact: true }).click()
+  await turnsWindow(gm).getByLabel('Nome do participante').fill('Goblin')
+  await turnsWindow(gm).getByRole('button', { name: 'Adicionar', exact: true }).click()
+  await expect(turnNames(player)).toHaveText(['Token', 'Token 2', 'Goblin'])
+  // a janela cabe em 1280x720 sem rolagem horizontal (janela e lista)
+  for (const page of [gm, player]) {
+    expect(await turnsWindow(page).evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+    expect(await turnsWindow(page).locator('.turns-list').evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+  }
+
+  // iniciativa digitada no card: fora do limite é recusada; -99 deixa o Goblin por último depois da rolagem
+  await turnCards(gm).nth(2).locator('.turn-init').click()
+  const initField = turnsWindow(gm).getByLabel('Iniciativa de Goblin')
+  await initField.fill('1000')
+  await expect(initField).toHaveAttribute('aria-invalid', 'true')
+  await initField.fill('-99')
+  await initField.press('Enter')
+  await expect(turnInits(player)).toHaveText(['?', '?', '-99'])
+
+  // rolar só quem está sem valor
+  await turnsWindow(gm).getByRole('button', { name: 'Rolar iniciativa', exact: true }).click()
+  await expect.poll(async () => (await turnsState(player)).entries.every((e: any) => e.initiative !== null)).toBe(true)
+  await expect(turnNames(player).last()).toHaveText('Goblin')
+  const rolled: number[] = (await turnsState(player)).entries.slice(0, 2).map((e: any) => e.initiative)
+  for (const v of rolled) {
+    expect(v).toBeGreaterThanOrEqual(1)
+    expect(v).toBeLessThanOrEqual(20)
+  }
+  expect(rolled[0]).toBeGreaterThanOrEqual(rolled[1])
+  // a rolagem é aleatória: a ordem de Token e Token 2 vale a que a mesa mostra agora
+  const order = await turnNames(player).allTextContents()
+  expect([...order].sort()).toEqual(['Goblin', 'Token', 'Token 2'])
+  expect(order[2]).toBe('Goblin')
+  await expect(turnNames(gm)).toHaveText(order)
+
+  // iniciar: o jogador vê a rodada, o card da vez e o anel no token
+  await turnsWindow(gm).getByRole('button', { name: 'Iniciar combate', exact: true }).click()
+  await expect(turnsWindow(player)).toContainText('Rodada 1')
+  await expect(turnCards(player).nth(0)).toHaveAttribute('aria-current', 'true')
+  await expect.poll(() => ringCount(player)).toBe(1)
+
+  // "Próximo" avança nos dois; o Goblin não tem token (sem anel); a virada soma a rodada
+  const next = turnsWindow(gm).getByRole('button', { name: 'Próximo turno', exact: true })
+  await next.click()
+  await expect(turnCards(player).nth(1)).toHaveAttribute('aria-current', 'true')
+  await expect(turnCards(gm).nth(1)).toHaveAttribute('aria-current', 'true')
+  await expect.poll(() => ringCount(player)).toBe(1)
+  await next.click()
+  await expect(turnCards(player).nth(2)).toHaveAttribute('aria-current', 'true')
+  await expect.poll(() => ringCount(player)).toBe(0)
+  await next.click()
+  await expect(turnsWindow(player)).toContainText('Rodada 2')
+  await expect(turnCards(player).nth(0)).toHaveAttribute('aria-current', 'true')
+
+  // jogador: sem controles, sem alças; a miniatura centraliza a própria câmera
+  for (const name of ['Adicionar', 'Próximo turno', 'Turno anterior', 'Encerrar', 'Fechar para todos']) {
+    await expect(turnsWindow(player).getByRole('button', { name, exact: true })).toHaveCount(0)
+  }
+  await expect(turnsWindow(player).locator('.turn-handle')).toHaveCount(0)
+  await turnCards(player).first().hover()
+  await expect(turnsWindow(player).getByRole('button', { name: /^(Duplicar|Remover) / })).toHaveCount(0)
+  await turnCards(player).first().getByRole('button', { name: `Centralizar em ${order[0]}`, exact: true }).click()
+  await expect
+    .poll(() => player.evaluate(() => Math.round((window as any).__mesa.getState().viewport.x)))
+    .toBe(Math.round(640 - (token.x + token.width / 2)))
+
+  // sem rolagem horizontal na janela
+  expect(await turnsWindow(player).evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true)
+
+  // encerrar mantendo os participantes, pelo aviso do app
+  await turnsWindow(gm).getByRole('button', { name: 'Encerrar', exact: true }).click()
+  const dialog = confirmDialog(gm)
+  await expect(dialog.getByRole('button')).toHaveText(['Cancelar', 'Encerrar e limpar', 'Encerrar e manter participantes'])
+  await dialog.getByRole('button', { name: 'Encerrar e manter participantes' }).click()
+  await expect(turnInits(player)).toHaveText(['?', '?', '?'])
+  await expect(turnNames(player)).toHaveText(order)
+  await expect(turnsWindow(player)).not.toContainText('Rodada')
+  await expect(turnsWindow(gm).getByRole('button', { name: 'Iniciar combate', exact: true })).toBeVisible()
+
+  // reordenar arrastando a alça do primeiro card até o último (turnMove), nos dois clientes
+  await turnCards(gm).nth(0).locator('.turn-handle').dragTo(turnCards(gm).nth(2))
+  const moved = [order[1], order[2], order[0]]
+  await expect(turnNames(gm)).toHaveText(moved)
+  await expect(turnNames(player)).toHaveText(moved)
+  expect(dialogs).toEqual([])
+})
+
+test('turnos: cada um minimiza a própria janela (lembrada ao recarregar); o mestre fecha para todos', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  const toolbarButton = gm.getByRole('button', { name: 'Turnos', exact: true })
+  await toolbarButton.click()
+  await expect(toolbarButton).toHaveAttribute('aria-pressed', 'true')
+  await expect(turnsWindow(player)).toBeVisible()
+  await expect(turnsWindow(player)).toContainText('Nenhum participante ainda.')
+  await expect(turnsWindow(gm).getByRole('button', { name: 'Iniciar combate', exact: true })).toBeDisabled()
+
+  await turnsWindow(gm).getByLabel('Nome do participante').fill('Ana')
+  await turnsWindow(gm).getByLabel('Nome do participante').press('Enter')
+  await turnsWindow(gm).getByRole('button', { name: 'Iniciar combate', exact: true }).click()
+  await expect(turnsWindow(player)).toContainText('Rodada 1')
+
+  // minimizar é só da minha janela, e é lembrado ao recarregar
+  await turnsWindow(player).getByRole('button', { name: 'Minimizar' }).click()
+  await expect(turnsWindow(player)).toHaveText('Rodada 1 · Vez de: Ana')
+  await expect(turnCards(gm)).toHaveCount(1)
+  await player.reload()
+  await waitOpen(player)
+  await expect(turnsWindow(player)).toHaveText('Rodada 1 · Vez de: Ana')
+  await turnsWindow(player).getByRole('button', { name: 'Rodada 1 · Vez de: Ana' }).click()
+  await expect(turnCards(player)).toHaveCount(1)
+
+  // fechar é do mestre e vale para todos
+  await turnsWindow(gm).getByRole('button', { name: 'Fechar para todos' }).click()
+  await expect(turnsWindow(player)).toHaveCount(0)
+  await expect(turnsWindow(gm)).toHaveCount(0)
+  await expect(toolbarButton).toHaveAttribute('aria-pressed', 'false')
+})
