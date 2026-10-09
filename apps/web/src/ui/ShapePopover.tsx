@@ -3,6 +3,7 @@ import { Circle, Minus, Square } from 'lucide-react'
 import type { ShapeKind } from '@mesa/shared'
 import { useTable, useTableActions } from '../store/context'
 import { useDismiss } from './useDismiss'
+import type { HoverMenuBinding } from './useHoverMenu'
 
 const KINDS: Array<{ kind: ShapeKind; label: string; Icon: typeof Square }> = [
   { kind: 'rect', label: 'Retângulo', Icon: Square },
@@ -10,9 +11,9 @@ const KINDS: Array<{ kind: ShapeKind; label: string; Icon: typeof Square }> = [
   { kind: 'line', label: 'Linha', Icon: Minus },
 ]
 
-export function ShapePopover({ onClose }: { onClose: () => void }) {
+export function ShapePopover({ onClose, hover }: { onClose: () => void; hover?: HoverMenuBinding }) {
   const ref = useRef<HTMLDivElement>(null)
-  useDismiss(ref, onClose)
+  useDismiss(ref, onClose, hover?.anchor)
   const kind = useTable((s) => s.shapeKind)
   const fill = useTable((s) => s.shapeFill)
   const strokeColor = useTable((s) => s.color)
@@ -21,7 +22,14 @@ export function ShapePopover({ onClose }: { onClose: () => void }) {
   const percent = Math.round(fill.opacity * 100)
 
   return (
-    <div ref={ref} className="panel popover pen-popover" role="dialog" aria-label="Opções das formas">
+    <div
+      ref={ref}
+      className="panel popover pen-popover"
+      role="dialog"
+      onPointerEnter={hover?.onPointerEnter}
+      onPointerLeave={hover?.onPointerLeave}
+      aria-label="Opções das formas"
+    >
       <div className="field">
         <span>Tipo</span>
         <div className="row">

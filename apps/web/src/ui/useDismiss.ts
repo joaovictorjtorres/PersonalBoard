@@ -2,9 +2,14 @@ import { useEffect, useLayoutEffect, type CSSProperties, type RefObject } from '
 
 /**
  * Fecha um popover com Esc ou clique fora. Antes de fechar, tira o foco de um campo
- * dentro dele: o onBlur do campo dispara e salva o que foi digitado.
+ * dentro dele: o onBlur do campo dispara e salva o que foi digitado. Clique em `ignore`
+ * (ex.: o botão que abriu o popover) não conta como "fora".
  */
-export function useDismiss(ref: RefObject<HTMLElement | null>, onClose: () => void): void {
+export function useDismiss(
+  ref: RefObject<HTMLElement | null>,
+  onClose: () => void,
+  ignore?: RefObject<HTMLElement | null>,
+): void {
   useKeepInView(ref)
   useEffect(() => {
     const commit = () => {
@@ -18,6 +23,7 @@ export function useDismiss(ref: RefObject<HTMLElement | null>, onClose: () => vo
     }
     const onDown = (e: MouseEvent) => {
       if (!ref.current || ref.current.contains(e.target as Node)) return
+      if (ignore?.current?.contains(e.target as Node)) return
       commit()
       onClose()
     }
@@ -27,7 +33,7 @@ export function useDismiss(ref: RefObject<HTMLElement | null>, onClose: () => vo
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('mousedown', onDown)
     }
-  }, [ref, onClose])
+  }, [ref, onClose, ignore])
 }
 
 /** Posição fixa perto do clique, sem sair da janela. */

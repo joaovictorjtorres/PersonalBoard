@@ -181,6 +181,35 @@ test('botão direito na caneta abre opções; modo Apagar vira Borracha (E)', as
   expect(s).toEqual({ strokeWidth: 12, color: '#4363d8' })
 })
 
+test('passar o mouse nas ferramentas abre o menu; atravessar o vão não fecha; um aberto por vez', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const pen = gm.getByRole('dialog', { name: 'Opções da caneta' })
+  const shape = gm.getByRole('dialog', { name: 'Opções das formas' })
+
+  await gm.getByRole('button', { name: 'Lápis (P)' }).hover()
+  await expect(pen).toBeVisible()
+  // do botão até o popover, passando pelo vão de 12 px
+  const btn = (await gm.getByRole('button', { name: 'Lápis (P)' }).boundingBox())!
+  const box = (await pen.boundingBox())!
+  await gm.mouse.move(box.x + 20, btn.y + btn.height / 2, { steps: 8 })
+  await gm.waitForTimeout(400)
+  await expect(pen).toBeVisible()
+  await pen.getByRole('button', { name: 'Cor #4363d8' }).click()
+
+  await gm.getByRole('button', { name: 'Formas (S)' }).hover()
+  await expect(shape).toBeVisible()
+  await expect(pen).toHaveCount(0)
+
+  await gm.mouse.move(800, 600)
+  await expect(shape).toHaveCount(0)
+
+  await gm.getByRole('button', { name: 'Grade', exact: true }).hover()
+  await expect(gm.getByRole('dialog', { name: 'Grade' })).toBeVisible()
+  await expect(player.getByRole('button', { name: 'Grade', exact: true })).toHaveCount(0)
+})
+
 test('mestre esconde e revela uma camada; jogador vê os objetos sumirem e voltarem', async ({ browser, page }) => {
   const { tableId, gmSecret } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')

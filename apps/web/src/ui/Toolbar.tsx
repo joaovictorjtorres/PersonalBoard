@@ -1,9 +1,10 @@
-import { useCallback, useRef, useState } from 'react'
+import { useMemo, useRef, type MouseEvent } from 'react'
 import { Eraser, Grid3x3, Hand, ImagePlus, MousePointer2, Pencil, Ruler, Shapes, Undo2 } from 'lucide-react'
 import { useTable, useTableActions } from '../store/context'
 import { GridPopover } from './GridPopover'
 import { PenPopover } from './PenPopover'
 import { ShapePopover } from './ShapePopover'
+import { useHoverMenus, type HoverMenuBinding } from './useHoverMenu'
 
 const ICON = 18
 
@@ -13,12 +14,19 @@ export function Toolbar() {
   const isGm = useTable((s) => s.self?.role === 'gm')
   const actions = useTableActions()
   const fileInput = useRef<HTMLInputElement>(null)
-  const [penMenu, setPenMenu] = useState(false)
-  const [shapeMenu, setShapeMenu] = useState(false)
-  const [gridMenu, setGridMenu] = useState(false)
-  const closePenMenu = useCallback(() => setPenMenu(false), [])
-  const closeShapeMenu = useCallback(() => setShapeMenu(false), [])
-  const closeGridMenu = useCallback(() => setGridMenu(false), [])
+  // Menus abrem ao passar o mouse (e pelo botão direito / toque longo); um aberto por vez.
+  const menus = useHoverMenus<'pen' | 'shape' | 'grid'>()
+  const penAnchor = useRef<HTMLDivElement>(null)
+  const shapeAnchor = useRef<HTMLDivElement>(null)
+  const gridAnchor = useRef<HTMLDivElement>(null)
+  const { surface } = menus
+  const penHover = useMemo<HoverMenuBinding>(() => ({ anchor: penAnchor, ...surface }), [surface])
+  const shapeHover = useMemo<HoverMenuBinding>(() => ({ anchor: shapeAnchor, ...surface }), [surface])
+  const gridHover = useMemo<HoverMenuBinding>(() => ({ anchor: gridAnchor, ...surface }), [surface])
+  const openOnContextMenu = (id: 'pen' | 'shape' | 'grid') => (e: MouseEvent) => {
+    e.preventDefault()
+    menus.show(id)
+  }
   const penLabel = penMode === 'erase' ? 'Borracha (E)' : 'Lápis (P)'
 
   return (
@@ -29,39 +37,41 @@ export function Toolbar() {
       <button aria-label="Mão (H)" title="Mão (H)" aria-pressed={tool === 'hand'} onClick={() => actions.setTool('hand')}>
         <Hand size={ICON} aria-hidden />
       </button>
-      <div className="pen-anchor">
+      <div className="pen-anchor" ref={penAnchor}>
         <button
           aria-label={penLabel}
-          title={`${penLabel} — botão direito: opções`}
+          title={`${penLabel} — passe o mouse: opções`}
           aria-pressed={tool === 'pencil'}
           aria-haspopup="dialog"
-          aria-expanded={penMenu}
-          onClick={() => actions.setPen(penMode)}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            setPenMenu(true)
+          aria-expanded={menus.open === 'pen'}
+          onClick={() => {
+            menus.cancelOpen()
+            actions.setPen(penMode)
           }}
+          onContextMenu={openOnContextMenu('pen')}
+          {...menus.trigger('pen')}
         >
           {penMode === 'erase' ? <Eraser size={ICON} aria-hidden /> : <Pencil size={ICON} aria-hidden />}
         </button>
-        {penMenu && <PenPopover onClose={closePenMenu} />}
+        {menus.open === 'pen' && <PenPopover onClose={menus.close} hover={penHover} />}
       </div>
-      <div className="pen-anchor">
+      <div className="pen-anchor" ref={shapeAnchor}>
         <button
           aria-label="Formas (S)"
-          title="Formas (S) — botão direito: tipo e preenchimento"
+          title="Formas (S) — passe o mouse: tipo e preenchimento"
           aria-pressed={tool === 'shape'}
           aria-haspopup="dialog"
-          aria-expanded={shapeMenu}
-          onClick={() => actions.setTool('shape')}
-          onContextMenu={(e) => {
-            e.preventDefault()
-            setShapeMenu(true)
+          aria-expanded={menus.open === 'shape'}
+          onClick={() => {
+            menus.cancelOpen()
+            actions.setTool('shape')
           }}
+          onContextMenu={openOnContextMenu('shape')}
+          {...menus.trigger('shape')}
         >
           <Shapes size={ICON} aria-hidden />
         </button>
-        {shapeMenu && <ShapePopover onClose={closeShapeMenu} />}
+        {menus.open === 'shape' && <ShapePopover onClose={menus.close} hover={shapeHover} />}
       </div>
       <button
         aria-label="Régua (R)"
@@ -87,17 +97,19 @@ export function Toolbar() {
         }}
       />
       {isGm && (
-        <div className="pen-anchor">
+        <div className="pen-anchor" ref={gridAnchor}>
           <button
             aria-label="Grade"
             title="Grade (só o mestre)"
             aria-haspopup="dialog"
-            aria-expanded={gridMenu}
-            onClick={() => setGridMenu(true)}
+            aria-expanded={menus.open === 'grid'}
+            onClick={() => menus.show('grid')}
+            onContextMenu={openOnContextMenu('grid')}
+            {...menus.trigger('grid')}
           >
             <Grid3x3 size={ICON} aria-hidden />
           </button>
-          {gridMenu && <GridPopover onClose={closeGridMenu} />}
+          {menus.open === 'grid' && <GridPopover onClose={menus.close} hover={gridHover} />}
         </div>
       )}
       <button aria-label="Desfazer (Ctrl+Z)" title="Desfazer (Ctrl+Z)" onClick={() => actions.undo()}>

@@ -3,10 +3,11 @@ import { GRID_MAX, GRID_MIN } from '@mesa/shared'
 import { parseGridSize } from '../canvas/grid'
 import { useTable, useTableActions } from '../store/context'
 import { useDismiss } from './useDismiss'
+import type { HoverMenuBinding } from './useHoverMenu'
 
-export function GridPopover({ onClose }: { onClose: () => void }) {
+export function GridPopover({ onClose, hover }: { onClose: () => void; hover?: HoverMenuBinding }) {
   const ref = useRef<HTMLDivElement>(null)
-  useDismiss(ref, onClose)
+  useDismiss(ref, onClose, hover?.anchor)
   const grid = useTable((s) => s.settings.grid)
   const actions = useTableActions()
   // Valor ao vivo do controle deslizante; null = segue o valor da store.
@@ -18,7 +19,14 @@ export function GridPopover({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div ref={ref} className="panel popover pen-popover" role="dialog" aria-label="Grade">
+    <div
+      ref={ref}
+      className="panel popover pen-popover"
+      role="dialog"
+      onPointerEnter={hover?.onPointerEnter}
+      onPointerLeave={hover?.onPointerLeave}
+      aria-label="Grade"
+    >
       <label>
         <input
           type="checkbox"

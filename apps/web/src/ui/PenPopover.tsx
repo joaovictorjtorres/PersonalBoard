@@ -2,12 +2,13 @@ import { useRef } from 'react'
 import { Eraser, Pencil } from 'lucide-react'
 import { useTable, useTableActions } from '../store/context'
 import { useDismiss } from './useDismiss'
+import type { HoverMenuBinding } from './useHoverMenu'
 
 export const PEN_COLORS = ['#e6194b', '#f58231', '#ffe119', '#3cb44b', '#4363d8', '#911eb4', '#ffffff', '#000000']
 
-export function PenPopover({ onClose }: { onClose: () => void }) {
+export function PenPopover({ onClose, hover }: { onClose: () => void; hover?: HoverMenuBinding }) {
   const ref = useRef<HTMLDivElement>(null)
-  useDismiss(ref, onClose)
+  useDismiss(ref, onClose, hover?.anchor)
   const color = useTable((s) => s.color)
   const strokeWidth = useTable((s) => s.strokeWidth)
   const penMode = useTable((s) => s.penMode)
@@ -16,7 +17,14 @@ export function PenPopover({ onClose }: { onClose: () => void }) {
   const actions = useTableActions()
 
   return (
-    <div ref={ref} className="panel popover pen-popover" role="dialog" aria-label="Opções da caneta">
+    <div
+      ref={ref}
+      className="panel popover pen-popover"
+      role="dialog"
+      onPointerEnter={hover?.onPointerEnter}
+      onPointerLeave={hover?.onPointerLeave}
+      aria-label="Opções da caneta"
+    >
       <div className="field">
         <span>Espessura</span>
         <div className="row">
