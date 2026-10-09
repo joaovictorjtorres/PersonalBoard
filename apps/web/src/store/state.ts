@@ -1,5 +1,6 @@
 import {
   DEFAULT_SETTINGS,
+  defaultTurns,
   type ChatChannel,
   type ChatEntry,
   type Layer,
@@ -10,6 +11,7 @@ import {
   type TableMetaPublic,
   type TableObject,
   type TableSettings,
+  type Turns,
 } from '@mesa/shared'
 import type { ConnStatus } from '../sync/SyncClient'
 
@@ -145,6 +147,12 @@ export interface TableState {
   chatOpen: boolean
   /** Canal de cada pedido de chat ainda sem chatAck/chatReject, por reqId. */
   chatPending: Record<string, ChatChannel>
+  /** Ordem de turnos na tela: confirmados pelo servidor + ações de turno pendentes (como as camadas). */
+  turns: Turns
+  /** Último estado de turnos recebido do servidor. */
+  confirmedTurns: Turns
+  /** Token do card sob o mouse na janela de turnos (destaque só na minha tela). */
+  turnHover: string | null
 }
 
 export function makeInitialState(): TableState {
@@ -191,5 +199,8 @@ export function makeInitialState(): TableState {
     chatUnread: {},
     chatOpen: true,
     chatPending: {},
+    turns: defaultTurns(),
+    confirmedTurns: defaultTurns(),
+    turnHover: null,
   }
 }

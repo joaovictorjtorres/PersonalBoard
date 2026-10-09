@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { nanoid } from 'nanoid'
 import type { ChatChannel, ClientMessage, MemberPatch, Op, Point, Presence, RollRequest, SettingsPatch, ShapeKind } from '@mesa/shared'
-import { CHAT_TEXT_MAX, DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, canControl, parseCommand, snapToGrid } from '@mesa/shared'
+import { CHAT_TEXT_MAX, DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, TURNS_MAX, canControl, parseCommand, snapToGrid } from '@mesa/shared'
 import { SyncClient, type SyncClientOptions } from '../sync/SyncClient'
 import { throttle, type Throttled } from '../lib/throttle'
 import { getClientId, readClientSecret, readGmSecret, rememberClientSecret, shouldRetryAuth } from '../lib/identity'
@@ -20,6 +20,8 @@ import {
 } from './state'
 import { rulerBend as bendRuler, rulerMoveTo, rulerStart } from '../canvas/ruler'
 import { addToast, canUseLayer, reduceServer, reduceStatus, reduceSubmitBatch } from './reducers'
+import { rotatedBounds } from '../canvas/bounds'
+import { linkedImage, turnNameFor } from './turns'
 import { channelOf, closeDmTab, openDmTab, selectChatTab, setChatOpen, type ChatTab } from './chat'
 
 export interface TableActions {
@@ -72,6 +74,12 @@ export interface TableActions {
   closeDm(clientId: string): void
   selectChatTab(tab: ChatTab): void
   setChatOpen(open: boolean): void
+  /** Mestre: põe o token (imagem) no fim da ordem de turnos e abre a janela se estiver fechada. */
+  addTokenToTurns(objectId: string): void
+  /** Token destacado no mapa enquanto o mouse está sobre o card dele (só na minha tela). */
+  setTurnHover(tokenId: string | null): void
+  /** Desliza a minha câmera até o centro do objeto, mantendo o zoom. */
+  focusObject(objectId: string): void
 }
 
 export type TableStoreState = TableState & { actions: TableActions }
@@ -343,6 +351,27 @@ export function createTableStore(
       closeDm: (clientId) => set((s) => closeDmTab(s, clientId)),
       selectChatTab: (tab) => set((s) => selectChatTab(s, tab)),
       setChatOpen: (open) => set((s) => setChatOpen(s, open)),
+      addTokenToTurns(objectId) {
+        const s = get()
+        const object = linkedImage(s, objectId)
+        if (!object) return
+        if (s.turns.entries.length >= TURNS_MAX) {
+          set(addToast(s, 'A ordem de turnos está cheia (máximo 50)'))
+          return
+        }
+        const ops: Op[] = [{ kind: 'turnAdd', entry: { id: nanoid(), name: turnNameFor(object.title), tokenId: objectId } }]
+        if (!s.turns.open) ops.push({ kind: 'turnsOpen', open: true })
+        actions.submitGroup(ops)
+      },
+      setTurnHover: (turnHover) => set({ turnHover }),
+      focusObject(objectId) {
+        const object = linkedImage(get(), objectId)
+        if (!object) return
+        const b = rotatedBounds(object)
+        set((s) => ({
+          cameraTarget: { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2, seq: (s.cameraTarget?.seq ?? 0) + 1 },
+        }))
+      },
       async addImageFile(file, at) {
         // capturado antes do primeiro await: trocar de camada/pan durante o upload não pode mudar o destino
         const s0 = get()

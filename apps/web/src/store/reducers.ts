@@ -2,8 +2,10 @@ import {
   LOCK_TTL_MS,
   PING_DURATION_MS,
   UNDO_LIMIT,
+  applyTurnOp,
   canClearLayer,
   clearTargets,
+  defaultTurns,
   insertLayer,
   isObjectOp,
   isTurnOp,
@@ -21,6 +23,7 @@ import {
 } from '@mesa/shared'
 import type { ConnStatus } from '../sync/SyncClient'
 import { chatRejectText, reduceChatEntry } from './chat'
+import { ackTurnOp, recomputeTurns } from './turns'
 import { applyLocalOp, opTargetId } from './localOps'
 import { inverseGroupOf } from './undo'
 import type { LocalPrev, PendingOp, TableState, Toast } from './state'
@@ -34,6 +37,7 @@ const REJECT_TEXT: Record<RejectReason, string> = {
 }
 
 export function rejectText(op: Op, reason: RejectReason, layerGone = false): string {
+  if (isTurnOp(op)) return reason === 'forbidden' ? 'Só o mestre pode fazer isso' : 'Não foi possível mudar a ordem de turnos'
   if (op.kind === 'clearObjects') {
     if (reason === 'forbidden') return 'Sem permissão para apagar nessa camada'
     return 'Não foi possível apagar'
@@ -234,7 +238,8 @@ function applyOptimistic<S extends TableState>(
       layerOrders: null,
     }
   }
-  if (isTurnOp(op)) return { next: s, before: null, prev: null, layerOrders: null }
+  // Turnos: a reversão é recalcular a partir de confirmedTurns (não há `prev`).
+  if (isTurnOp(op)) return { next: { ...s, turns: applyTurnOp(s.turns, op) ?? s.turns }, before: null, prev: null, layerOrders: null }
   switch (op.kind) {
     case 'layerCreate':
     case 'layerUpdate':
@@ -412,6 +417,7 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         chatUnread: omit(s.chatUnread, 'table'),
         // Pedidos sem resposta se perdem na reconexão; abas privadas e o histórico delas ficam.
         chatPending: {},
+        confirmedTurns: snap.turns ?? defaultTurns(),
         activeLayerId,
         selectedId: s.selectedId && objects[s.selectedId] ? s.selectedId : null,
       }
@@ -442,7 +448,7 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
             break
         }
       }
-      return out
+      return recomputeTurns(out, s.pending)
     }
 
     case 'ack': {
@@ -458,6 +464,7 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
       const pending = omit(s.pending, msg.opId)
       let acked: S = { ...s, pending, objects, notes }
       if (isLayerOp(p.op)) acked = recomputeLayers({ ...acked, confirmedLayers: replayLayerOp(s.confirmedLayers, p.op, p.layerOrders) })
+      if (isTurnOp(p.op)) acked = recomputeTurns({ ...acked, confirmedTurns: ackTurnOp(s.confirmedTurns, p.op) })
       return settleGroup(acked, p, p.inverse)
     }
 
@@ -474,7 +481,7 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         else delete objects[id]
         next = { ...s, pending, objects: reapplyPending(objects, pending, selfId, id) }
       } else {
-        next = recomputeLayers({ ...revertLocal(s, p), pending }, pending)
+        next = recomputeTurns(recomputeLayers({ ...revertLocal(s, p), pending }, pending), pending)
       }
       next = settleGroup(next, p, null)
       if (p.op.kind === 'delete' && msg.reason === 'not_found') return next
@@ -626,7 +633,7 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
       return withMember(s, msg.member)
 
     case 'turnsUpdated':
-      return s
+      return recomputeTurns({ ...s, confirmedTurns: msg.turns })
 
     case 'chat':
       return reduceChatEntry(s, msg.channel, msg.entry)
