@@ -51,21 +51,56 @@ jobs:
         run: pnpm typecheck
 
       - name: "Testes: shared"
-        run: pnpm --filter @mesa/shared exec vitest run --reporter=default --reporter=github-actions
+        run: |
+          $log = "$env:RUNNER_TEMP\shared-tests.log"
+          pnpm --filter @mesa/shared exec vitest run --reporter=default --reporter=github-actions 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $tail = (Get-Content $log -Tail 60) -join "`n"
+            $enc = $tail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=shared tests (tail)::$enc"
+            exit $code
+          }
 
       - name: "Testes: launcher"
         if: ${{ !cancelled() }}
-        run: pnpm --filter @mesa/launcher exec vitest run --reporter=default --reporter=github-actions
+        run: |
+          $log = "$env:RUNNER_TEMP\launcher-tests.log"
+          pnpm --filter @mesa/launcher exec vitest run --reporter=default --reporter=github-actions 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $tail = (Get-Content $log -Tail 60) -join "`n"
+            $enc = $tail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=launcher tests (tail)::$enc"
+            exit $code
+          }
 
       - name: "Testes: web"
         if: ${{ !cancelled() }}
-        run: pnpm --filter @mesa/web exec vitest run --reporter=default --reporter=github-actions
+        run: |
+          $log = "$env:RUNNER_TEMP\web-tests.log"
+          pnpm --filter @mesa/web exec vitest run --reporter=default --reporter=github-actions 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $tail = (Get-Content $log -Tail 60) -join "`n"
+            $enc = $tail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=web tests (tail)::$enc"
+            exit $code
+          }
 
       - name: "Testes: worker"
         if: ${{ !cancelled() }}
         run: |
           pnpm --filter @mesa/worker run ensure-assets
-          pnpm --filter @mesa/worker exec vitest run --reporter=default --reporter=github-actions
+          $log = "$env:RUNNER_TEMP\worker-tests.log"
+          pnpm --filter @mesa/worker exec vitest run --reporter=default --reporter=github-actions 2>&1 | Tee-Object -FilePath $log
+          $code = $LASTEXITCODE
+          if ($code -ne 0) {
+            $tail = (Get-Content $log -Tail 60) -join "`n"
+            $enc = $tail.Replace('%','%25').Replace("`r",'%0D').Replace("`n",'%0A')
+            Write-Output "::error title=worker tests (tail)::$enc"
+            exit $code
+          }
 
       - name: Build do front
         run: pnpm build
