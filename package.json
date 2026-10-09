@@ -1,5 +1,6 @@
 {
   "name": "mesa-virtual",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +13,8 @@
     "e2e": "playwright test",
     "deploy": "pnpm build && pnpm --filter @mesa/worker run deploy",
     "host": "pnpm build && pnpm --filter @mesa/worker exec wrangler dev --ip 0.0.0.0 --port 8787",
-    "tunnel": "cloudflared tunnel --url http://localhost:8787"
+    "tunnel": "cloudflared tunnel --url http://localhost:8787",
+    "win:package": "node scripts/build-win-package.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
