@@ -49,7 +49,7 @@ export function DiceModal({ x, y, onClose }: { x: number; y: number; onClose: ()
 
       <div className="field">
         <span>Quantidade</span>
-        <div className="row">
+        <div className="row stepper">
           <button aria-label="Menos um dado" disabled={config.count <= 1} onClick={() => update({ count: config.count - 1 })}>
             <Minus size={14} aria-hidden />
           </button>
@@ -75,21 +75,30 @@ export function DiceModal({ x, y, onClose }: { x: number; y: number; onClose: ()
         </div>
       </div>
 
-      <label className="field">
-        Bônus
-        <input
-          key={`bonus-${config.bonus}`}
-          type="number"
-          min={-DICE_MAX_BONUS}
-          max={DICE_MAX_BONUS}
-          step={1}
-          defaultValue={config.bonus}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur()
-          }}
-          onBlur={(e) => update({ bonus: e.currentTarget.valueAsNumber })}
-        />
-      </label>
+      <div className="field">
+        <span>Bônus</span>
+        <div className="row stepper">
+          <button aria-label="Menos um de bônus" disabled={config.bonus <= -DICE_MAX_BONUS} onClick={() => update({ bonus: config.bonus - 1 })}>
+            <Minus size={14} aria-hidden />
+          </button>
+          <input
+            key={`bonus-${config.bonus}`}
+            type="number"
+            aria-label="Bônus"
+            min={-DICE_MAX_BONUS}
+            max={DICE_MAX_BONUS}
+            step={1}
+            defaultValue={config.bonus}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+            }}
+            onBlur={(e) => update({ bonus: e.currentTarget.valueAsNumber })}
+          />
+          <button aria-label="Mais um de bônus" disabled={config.bonus >= DICE_MAX_BONUS} onClick={() => update({ bonus: config.bonus + 1 })}>
+            <Plus size={14} aria-hidden />
+          </button>
+        </div>
+      </div>
 
       <div className="field" role="radiogroup" aria-label="Modo">
         {MODES.map((m) => (

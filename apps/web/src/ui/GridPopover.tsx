@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import { Minus, Plus } from 'lucide-react'
 import { GRID_MAX, GRID_MIN } from '@mesa/shared'
 import { parseGridSize } from '../canvas/grid'
 import { useTable, useTableActions } from '../store/context'
@@ -35,9 +36,18 @@ export function GridPopover({ onClose, hover }: { onClose: () => void; hover?: H
         />
         Mostrar grade
       </label>
-      <label className="field">
-        Tamanho do quadrado (px)
+      <div className="field">
+        <span>Tamanho do quadrado (px)</span>
+        <div className="row stepper">
+        <button
+          aria-label="Diminuir o quadrado"
+          disabled={grid.size <= GRID_MIN}
+          onClick={() => actions.updateSettings({ grid: { size: Math.max(GRID_MIN, grid.size - 1) } })}
+        >
+          <Minus size={14} aria-hidden />
+        </button>
         <input
+          aria-label="Tamanho do quadrado (px)"
           key={shown}
           type="number"
           min={GRID_MIN}
@@ -56,7 +66,15 @@ export function GridPopover({ onClose, hover }: { onClose: () => void; hover?: H
             if (size !== grid.size) actions.updateSettings({ grid: { size } })
           }}
         />
-      </label>
+        <button
+          aria-label="Aumentar o quadrado"
+          disabled={grid.size >= GRID_MAX}
+          onClick={() => actions.updateSettings({ grid: { size: Math.min(GRID_MAX, grid.size + 1) } })}
+        >
+          <Plus size={14} aria-hidden />
+        </button>
+        </div>
+      </div>
       <input
         type="range"
         aria-label="Tamanho do quadrado (controle deslizante)"

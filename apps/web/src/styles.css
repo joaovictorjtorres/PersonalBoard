@@ -36,7 +36,7 @@ button:disabled { opacity: 0.45; cursor: default; }
 .popover input[type='text'], .popover input:not([type]), .popover input[type='number'], .popover textarea, .popover select, .modal input:not([type='checkbox']):not([type='radio']), .context-menu textarea { width: 100%; }
 .popover input[type='range'] { flex: 1 1 60px; width: auto; min-width: 0; padding: 0; }
 .popover .row > *, .popover .field > * { min-width: 0; }
-.popover button { max-width: 100%; min-width: 0; justify-content: flex-start; }
+.popover button { max-width: 100%; min-width: 0; justify-content: flex-start; text-align: left; }
 .popover small { overflow-wrap: anywhere; }
 .popover label { min-width: 0; overflow-wrap: anywhere; }
 .pen-popover { position: absolute; left: calc(100% + 12px); top: 0; width: 240px; }
@@ -115,7 +115,6 @@ textarea { font: inherit; background: #2a2c33; color: #eee; border: 1px solid #4
 .chat-input { display: flex; gap: 4px; }
 .chat-input input { flex: 1; min-width: 0; }
 .dice-modal .row button { padding: 4px 6px; }
-.dice-modal input[type='number'] { width: 72px; flex: 0 0 auto; }
 .dice-modal .field[role='radiogroup'] { display: flex; flex-wrap: wrap; gap: 4px 10px; }
 .lightbox img { max-width: 92vw; max-height: 92vh; object-fit: contain; }
 
@@ -129,3 +128,21 @@ textarea { font: inherit; background: #2a2c33; color: #eee; border: 1px solid #4
 button.primary { background: #4363d8; border-color: #4363d8; color: #fff; }
 button.danger-solid { background: #b3262e; border-color: #b3262e; color: #fff; }
 button.danger-solid:hover { background: #c9303a; border-color: #c9303a; }
+
+/* Barras de rolagem no tema escuro (chat, membros, camadas, menus e modais) */
+* { scrollbar-width: thin; scrollbar-color: #4a4d57 rgba(0, 0, 0, 0.18); }
+.chat-list:hover, .members:hover, .layers ul:hover, .popover:hover, .context-menu:hover, .modal:hover { scrollbar-color: #6a6e7a rgba(0, 0, 0, 0.18); }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.18); border-radius: 8px; }
+::-webkit-scrollbar-thumb { background: #4a4d57; border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background-color: #6a6e7a; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+/* Campos numéricos: sem as setinhas do navegador; onde ajuda, botões −/+ do app (.stepper) */
+input[type='number'] { appearance: textfield; -moz-appearance: textfield; }
+input[type='number']::-webkit-inner-spin-button, input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; appearance: none; margin: 0; }
+.stepper { flex-wrap: nowrap; gap: 4px; }
+.popover .stepper button, .stepper button { width: 30px; height: 32px; padding: 0; flex: 0 0 auto; justify-content: center; }
+.popover .stepper input[type='number'], .stepper input[type='number'] { flex: 0 1 72px; width: 72px; text-align: center; }
+.popover.pen-popover .stepper input[type='number'] { flex: 1 1 auto; width: auto; }
+.stepper button:hover:not(:disabled) { background: #3d4049; border-color: #6a6e7a; }
