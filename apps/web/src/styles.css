@@ -65,10 +65,20 @@ textarea { font: inherit; background: #2a2c33; color: #eee; border: 1px solid #4
 .layers { bottom: 12px; right: 12px; width: 220px; display: grid; gap: 6px; }
 .layers header { display: flex; align-items: center; justify-content: space-between; }
 .layers ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 40vh; overflow: auto; }
-.layer-row { width: 100%; justify-content: space-between; }
+.layer-item { display: flex; align-items: stretch; gap: 4px; }
+.layer-row { flex: 1 1 auto; min-width: 0; justify-content: space-between; position: relative; }
+/* minha camada ativa: realce azul (aria-pressed) + barra à esquerda + marcador */
+.layer-item.active .layer-row { box-shadow: inset 3px 0 0 #9db4ff; font-weight: 600; }
+.layer-item.active .layer-name::before { content: '✎ '; opacity: 0.9; }
+.layer-row[aria-disabled='true'] { opacity: 0.6; cursor: not-allowed; }
+.layer-toggle { flex: 0 0 auto; width: 30px; color: #b8bcc6; }
+.layers .layer-toggle[aria-pressed='true'] { background: #4a3417; border-color: #8a6326; color: #ffcf7a; }
+.layer-toggle:hover:not(:disabled) { border-color: #6a6e7a; color: #eee; }
 .layer-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .layer-flags { display: inline-flex; gap: 4px; opacity: 0.8; }
 .context-menu { max-height: calc(100vh - 24px); overflow-x: hidden; overflow-y: auto; }
+.menu-sep { border: none; border-top: 1px solid #3a3c45; margin: 2px 0; width: 100%; }
+.menu-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .submenu { display: grid; gap: 4px; padding-left: 12px; margin-top: 4px; }
 .indent { padding-left: 18px; }
 

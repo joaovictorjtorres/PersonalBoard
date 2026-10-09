@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest'
 import { memberMenuOptions, memberPatch } from '../src/ui/memberMenuOptions'
 
 describe('memberMenuOptions', () => {
-  it('conversa privada com qualquer outro; edição só para o mestre (inclusive de si mesmo)', () => {
-    expect(memberMenuOptions('b', 'a', false)).toEqual({ dm: true, edit: false })
-    expect(memberMenuOptions('a', 'a', false)).toEqual({ dm: false, edit: false })
-    expect(memberMenuOptions('b', 'g', true)).toEqual({ dm: true, edit: true })
-    expect(memberMenuOptions('g', 'g', true)).toEqual({ dm: false, edit: true })
+  it('conversa privada com qualquer outro; edição e apagar desenhos só para o mestre (inclusive de si mesmo)', () => {
+    expect(memberMenuOptions('b', 'a', false)).toEqual({ dm: true, edit: false, clear: false })
+    expect(memberMenuOptions('a', 'a', false)).toEqual({ dm: false, edit: false, clear: false })
+    expect(memberMenuOptions('b', 'g', true)).toEqual({ dm: true, edit: true, clear: true })
+    expect(memberMenuOptions('g', 'g', true)).toEqual({ dm: false, edit: true, clear: true })
   })
 })
 

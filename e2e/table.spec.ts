@@ -786,3 +786,157 @@ test('modais e menus cabem na janela 1280x720 sem rolagem', async ({ browser, pa
   await objMenu.getByRole('button', { name: /Mover para camada/ }).click()
   await noScroll(objMenu, 'objeto')
 })
+
+// ── Limpar desenhos ─────────────────────────────────────────────────────────
+
+/** Nenhum diálogo nativo (confirm/alert/prompt) pode aparecer: tudo passa pelo aviso do app. */
+function trackNativeDialogs(...pages: Page[]): string[] {
+  const seen: string[] = []
+  for (const p of pages) {
+    p.on('dialog', (d) => {
+      seen.push(`${d.type()}: ${d.message()}`)
+      void d.dismiss()
+    })
+  }
+  return seen
+}
+
+/** Traço criado pela store (o desenho com o mouse já é coberto em outro teste). */
+async function addStroke(page: Page, id: string, layerId: string): Promise<void> {
+  await page.evaluate(
+    ({ id, layerId }) =>
+      (window as any).__mesa.getState().actions.submit({
+        kind: 'create',
+        object: {
+          id, type: 'stroke', layerId, x: 100, y: 100, width: 50, height: 50, rotation: 0, zIndex: 1,
+          segments: [[0, 0, 50, 50]], color: '#ffffff', strokeWidth: 4,
+        },
+      }),
+    { id, layerId },
+  )
+  await page.waitForFunction(() => Object.keys((window as any).__mesa.getState().pending).length === 0)
+}
+
+const objectIds = async (page: Page) => (await objects(page)).map((o) => o.id).sort()
+const confirmDialog = (page: Page) => page.getByRole('alertdialog')
+
+test('jogador apaga os próprios desenhos na camada e em todas, pelo aviso; o resto fica', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const bia = await open(browser, `/t/${tableId}?debug=1`, 'Bia')
+  const dialogs = trackNativeDialogs(gm, ana, bia)
+
+  await addStroke(ana, 'ana-d', 'drawings')
+  await addStroke(ana, 'ana-t', 'tokens')
+  await addStroke(bia, 'bia-d', 'drawings')
+  await uploadToken(ana)
+  const [img] = (await objects(ana)).filter((o) => o.type === 'image')
+  await expect.poll(() => objectIds(gm)).toEqual(['ana-d', 'ana-t', 'bia-d', img.id].sort())
+
+  // Esc cancela sem apagar
+  await layerRow(ana, 'Desenhos').click({ button: 'right' })
+  const menu = ana.getByRole('dialog', { name: 'Ações da camada' })
+  await menu.getByRole('button', { name: 'Apagar meus desenhos nesta camada' }).click()
+  await expect(confirmDialog(ana)).toContainText('1 desenho seu na camada Desenhos')
+  await ana.keyboard.press('Escape')
+  await expect(confirmDialog(ana)).toHaveCount(0)
+  expect(await objectIds(ana)).toContain('ana-d')
+
+  await layerRow(ana, 'Desenhos').click({ button: 'right' })
+  await menu.getByRole('button', { name: 'Apagar meus desenhos nesta camada' }).click()
+  await confirmDialog(ana).getByRole('button', { name: 'Apagar' }).click()
+  await expect.poll(() => objectIds(gm)).toEqual(['ana-t', 'bia-d', img.id].sort())
+  await expect.poll(() => objectIds(bia)).toEqual(['ana-t', 'bia-d', img.id].sort())
+
+  await addStroke(ana, 'ana-d2', 'drawings')
+  await layerRow(ana, 'Tokens').click({ button: 'right' })
+  await menu.getByRole('button', { name: 'Apagar meus desenhos em todas as camadas' }).click()
+  await expect(confirmDialog(ana)).toContainText('2 desenhos seus em 2 camadas')
+  await ana.keyboard.press('Enter')
+  await expect.poll(() => objectIds(gm)).toEqual(['bia-d', img.id].sort())
+  await expect.poll(() => objectIds(ana)).toEqual(['bia-d', img.id].sort())
+  expect(dialogs).toEqual([])
+})
+
+test('mestre apaga os desenhos de um jogador pelo menu do membro', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const bia = await open(browser, `/t/${tableId}?debug=1`, 'Bia')
+  const dialogs = trackNativeDialogs(gm, ana, bia)
+
+  await addStroke(ana, 'ana-d', 'drawings')
+  await addStroke(ana, 'ana-t', 'tokens')
+  await addStroke(bia, 'bia-d', 'drawings')
+  await expect.poll(() => objectIds(gm)).toEqual(['ana-d', 'ana-t', 'bia-d'])
+
+  await selectLayer(gm, 'Desenhos')
+  let menu = await memberMenu(gm, 'Ana')
+  await menu.getByRole('button', { name: 'Apagar desenhos de Ana na camada atual' }).click()
+  await expect(confirmDialog(gm)).toContainText('1 desenho de Ana na camada Desenhos')
+  await confirmDialog(gm).getByRole('button', { name: 'Apagar' }).click()
+  await expect.poll(() => objectIds(ana)).toEqual(['ana-t', 'bia-d'])
+
+  menu = await memberMenu(gm, 'Ana')
+  await menu.getByRole('button', { name: 'Apagar desenhos de Ana em todas as camadas' }).click()
+  await confirmDialog(gm).getByRole('button', { name: 'Apagar' }).click()
+  await expect.poll(() => objectIds(bia)).toEqual(['bia-d'])
+  expect(await objectIds(gm)).toEqual(['bia-d'])
+  expect(dialogs).toEqual([])
+})
+
+test('mestre limpa a camada (a camada fica) e remove camada pelo aviso do app', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const dialogs = trackNativeDialogs(gm, ana)
+
+  await uploadToken(gm)
+  await addStroke(ana, 'ana-t', 'tokens')
+  await addStroke(ana, 'ana-d', 'drawings')
+  await expect.poll(async () => (await objects(ana)).length).toBe(3)
+
+  let menu = await openLayerMenu(gm, 'Tokens')
+  await menu.getByRole('button', { name: 'Limpar camada (tudo, mantém a camada)' }).click()
+  const modal = confirmDialog(gm)
+  await expect(modal).toContainText('2 objetos da camada Tokens')
+  const fits = await modal.evaluate((el) => el.scrollHeight <= el.clientHeight && el.scrollWidth <= el.clientWidth)
+  expect(fits).toBe(true)
+  await modal.getByRole('button', { name: 'Limpar camada' }).click()
+  await expect.poll(() => objectIds(ana)).toEqual(['ana-d'])
+  await expect(layersPanel(ana).locator('.layer-row')).toHaveText(['Desenhos', 'Tokens', 'Mapa'])
+
+  menu = await openLayerMenu(gm, 'Desenhos')
+  await menu.getByRole('button', { name: 'Remover camada' }).click()
+  await expect(confirmDialog(gm)).toContainText('Remover a camada Desenhos e 1 objeto')
+  await confirmDialog(gm).getByRole('button', { name: 'Cancelar' }).click()
+  await expect(layersPanel(ana).locator('.layer-row')).toHaveText(['Desenhos', 'Tokens', 'Mapa'])
+
+  menu = await openLayerMenu(gm, 'Desenhos')
+  await menu.getByRole('button', { name: 'Remover camada' }).click()
+  await confirmDialog(gm).getByRole('button', { name: 'Remover' }).click()
+  await expect(layersPanel(ana).locator('.layer-row')).toHaveText(['Tokens', 'Mapa'])
+  expect(await objects(ana)).toEqual([])
+  expect(dialogs).toEqual([])
+})
+
+test('olho e cadeado na linha da camada; a camada ativa do jogador muda quando fica travada ou oculta', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const active = () => ana.evaluate(() => (window as any).__mesa.getState().activeLayerId)
+
+  await selectLayer(ana, 'Tokens')
+  await expect(layerRow(ana, 'Tokens')).toHaveAttribute('aria-current', 'true')
+  await layersPanel(gm).getByRole('button', { name: 'Travar Tokens para jogadores' }).click()
+  await expect.poll(active).toBe('drawings')
+  await expect(layerRow(ana, 'Desenhos')).toHaveAttribute('aria-current', 'true')
+  await layerRow(ana, 'Tokens').click({ force: true }) // travada: não vira a ativa
+  expect(await active()).toBe('drawings')
+
+  await layersPanel(gm).getByRole('button', { name: 'Ocultar Desenhos para jogadores' }).click()
+  await expect(layersPanel(ana).locator('.layer-row')).toHaveText(['Tokens', 'Mapa'])
+  await expect.poll(active).toBe('map')
+  await expect(layersPanel(gm).getByRole('button', { name: 'Mostrar Desenhos para jogadores' })).toHaveAttribute('aria-pressed', 'true')
+})

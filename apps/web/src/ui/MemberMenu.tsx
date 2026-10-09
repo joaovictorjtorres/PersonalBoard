@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react'
-import { MessageCircle, UserPen } from 'lucide-react'
+import { useRef, useState, type ReactNode } from 'react'
+import { Eraser, Layers, MessageCircle, UserPen } from 'lucide-react'
 import { MEMBER_COLORS, type Member } from '@mesa/shared'
 import { useTable, useTableActions } from '../store/context'
+import { confirmClear, planMember, type ClearPlan } from './clearPlans'
 import { ColorPicker } from './ColorPicker'
 import { memberMenuOptions, memberPatch } from './memberMenuOptions'
 import { OverlayPortal } from './OverlayPortal'
@@ -17,6 +18,26 @@ export function MemberMenu({ member, x, y, onClose }: { member: Member; x: numbe
   const [nickname, setNickname] = useState(member.nickname)
   const [color, setColor] = useState(member.color)
   const options = memberMenuOptions(member.clientId, selfId, isGm)
+  const self = useTable((s) => s.self)
+  const objects = useTable((s) => s.objects)
+  const layers = useTable((s) => s.layers)
+  const activeLayerId = useTable((s) => s.activeLayerId)
+  const view = self ? { objects, layers, self } : null
+  // Fecha o menu antes do aviso (o clique no aviso não pode contar como "fora" do menu).
+  const clear = (plan: ClearPlan) => {
+    onClose()
+    void confirmClear(plan, actions.submit)
+  }
+  const clearButton = (plan: ClearPlan | null, label: string, icon: ReactNode) => (
+    <button
+      className="danger"
+      disabled={!plan || plan.count === 0}
+      title={plan && plan.count === 0 ? 'Nada para apagar' : undefined}
+      onClick={() => plan && clear(plan)}
+    >
+      {icon} {label}
+    </button>
+  )
 
   return (
     <OverlayPortal>
@@ -25,7 +46,7 @@ export function MemberMenu({ member, x, y, onClose }: { member: Member; x: numbe
       className="panel popover floating"
       role="dialog"
       aria-label={`Ações para ${member.nickname}`}
-      style={floatingStyle(x - 260, y, 240)}
+      style={floatingStyle(x - 300, y, 280)}
     >
       {options.dm && (
         <button
@@ -61,6 +82,20 @@ export function MemberMenu({ member, x, y, onClose }: { member: Member; x: numbe
             Salvar
           </button>
         </form>
+      )}
+      {options.clear && !editing && view && (
+        <>
+          {clearButton(
+            planMember(view, member, activeLayerId),
+            `Apagar desenhos de ${member.nickname} na camada atual`,
+            <Eraser size={16} aria-hidden />,
+          )}
+          {clearButton(
+            planMember(view, member, null),
+            `Apagar desenhos de ${member.nickname} em todas as camadas`,
+            <Layers size={16} aria-hidden />,
+          )}
+        </>
       )}
     </div>
     </OverlayPortal>

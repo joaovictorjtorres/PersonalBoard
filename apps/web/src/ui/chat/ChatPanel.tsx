@@ -129,7 +129,7 @@ export function ChatPanel() {
             {entries.map((entry) => {
               const author = members[entry.authorId]
               const options = memberMenuOptions(entry.authorId, selfId, isGm)
-              const hasMenu = author !== undefined && (options.dm || options.edit)
+              const hasMenu = author !== undefined && (options.dm || options.edit || options.clear)
               return (
                 <ChatEntryView
                   key={entry.id}

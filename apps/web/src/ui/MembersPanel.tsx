@@ -23,7 +23,7 @@ export function MembersPanel() {
       <ul>
         {list.map((m) => {
           const options = memberMenuOptions(m.clientId, selfId, isGm)
-          const hasMenu = options.dm || options.edit
+          const hasMenu = options.dm || options.edit || options.clear
           return (
           <li
             key={m.clientId}

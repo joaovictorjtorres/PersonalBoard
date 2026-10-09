@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react'
-import { ArrowDown, ArrowUp, Eye, EyeOff, Lock, LockOpen, Trash2 } from 'lucide-react'
+import { useEffect, useRef, type ReactNode } from 'react'
+import { ArrowDown, ArrowUp, Brush, Eraser, Eye, EyeOff, Layers, Lock, LockOpen, Trash2 } from 'lucide-react'
 import { GM_LAYER_ID, LAYER_NAME_MAX, sortLayers, type LayerPatch } from '@mesa/shared'
 import { useTable, useTableActions } from '../store/context'
 import { askConfirm, plural } from './confirm'
+import { confirmClear, planLayerDrawings, planLayerEverything, planMine, type ClearPlan } from './clearPlans'
 import { OverlayPortal } from './OverlayPortal'
 import { floatingStyle, useDismiss } from './useDismiss'
 
@@ -19,6 +20,7 @@ export function LayerMenu({ layerId, x, y, onClose }: Props) {
   const layers = useTable((s) => s.layers)
   const objects = useTable((s) => s.objects)
   const actions = useTableActions()
+  const self = useTable((s) => s.self)
   const layer = layers.find((l) => l.id === layerId)
 
   // Camada removida (por outra aba do mestre, por exemplo): o menu fecha.
@@ -32,6 +34,40 @@ export function LayerMenu({ layerId, x, y, onClose }: Props) {
   const index = common.findIndex((l) => l.id === layerId)
   const count = Object.values(objects).filter((o) => o.layerId === layerId).length
   const update = (patch: LayerPatch) => actions.submit({ kind: 'layerUpdate', id: layerId, patch })
+  const isGm = self?.role === 'gm'
+  const view = self ? { objects, layers, self } : null
+  // O menu fecha antes do aviso: o clique no aviso não pode contar como "fora" de um menu ainda aberto.
+  const clear = (plan: ClearPlan) => {
+    onClose()
+    void confirmClear(plan, actions.submit)
+  }
+  const clearButton = (plan: ClearPlan | null, label: string, icon: ReactNode) => (
+    <button
+      className="danger"
+      disabled={!plan || plan.count === 0}
+      title={plan && plan.count === 0 ? 'Nada para apagar' : undefined}
+      onClick={() => plan && clear(plan)}
+    >
+      {icon} {label}
+    </button>
+  )
+  const clearSection = (
+    <>
+      {clearButton(view && planMine(view, layerId), 'Apagar meus desenhos nesta camada', <Eraser size={16} aria-hidden />)}
+      {clearButton(view && planMine(view, null), 'Apagar meus desenhos em todas as camadas', <Layers size={16} aria-hidden />)}
+    </>
+  )
+
+  if (!isGm) {
+    return (
+      <OverlayPortal>
+        <div ref={ref} className="panel popover floating" role="dialog" aria-label="Ações da camada" style={floatingStyle(x, y, 280)}>
+          <strong className="menu-title">{layer.name}</strong>
+          {clearSection}
+        </div>
+      </OverlayPortal>
+    )
+  }
 
   return (
     <OverlayPortal>
@@ -40,7 +76,7 @@ export function LayerMenu({ layerId, x, y, onClose }: Props) {
       className="panel popover floating"
       role="dialog"
       aria-label="Propriedades da camada"
-      style={floatingStyle(x, y, 240)}
+      style={floatingStyle(x, y, 280)}
     >
       <label className="field">
         Nome
@@ -109,6 +145,11 @@ export function LayerMenu({ layerId, x, y, onClose }: Props) {
           </button>
         </>
       )}
+
+      <hr className="menu-sep" />
+      {clearSection}
+      {clearButton(view && planLayerDrawings(view, layerId), 'Limpar desenhos (de todos)', <Brush size={16} aria-hidden />)}
+      {clearButton(view && planLayerEverything(view, layerId), 'Limpar camada (tudo, mantém a camada)', <Trash2 size={16} aria-hidden />)}
     </div>
     </OverlayPortal>
   )
