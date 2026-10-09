@@ -35,18 +35,19 @@ export function cellCenter(p: Point, size: number): Point {
 
 const round1 = (n: number) => Math.round(n * 10) / 10
 
-/** Distância em quadrados de um trecho, com uma casa decimal. */
+/** Distância em quadrados (= metros) de um trecho, com uma casa decimal. */
 export function segmentDistance(from: Point, to: Point, size: number): number {
   return round1(Math.hypot(to.x - from.x, to.y - from.y) / size)
 }
 
-/** Distância total da régua (soma de todos os trechos), em quadrados, com uma casa decimal. */
+/** Distância total da régua (soma de todos os trechos), em quadrados (= metros), com uma casa decimal. */
 export function rulerDistance(points: readonly Point[], size: number): number {
   let total = 0
   for (let i = 1; i < points.length; i++) total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)
   return round1(total / size)
 }
 
-export function formatDistance(squares: number): string {
-  return `${squares.toFixed(1).replace('.', ',')} q`
+/** Cada quadrado da grade vale 1 metro: a distância em quadrados é a mesma em metros. */
+export function formatDistance(metres: number): string {
+  return `${metres.toFixed(1).replace('.', ',')} m`
 }

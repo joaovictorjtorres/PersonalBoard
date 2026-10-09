@@ -40,9 +40,9 @@ describe('régua', () => {
     expect(rulerDistance([{ x: 5, y: 5 }], 70)).toBe(0)
   })
 
-  it('formatDistance usa vírgula decimal e "q"', () => {
-    expect(formatDistance(4.2)).toBe('4,2 q')
-    expect(formatDistance(5)).toBe('5,0 q')
-    expect(formatDistance(0)).toBe('0,0 q')
+  it('formatDistance usa vírgula decimal e "m" (1 quadrado = 1 m)', () => {
+    expect(formatDistance(4.2)).toBe('4,2 m')
+    expect(formatDistance(5)).toBe('5,0 m')
+    expect(formatDistance(0)).toBe('0,0 m')
   })
 })

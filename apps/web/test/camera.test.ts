@@ -37,9 +37,9 @@ describe('ping', () => {
 
 describe('régua', () => {
   it('rótulo "Apelido · N,N q" com a soma dos trechos', () => {
-    expect(rulerLabel('Ana', { points: [{ x: 35, y: 35 }, { x: 329, y: 35 }] }, 70)).toBe('Ana · 4,2 q')
-    expect(rulerLabel('Bia', { points: [{ x: 0, y: 0 }, { x: 0, y: 0 }] }, 70)).toBe('Bia · 0,0 q')
-    expect(rulerLabel('Ana', { points: [{ x: 385, y: 315 }, { x: 735, y: 315 }, { x: 735, y: 455 }] }, 70)).toBe('Ana · 7,0 q')
+    expect(rulerLabel('Ana', { points: [{ x: 35, y: 35 }, { x: 329, y: 35 }] }, 70)).toBe('Ana · 4,2 m')
+    expect(rulerLabel('Bia', { points: [{ x: 0, y: 0 }, { x: 0, y: 0 }] }, 70)).toBe('Bia · 0,0 m')
+    expect(rulerLabel('Ana', { points: [{ x: 385, y: 315 }, { x: 735, y: 315 }, { x: 735, y: 455 }] }, 70)).toBe('Ana · 7,0 m')
   })
 
   it('início no centro do quadrado; mover só troca a ponta', () => {
@@ -65,8 +65,8 @@ describe('régua', () => {
   it('distância por trecho só com dobras', () => {
     expect(rulerSegmentLabels({ points: [{ x: 0, y: 0 }, { x: 70, y: 0 }] }, 70)).toEqual([])
     expect(rulerSegmentLabels({ points: [{ x: 385, y: 315 }, { x: 735, y: 315 }, { x: 735, y: 455 }] }, 70)).toEqual([
-      { x: 560, y: 315, text: '5,0 q' },
-      { x: 735, y: 385, text: '2,0 q' },
+      { x: 560, y: 315, text: '5,0 m' },
+      { x: 735, y: 385, text: '2,0 m' },
     ])
   })
 })

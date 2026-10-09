@@ -69,6 +69,7 @@ export function GridPopover({ onClose, hover }: { onClose: () => void; hover?: H
         onKeyUp={(e) => commitSlider(Number(e.currentTarget.value))}
         onBlur={(e) => commitSlider(Number(e.currentTarget.value))}
       />
+      <small>1 quadrado = 1 m</small>
       <label>
         <input
           type="checkbox"

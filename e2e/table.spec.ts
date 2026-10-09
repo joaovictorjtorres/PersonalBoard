@@ -542,6 +542,7 @@ test('mestre liga grade e encaixe: token solto cai alinhado na tela do jogador',
 
   await gm.getByRole('button', { name: 'Grade', exact: true }).click()
   const pop = gm.getByRole('dialog', { name: 'Grade' })
+  await expect(pop.getByText('1 quadrado = 1 m')).toBeVisible()
   await pop.getByLabel('Mostrar grade').check()
   await pop.getByLabel('Encaixar imagens na grade').check()
   await gm.keyboard.press('Escape')
@@ -573,7 +574,7 @@ test('régua do mestre aparece para o jogador com nome e distância', async ({ b
   await gm.getByRole('button', { name: 'Régua (R)' }).click()
   await gm.mouse.click(400, 300) // início no centro do quadrado (385, 315)
   await gm.mouse.move(700, 300, { steps: 10 })
-  await expect.poll(labels).toEqual(['Mestre · 4,5 q'])
+  await expect.poll(labels).toEqual(['Mestre · 4,5 m'])
 
   await gm.keyboard.press('Escape')
   await expect.poll(labels).toEqual([])
@@ -600,8 +601,8 @@ test('régua com dobra: botão direito dobra, o outro vê a linha quebrada com a
   await ana.mouse.move(735, 455, { steps: 5 })
   await expect.poll(seen).toEqual({
     line: [[385, 315, 735, 315, 735, 455]],
-    total: ['Ana · 7,0 q'],
-    segments: ['5,0 q', '2,0 q'],
+    total: ['Ana · 7,0 m'],
+    segments: ['5,0 m', '2,0 m'],
   })
   // o botão direito medindo não abre menu nenhum
   await expect(ana.getByRole('dialog')).toHaveCount(0)
