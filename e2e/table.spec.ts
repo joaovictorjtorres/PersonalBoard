@@ -1302,3 +1302,22 @@ test('seleção: Shift + arrastar soma; Shift + clique pinga sem mexer na seleç
   expect(await ana.evaluate(() => Object.keys((window as any).__mesa.getState().pending).length)).toBe(0)
   expect((await objects(gm)).map((o) => Math.round(o.y)).sort()).toEqual([300, 500])
 })
+
+test('seleção: quem assiste vê o contorno do grupo sendo arrastado, com o nome de quem arrasta', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const groupDrags = () => ana.evaluate(() => Object.keys((window as any).__mesa.getState().groupDrags).length)
+
+  await addStrokeAt(gm, 'a', 'tokens', [300, 300, 400, 300])
+  await addStrokeAt(gm, 'b', 'tokens', [300, 350, 400, 350])
+  await pickSelect(gm)
+  await dragPath(gm, [[250, 250], [450, 400]])
+  await gm.mouse.move(350, 325)
+  await gm.mouse.down()
+  await gm.mouse.move(350, 425, { steps: 10 })
+  await expect.poll(groupDrags).toBe(1)
+  await gm.mouse.up()
+  await expect.poll(groupDrags).toBe(0)
+  await expect.poll(async () => (await objects(ana)).map((o) => Math.round(o.y)).sort()).toEqual([400, 450])
+})

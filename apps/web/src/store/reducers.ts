@@ -482,6 +482,7 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         deniedGrabs: {},
         settings: snap.settings,
         rulers: {},
+        groupDrags: {},
         ownRuler: null,
         pings: [],
         cameraTarget: null,
@@ -571,8 +572,10 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
     case 'op':
       return applyServerOp(s, msg.op, selfId)
 
-    case 'batch':
-      return msg.ops.reduce((acc, op) => applyServerOp(acc, op, selfId), s)
+    case 'batch': {
+      const out = msg.ops.reduce((acc, op) => applyServerOp(acc, op, selfId), s)
+      return { ...out, groupDrags: omit(out.groupDrags, msg.by) }
+    }
 
     case 'objectsRemoved': {
       const gone = new Set(msg.ids)
@@ -596,6 +599,12 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
     case 'presence': {
       const p = msg.p
       switch (p.kind) {
+        case 'groupDrag': {
+          const { kind: _k, layerIds: _l, ...box } = p
+          return { ...s, groupDrags: { ...s.groupDrags, [msg.clientId]: box } }
+        }
+        case 'groupDragEnd':
+          return { ...s, groupDrags: omit(s.groupDrags, msg.clientId) }
         case 'cursor':
           return { ...s, cursors: { ...s.cursors, [msg.clientId]: { x: p.x, y: p.y } } }
         case 'drag': {
@@ -655,6 +664,7 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         members: member ? { ...s.members, [msg.clientId]: { ...member, online: false } } : s.members,
         cursors: omit(s.cursors, msg.clientId),
         rulers: omit(s.rulers, msg.clientId),
+        groupDrags: omit(s.groupDrags, msg.clientId),
         locks: Object.fromEntries(Object.entries(s.locks).filter(([, l]) => l.clientId !== msg.clientId)),
         strokePreviews: Object.fromEntries(Object.entries(s.strokePreviews).filter(([, p]) => p.clientId !== msg.clientId)),
       }
@@ -666,6 +676,7 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         members: omit(s.members, msg.clientId),
         cursors: omit(s.cursors, msg.clientId),
         rulers: omit(s.rulers, msg.clientId),
+        groupDrags: omit(s.groupDrags, msg.clientId),
       }
 
     case 'layerUpsert':

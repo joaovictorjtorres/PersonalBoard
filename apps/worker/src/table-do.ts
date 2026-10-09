@@ -48,6 +48,7 @@ export class TableDO extends DurableObject<Env> {
   private chatLimiter = new RateLimiter(CHAT_RATE_PER_SEC, 1000)
   private pingLimiter = new RateLimiter(PING_RATE_PER_SEC, 1000)
   private rulerLimiter = new RateLimiter(RULER_RATE_PER_SEC, 1000)
+  private groupDragLimiter = new RateLimiter(RULER_RATE_PER_SEC, 1000)
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -354,6 +355,14 @@ export class TableDO extends DurableObject<Env> {
         this.broadcast(att.sessionId, () => out)
         return
       case 'rulerEnd':
+        this.broadcast(att.sessionId, () => out)
+        return
+      case 'groupDrag':
+        // Cada mensagem traz a caixa inteira: descartar excesso não perde estado.
+        if (!this.groupDragLimiter.allow(att.clientId)) return
+        this.broadcast(att.sessionId, (other) => (p.layerIds.every((id) => this.engine.canSeeLayer(other.role, id)) ? out : null))
+        return
+      case 'groupDragEnd':
         this.broadcast(att.sessionId, () => out)
         return
       case 'ping': {

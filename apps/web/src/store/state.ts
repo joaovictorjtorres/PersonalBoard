@@ -5,6 +5,7 @@ import {
   type ChatEntry,
   type Layer,
   type Member,
+  type Box,
   type Op,
   type Point,
   type ShapeKind,
@@ -133,6 +134,8 @@ export interface TableState {
   settings: TableSettings
   /** Réguas das outras pessoas, por clientId (a minha é `ownRuler`). */
   rulers: Record<string, Ruler>
+  /** Contornos de arrasto em grupo das outras pessoas, por clientId. */
+  groupDrags: Record<string, Box>
   ownRuler: Ruler | null
   pings: Ping[]
   /** Ping com recenter de outra pessoa; `seq` muda a cada pedido. */
@@ -201,6 +204,7 @@ export function makeInitialState(): TableState {
     viewport: { x: 0, y: 0, scale: 1 },
     settings: { grid: { ...DEFAULT_SETTINGS.grid } },
     rulers: {},
+    groupDrags: {},
     ownRuler: null,
     pings: [],
     cameraTarget: null,

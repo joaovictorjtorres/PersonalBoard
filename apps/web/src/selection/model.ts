@@ -194,3 +194,13 @@ export function selectionOfIds(ids: string[], objects: Record<string, TableObjec
   const whole = ids.map((id) => objects[id]).filter((o): o is TableObject => !!o)
   return build([], whole, {})
 }
+
+/** Camadas dos itens selecionados (o servidor só mostra o contorno a quem vê todas). */
+export function selectionLayerIds(sel: Selection, objects: Record<string, TableObject>): string[] {
+  const ids = new Set<string>()
+  for (const id of [...sel.whole, ...Object.keys(sel.parts)]) {
+    const o = objects[id]
+    if (o) ids.add(o.layerId)
+  }
+  return [...ids]
+}

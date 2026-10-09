@@ -164,4 +164,15 @@ describe('seleção na store', () => {
     const again = createTableStore('T', { createSocket: (url) => new FakeSocket(url) })
     expect(again.getState()).toMatchObject({ selectShape: 'lasso', selectAllLayers: true })
   })
+
+  it('arrastar o grupo manda a caixa deslocada e as camadas; soltar manda o fim', () => {
+    const store = connected()
+    const a = store.getState().actions
+    a.selectArea(rect(50, 0, 100, 100), false)
+    a.setSelectionOffset({ x: 10, y: 100 })
+    const presence = () => sock().sent.filter((m) => typeof m === 'object' && m.t === 'presence').map((m) => m.p)
+    expect(presence()).toEqual([{ kind: 'groupDrag', x: 60, y: 140, width: 100, height: 20, layerIds: ['tokens'] }])
+    a.moveSelection(10, 100)
+    expect(presence().at(-1)).toEqual({ kind: 'groupDragEnd' })
+  })
 })

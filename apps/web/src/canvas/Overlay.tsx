@@ -17,6 +17,7 @@ export function Overlay() {
   const scale = useTable((s) => s.viewport.scale)
   const self = useTable((s) => s.self)
   const rulers = useTable((s) => s.rulers)
+  const groupDrags = useTable((s) => s.groupDrags)
   const ownRuler = useTable((s) => s.ownRuler)
   const gridSize = useTable((s) => s.settings.grid.size)
   const selfId = self?.clientId
@@ -49,6 +50,18 @@ export function Overlay() {
           <Group key={clientId} x={c.x} y={c.y} scaleX={1 / scale} scaleY={1 / scale}>
             <Circle radius={5} fill={member.color} />
             <Text text={member.nickname} x={8} y={-4} fontSize={12} fill={member.color} />
+          </Group>
+        )
+      })}
+
+      {Object.entries(groupDrags).map(([clientId, b]) => {
+        if (clientId === selfId) return null
+        const member = members[clientId]
+        const color = member?.color ?? '#ffffff'
+        return (
+          <Group key={`group_${clientId}`} name="group-drag" x={b.x} y={b.y}>
+            <Rect width={b.width} height={b.height} stroke={color} strokeWidth={2 / scale} dash={[6 / scale, 4 / scale]} />
+            <Text text={member?.nickname ?? '?'} y={-16 / scale} fontSize={12 / scale} fill={color} />
           </Group>
         )
       })}

@@ -1,6 +1,6 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { nanoid } from 'nanoid'
-import type { ChatChannel, ClientMessage, Control, MemberPatch, ObjectOp, Op, Point, Presence, RollRequest, SettingsPatch, ShapeKind } from '@mesa/shared'
+import type { Box, ChatChannel, ClientMessage, Control, MemberPatch, ObjectOp, Op, Point, Presence, RollRequest, SettingsPatch, ShapeKind } from '@mesa/shared'
 import { BATCH_MAX, CHAT_TEXT_MAX, DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, TURNS_MAX, canControl, parseCommand, snapToGrid } from '@mesa/shared'
 import { SyncClient, type SyncClientOptions } from '../sync/SyncClient'
 import { throttle, type Throttled } from '../lib/throttle'
@@ -24,7 +24,7 @@ import { addToast, canUseLayer, isLockedByOther, reduceServer, reduceStatus, red
 import { rotatedBounds } from '../canvas/bounds'
 import { linkedImage, turnNameFor } from './turns'
 import { channelOf, closeDmTab, openDmTab, selectChatTab, setChatOpen, type ChatTab } from './chat'
-import { addArea, collectSelection, selectionOfIds, type SelectContext, type SelectionArea, type SelectShape } from '../selection/model'
+import { addArea, collectSelection, selectionLayerIds, selectionOfIds, type SelectContext, type SelectionArea, type SelectShape } from '../selection/model'
 import { planControl, planDelete, planMove, planToLayer, type PlanInput } from '../selection/plan'
 import { reconcileSelection } from '../selection/reconcile'
 import { loadSelectPrefs, saveSelectPrefs } from '../lib/selectPrefs'
@@ -116,8 +116,19 @@ export function createTableStore(
   const dragThrottles = new Map<string, Throttled<[Geometry]>>()
   let writes = 0
   let authRetried = false
+  let groupDragLive = false
+  const groupDragThrottle = throttle((box: Box, layerIds: string[]) => {
+    sync?.send({ t: 'presence', p: { kind: 'groupDrag', ...box, layerIds } })
+  }, RULER_THROTTLE_MS)
+  /** Os outros param de ver o contorno (soltou, cancelou, a seleção sumiu ou o lote foi recusado). */
+  const endGroupDrag = () => {
+    if (!groupDragLive) return
+    groupDragLive = false
+    groupDragThrottle.cancel()
+    sync?.send({ t: 'presence', p: { kind: 'groupDragEnd' } })
+  }
 
-  return createStore<TableStoreState>()((set, get) => {
+  const store = createStore<TableStoreState>()((set, get) => {
     const cursorThrottle = throttle((x: number, y: number) => {
       sync?.send({ t: 'presence', p: { kind: 'cursor', x, y } })
     }, 66)
@@ -465,6 +476,14 @@ export function createTableStore(
       clearSelection: () => set(NO_SELECTION),
       setSelectionOffset(selectionOffset) {
         set({ selectionOffset })
+        const { selection, objects } = get()
+        if (!selectionOffset || !selection) return
+        const b = selection.bounds
+        groupDragLive = true
+        groupDragThrottle(
+          { x: b.x + selectionOffset.x, y: b.y + selectionOffset.y, width: b.width, height: b.height },
+          selectionLayerIds(selection, objects),
+        )
       },
       moveSelection(dx, dy) {
         const input = planInput(get())
@@ -508,4 +527,10 @@ export function createTableStore(
 
     return { ...makeInitialState(), ...loadSelectPrefs(), actions }
   })
+
+  // Qualquer caminho que zere o deslocamento (soltar, Esc, trocar de ferramenta, recusa) encerra o contorno.
+  store.subscribe((s, prev) => {
+    if (prev.selectionOffset && !s.selectionOffset) endGroupDrag()
+  })
+  return store
 }

@@ -262,3 +262,13 @@ describe('OpSchema batch', () => {
     expect(parse([{ kind: 'create', object: image }, { kind: 'create', object: image }])).toBe(false)
   })
 })
+
+describe('presença do arrasto em grupo', () => {
+  const ok = (p: unknown) => ClientMessageSchema.safeParse({ t: 'presence', p }).success
+  it('caixa com as camadas dos itens; fim sem dados', () => {
+    expect(ok({ kind: 'groupDrag', x: 1, y: 2, width: 3, height: 4, layerIds: ['tokens'] })).toBe(true)
+    expect(ok({ kind: 'groupDragEnd' })).toBe(true)
+    expect(ok({ kind: 'groupDrag', x: 1, y: 2, width: 3, height: 4, layerIds: [] })).toBe(false)
+    expect(ok({ kind: 'groupDrag', x: 1, y: 2, width: -3, height: 4, layerIds: ['tokens'] })).toBe(false)
+  })
+})

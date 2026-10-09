@@ -880,3 +880,21 @@ describe('TableDO — lote (batch)', () => {
     expect((await p.waitFor('batch')).ops).toEqual([{ kind: 'upsert', object: expect.objectContaining({ id: tok.id, x: 70 }) }])
   })
 })
+
+describe('TableDO — arrasto em grupo (presença)', () => {
+  it('contorno vai só a quem vê todas as camadas dos itens; o fim vai a todos os outros', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    const p = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    await p.hello('Ana')
+    const box = { x: 10, y: 20, width: 30, height: 40 }
+    gm.send({ t: 'presence', p: { kind: 'groupDrag', ...box, layerIds: ['tokens', 'gm'] } })
+    await p.expectNone('presence')
+    gm.send({ t: 'presence', p: { kind: 'groupDrag', ...box, layerIds: ['tokens'] } })
+    expect((await p.waitFor('presence')).p).toEqual({ kind: 'groupDrag', ...box, layerIds: ['tokens'] })
+    gm.send({ t: 'presence', p: { kind: 'groupDragEnd' } })
+    expect((await p.waitFor('presence', (m) => m.p.kind === 'groupDragEnd')).p).toEqual({ kind: 'groupDragEnd' })
+    await gm.expectNone('presence')
+  })
+})

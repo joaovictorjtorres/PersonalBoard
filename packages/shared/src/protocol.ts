@@ -164,6 +164,16 @@ export const PresenceSchema = z.discriminatedUnion('kind', [
   /** Início, dobras e ponta (o cursor); a distância é a soma dos trechos. */
   z.object({ kind: z.literal('ruler'), points: z.array(PointSchema).min(2).max(RULER_MAX_POINTS) }),
   z.object({ kind: z.literal('rulerEnd') }),
+  /** Contorno da seleção arrastada (caixa já deslocada) e as camadas dos itens, para o filtro de quem vê. */
+  z.object({
+    kind: z.literal('groupDrag'),
+    x: z.number(),
+    y: z.number(),
+    width: z.number().nonnegative(),
+    height: z.number().nonnegative(),
+    layerIds: z.array(IdSchema).min(1).max(64),
+  }),
+  z.object({ kind: z.literal('groupDragEnd') }),
   z.object({ kind: z.literal('ping'), x: z.number(), y: z.number(), recenter: z.boolean() }),
 ])
 export type Presence = z.infer<typeof PresenceSchema>
