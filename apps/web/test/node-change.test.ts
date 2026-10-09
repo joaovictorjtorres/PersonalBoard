@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type Konva from 'konva'
 import { commitNodeChange } from '../src/canvas/nodeChange'
-import type { TableStore } from '../src/store/tableStore'
+import { createTableStore, type TableStore } from '../src/store/tableStore'
 
 function fakeNode(x: number, y: number) {
   const node = {
@@ -52,5 +52,27 @@ describe('commitNodeChange com encaixe', () => {
     const { store, submit } = setup('image', false)
     commitNodeChange(store, 'a', fakeNode(80, 100) as unknown as Konva.Node, 'drag')
     expect(submit).toHaveBeenCalledWith({ kind: 'update', id: 'a', patch: { x: 80, y: 100 } })
+  })
+})
+
+describe('prévia local do arrasto (título/ícones seguem o nó)', () => {
+  const g = { x: 10, y: 20, width: 70, height: 70, rotation: 0 }
+
+  it('cada movimento atualiza a prévia; soltar (release) apaga', () => {
+    const store = createTableStore('T')
+    const { actions } = store.getState()
+    actions.dragPreview('a', g)
+    actions.dragPreview('a', { ...g, x: 15 })
+    expect(store.getState().ownDragPreviews).toEqual({ a: { ...g, x: 15 } })
+    actions.release('a')
+    expect(store.getState().ownDragPreviews).toEqual({})
+  })
+
+  it('arrasto negado (clearDenied) também apaga', () => {
+    const store = createTableStore('T')
+    store.getState().actions.dragPreview('a', g)
+    store.getState().actions.dragPreview('b', g)
+    store.getState().actions.clearDenied('a')
+    expect(store.getState().ownDragPreviews).toEqual({ b: g })
   })
 })

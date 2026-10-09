@@ -14,9 +14,11 @@ export function ObjectDecorations({ object }: { object: TableObject }) {
   const showNote = useTable((s) => s.self?.role === 'gm' && !!s.notes[object.id])
   const lockedByOther = useTable((s) => isLockedByOther(s, object.id, Date.now()))
   const preview = useTable((s) => s.dragPreviews[object.id])
+  // Arrastando/redimensionando eu mesmo: segue o nó a cada movimento, não só ao soltar.
+  const own = useTable((s) => s.ownDragPreviews[object.id])
   if (!object.title && !showNote) return null
 
-  const g = lockedByOther && preview ? preview : object
+  const g = own ?? (lockedByOther && preview ? preview : object)
   const box = rotatedBounds(g)
   const k = 1 / scale
 
@@ -24,6 +26,7 @@ export function ObjectDecorations({ object }: { object: TableObject }) {
     <Group listening={false}>
       {object.title && (
         <Text
+          name="object-title"
           text={object.title}
           x={(box.minX + box.maxX) / 2 - (TITLE_BOX_PX * k) / 2}
           y={box.maxY + 4 * k}
@@ -39,7 +42,7 @@ export function ObjectDecorations({ object }: { object: TableObject }) {
         />
       )}
       {showNote && (
-        <Group x={box.maxX - (NOTE_ICON_PX * k) / 2} y={box.minY - (NOTE_ICON_PX * k) / 2} scaleX={k} scaleY={k}>
+        <Group name="object-note" x={box.maxX - (NOTE_ICON_PX * k) / 2} y={box.minY - (NOTE_ICON_PX * k) / 2} scaleX={k} scaleY={k}>
           <Rect width={NOTE_ICON_PX} height={NOTE_ICON_PX} cornerRadius={2} fill="#ffd43b" stroke="#5c4500" strokeWidth={1} />
           <Line points={[4, 5, 10, 5]} stroke="#5c4500" strokeWidth={1} />
           <Line points={[4, 8, 10, 8]} stroke="#5c4500" strokeWidth={1} />

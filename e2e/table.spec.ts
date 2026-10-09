@@ -568,6 +568,48 @@ test('mestre liga grade e encaixe: token solto cai alinhado na tela do jogador',
     .toEqual([700, 420])
 })
 
+test('título e ícone de anotação acompanham o token durante o arrasto; encaixe ao soltar', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  await uploadToken(gm)
+  const [token] = await objects(gm)
+  const menu = await openObjectMenu(gm, token)
+  await menu.getByLabel('Título').fill('Goblin')
+  await menu.getByLabel('Título').press('Enter')
+  await menu.getByLabel('Anotação do mestre').fill('tem 3 PV')
+  await menu.getByLabel('Anotação do mestre').blur()
+  await gm.keyboard.press('Escape')
+  await gm.evaluate(() => (window as any).__mesa.getState().actions.updateSettings({ grid: { snap: true } }))
+  await expect.poll(async () => (await objects(gm))[0].title).toBe('Goblin')
+
+  // posição do token (nó do Konva) e das decorações, relativa ao canto do token
+  const deco = (id: string) =>
+    gm.evaluate((id) => {
+      const stage = (window as any).__stage
+      const img = stage.findOne(`#${id}`)
+      const title = stage.findOne('.object-title')
+      const note = stage.findOne('.object-note')
+      return {
+        img: [img.x(), img.y()],
+        title: [title.x() + title.width() / 2 - img.x(), title.y() - img.y()],
+        note: [note.x() - img.x(), note.y() - img.y()],
+      }
+    }, id)
+  const rel = { title: [35, 74], note: [63, -7] } // centro embaixo (+4 px) e canto de cima à direita
+  expect(await deco(token.id)).toEqual({ img: [605, 325], ...rel })
+
+  await gm.mouse.move(640, 360)
+  await gm.mouse.down()
+  await gm.mouse.move(740, 410, { steps: 10 })
+  // no meio do arrasto (botão ainda apertado) as decorações já estão junto do token
+  await expect.poll(() => deco(token.id)).toEqual({ img: [705, 375], ...rel })
+  await gm.mouse.up()
+
+  // ao soltar, encaixa na grade (705, 375) → (700, 350), e as decorações vão junto
+  await expect.poll(() => deco(token.id)).toEqual({ img: [700, 350], ...rel })
+  expect((await objects(gm))[0]).toMatchObject({ x: 700, y: 350 })
+})
+
 test('régua do mestre aparece para o jogador com nome e distância', async ({ browser, page }) => {
   const { tableId, gmSecret } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')

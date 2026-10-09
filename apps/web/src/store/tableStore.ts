@@ -91,6 +91,11 @@ export function createTableStore(
       sync?.send({ t: 'presence', p: { kind: 'cursor', x, y } })
     }, 66)
 
+    const dropOwnPreview = (id: string) => {
+      if (!(id in get().ownDragPreviews)) return
+      set((s) => ({ ownDragPreviews: Object.fromEntries(Object.entries(s.ownDragPreviews).filter(([k]) => k !== id)) }))
+    }
+
     const rulerThrottle = throttle((ruler: Ruler) => {
       sync?.send({ t: 'presence', p: { kind: 'ruler', points: ruler.points } })
     }, RULER_THROTTLE_MS)
@@ -181,9 +186,11 @@ export function createTableStore(
       release(id) {
         dragThrottles.get(id)?.cancel()
         dragThrottles.delete(id)
+        dropOwnPreview(id)
         sync?.send({ t: 'release', objectId: id })
       },
       dragPreview(id, g) {
+        set((s) => ({ ownDragPreviews: { ...s.ownDragPreviews, [id]: g } }))
         let t = dragThrottles.get(id)
         if (!t) {
           t = throttle((geom: Geometry) => sync?.send({ t: 'presence', p: { kind: 'drag', objectId: id, ...geom } }), 33)
@@ -228,8 +235,10 @@ export function createTableStore(
       setViewport: (viewport) => set({ viewport }),
       toast: (text, action) => set((s) => addToast(s, text, action)),
       dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
-      clearDenied: (id) =>
-        set((s) => ({ deniedGrabs: Object.fromEntries(Object.entries(s.deniedGrabs).filter(([k]) => k !== id)) })),
+      clearDenied(id) {
+        dropOwnPreview(id)
+        set((s) => ({ deniedGrabs: Object.fromEntries(Object.entries(s.deniedGrabs).filter(([k]) => k !== id)) }))
+      },
       nextZ(layerId) {
         let max = 0
         for (const o of Object.values(get().objects)) if (o.layerId === layerId) max = Math.max(max, o.zIndex)

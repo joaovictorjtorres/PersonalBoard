@@ -100,6 +100,11 @@ export interface TableState {
   locks: Record<string, { clientId: string; expiresAt: number }>
   cursors: Record<string, { x: number; y: number }>
   dragPreviews: Record<string, Geometry>
+  /**
+   * Minha prévia de arrasto/redimensionamento, a cada movimento (só local): o nó do Konva já se move
+   * sozinho, e título/ícones seguem por aqui até soltar.
+   */
+  ownDragPreviews: Record<string, Geometry>
   strokePreviews: Record<string, StrokePreview>
   pending: Record<string, PendingOp>
   undoStack: Op[][]
@@ -154,6 +159,7 @@ export function makeInitialState(): TableState {
     locks: {},
     cursors: {},
     dragPreviews: {},
+    ownDragPreviews: {},
     strokePreviews: {},
     pending: {},
     undoStack: [],
