@@ -926,3 +926,41 @@ describe('applyOp batch', () => {
     })
   })
 })
+
+describe('vínculo entre sessões', () => {
+  const join = (clientId: string, nickname: string, role: 'gm' | 'player' = 'player') =>
+    engine.join({ clientId, nickname, role }, new Set())
+
+  it('matchNickname: online recusa; jogador fora assume o mais recente; mestre nunca é assumido por apelido', () => {
+    join('A', 'Ana')
+    clock = 5_000
+    join('B', 'ana')
+    join('G', 'Mestre', 'gm')
+    expect(engine.matchNickname('  ANA ', new Set())).toEqual({ kind: 'adopt', clientId: 'B' })
+    expect(engine.matchNickname('Ana', new Set(['A']))).toEqual({ kind: 'taken' })
+    expect(engine.matchNickname('mestre', new Set())).toEqual({ kind: 'none' })
+    expect(engine.matchNickname('Mestre', new Set(['G']))).toEqual({ kind: 'taken' })
+    expect(engine.matchNickname('Caio', new Set())).toEqual({ kind: 'none' })
+  })
+
+  it('gmMember devolve o mestre visto por último', () => {
+    expect(engine.gmMember()).toBeNull()
+    join('G1', 'Mestre', 'gm')
+    clock = 9_000
+    join('G2', 'Mestre 2', 'gm')
+    expect(engine.gmMember()?.clientId).toBe('G2')
+  })
+
+  it('knownPlayers: só jogadores fora da mesa vistos nos últimos 7 dias, mais recentes primeiro, sem clientId', () => {
+    join('OLD', 'Velho')
+    clock = 1_000 + MEMBER_RECENT_MS + 1
+    join('A', 'Ana')
+    clock += 10
+    join('B', 'Bia')
+    join('C', 'Caio')
+    join('G', 'Mestre', 'gm')
+    const list = engine.knownPlayers(new Set(['C']))
+    expect(list.map((p) => p.nickname)).toEqual(['Bia', 'Ana'])
+    expect(Object.keys(list[0]).sort()).toEqual(['color', 'nickname'])
+  })
+})

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { TableNameSchema, TunnelReportSchema } from '../src/registry'
+import { TableNameSchema, TunnelReportSchema, normalizeNickname } from '../src/registry'
 
 describe('registro de mesas', () => {
   it('TableNameSchema corta espaços nas pontas e recusa vazio ou mais de 60', () => {
@@ -22,5 +22,13 @@ describe('registro de mesas', () => {
     ]) {
       expect(TunnelReportSchema.safeParse(bad).success, JSON.stringify(bad)).toBe(false)
     }
+  })
+})
+
+describe('normalizeNickname', () => {
+  it('ignora maiúsculas/minúsculas e espaços nas pontas', () => {
+    expect(normalizeNickname('  ANA ')).toBe(normalizeNickname('ana'))
+    expect(normalizeNickname('Ana Paula')).not.toBe(normalizeNickname('AnaPaula'))
+    expect(normalizeNickname('ÉRICO')).toBe('érico')
   })
 })

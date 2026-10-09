@@ -493,7 +493,10 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
   switch (msg.t) {
     case 'welcome': {
       const snap = msg.snapshot
-      const objects = reapplyPending(Object.fromEntries(snap.objects.map((o) => [o.id, o])), s.pending, msg.self.clientId)
+      const confirmed: Record<string, TableObject> = Object.fromEntries(snap.objects.map((o) => [o.id, o]))
+      // Lote recusado depois da reconexão volta ao snapshot: o que sumiu durante a queda não ressuscita.
+      const pending = rebasePendingBatches(s.pending, (id) => confirmed[id] ?? null)
+      const objects = reapplyPending(confirmed, pending, msg.self.clientId)
       const layers = sortLayers(snap.layers)
       const pendingLayers = recomputeLayers({ ...s, confirmedLayers: layers }).layers
       const preferred = pendingLayers.some((l) => l.id === s.activeLayerId)
@@ -506,6 +509,7 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         ...s,
         status: 'open',
         fatal: null,
+        pending,
         self: msg.self,
         meta: snap.meta,
         layers: pendingLayers,

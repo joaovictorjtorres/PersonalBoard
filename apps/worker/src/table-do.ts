@@ -89,6 +89,10 @@ export class TableDO extends DurableObject<Env> {
       return new Response(null, { status: 101, webSocket: client })
     }
 
+    if (url.pathname === '/members' && request.method === 'GET') {
+      if (!this.store.getMeta()) return Response.json({ players: [] })
+      return Response.json({ players: this.engine.knownPlayers(this.onlineClientIds()) })
+    }
     return new Response('not found', { status: 404 })
   }
 
@@ -173,7 +177,6 @@ export class TableDO extends DurableObject<Env> {
     this.onDisconnect(ws)
   }
 
-  // Regras do clientSecret: Task 4 (inalteradas aqui).
   private async onHello(ws: WebSocket, msg: Msg<'hello'>): Promise<void> {
     const meta = this.store.getMeta()
     if (!meta) return
@@ -184,11 +187,37 @@ export class TableDO extends DurableObject<Env> {
     const candidate = randomSecret()
     const candidateHash = await sha256Hex(candidate)
 
-    const existing = this.store.getMember(msg.clientId)
+    const online = this.onlineClientIds()
     // Cliente M1 (sem v:2) não guarda segredo: admitido sem emitir hash, para não se trancar fora.
     const m2 = msg.v === 2
+    let clientId = msg.clientId
+    const existing = this.store.getMember(clientId)
+    let adopted = false
+    // Navegador novo (clientId desconhecido): o mestre volta a ser o membro mestre; o jogador assume
+    // quem tem o mesmo apelido e está fora da mesa; apelido de alguém online é recusado.
+    if (!existing && m2) {
+      let targetId: string | null = null
+      if (role === 'gm') {
+        targetId = this.engine.gmMember()?.clientId ?? null
+      } else {
+        const match = this.engine.matchNickname(msg.nickname, online)
+        if (match.kind === 'taken') {
+          this.send(ws, { t: 'error', reason: 'nickname_taken' })
+          ws.close(4409, 'nickname_taken')
+          return
+        }
+        if (match.kind === 'adopt') targetId = match.clientId
+      }
+      if (targetId) {
+        clientId = targetId
+        adopted = true
+      }
+    }
+
     let issued: string | undefined
-    if (existing?.secretHash) {
+    if (adopted) {
+      issued = candidate // segredo novo para este navegador; o do navegador antigo deixa de valer
+    } else if (existing?.secretHash) {
       const ok = providedHash !== null && safeEqual(providedHash, existing.secretHash)
       if (!ok) {
         if (role !== 'gm') {
@@ -203,18 +232,17 @@ export class TableDO extends DurableObject<Env> {
       issued = candidate // membro novo ou do M1 sem hash: trust-on-first-use
     }
 
-    const online = this.onlineClientIds()
     const member = this.engine.join(
-      { clientId: msg.clientId, nickname: msg.nickname, role, ...(issued ? { secretHash: candidateHash } : {}) },
+      { clientId, nickname: msg.nickname, role, ...(issued ? { secretHash: candidateHash } : {}) },
       online,
     )
-    const att: Attachment = { sessionId: crypto.randomUUID(), clientId: msg.clientId, role }
+    const att: Attachment = { sessionId: crypto.randomUUID(), clientId, role }
     ws.serializeAttachment(att)
-    online.add(msg.clientId)
+    online.add(clientId)
     this.send(ws, {
       t: 'welcome',
       self: member,
-      snapshot: this.engine.snapshot(role, online, msg.clientId),
+      snapshot: this.engine.snapshot(role, online, clientId),
       ...(issued ? { clientSecret: issued } : {}),
     })
     this.broadcast(att.sessionId, () => ({ t: 'memberJoined', member }))

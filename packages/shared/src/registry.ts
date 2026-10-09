@@ -30,3 +30,14 @@ export interface RegistryView {
   /** Endereço do túnel informado pelo launcher; null = sem túnel (só local). */
   tunnelUrl: string | null
 }
+
+/** Jogador fora da mesa visto nos últimos 7 dias ("Já jogou aqui?"). Nunca leva clientId nem segredo. */
+export interface KnownPlayer {
+  nickname: string
+  color: string
+}
+
+/** Comparação de apelidos: ignora maiúsculas/minúsculas e espaços nas pontas. */
+export function normalizeNickname(nickname: string): string {
+  return nickname.trim().toLocaleLowerCase('pt-BR')
+}

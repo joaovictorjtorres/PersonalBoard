@@ -17,6 +17,7 @@ import {
   mergePatch,
   mergeSettings,
   moveLayer,
+  normalizeNickname,
   rollDice,
   snapPatch,
   snapToGrid,
@@ -24,6 +25,7 @@ import {
   type BatchOp,
   type ChatEntry,
   type ClearObjectsOp,
+  type KnownPlayer,
   type Layer,
   type LayerPatch,
   type LockInfo,
@@ -77,6 +79,9 @@ export type OpResult =
   | { ok: true; duplicate: true; version: number }
   | { ok: true; duplicate: false; version: number; effects: OpEffect[] }
   | { ok: false; reason: RejectReason; current?: TableObject | null }
+
+/** Resultado do apelido de quem entra com clientId desconhecido. */
+export type NicknameMatch = { kind: 'none' } | { kind: 'taken' } | { kind: 'adopt'; clientId: string }
 
 /** Conteúdo de uma entrada do chat antes de o servidor dar id, hora e (na rolagem) o resultado. */
 export type ChatBody =
@@ -188,6 +193,33 @@ export class TableEngine {
   touchMember(clientId: string): void {
     const m = this.store.getMember(clientId)
     if (m) this.store.upsertMember({ ...m, lastSeenAt: this.now() })
+  }
+
+  /**
+   * Apelido de alguém online: recusado. De jogador fora da mesa: assume esse membro (o visto por último,
+   * se houver vários). O mestre nunca é assumido por apelido.
+   */
+  matchNickname(nickname: string, online: Set<string>): NicknameMatch {
+    const key = normalizeNickname(nickname)
+    const same = this.store.listMembers().filter((m) => normalizeNickname(m.nickname) === key)
+    if (same.some((m) => online.has(m.clientId))) return { kind: 'taken' }
+    const player = same.filter((m) => m.role === 'player').sort((a, b) => b.lastSeenAt - a.lastSeenAt)[0]
+    return player ? { kind: 'adopt', clientId: player.clientId } : { kind: 'none' }
+  }
+
+  /** Membro mestre visto por último (o link de mestre num navegador novo volta a ser ele). */
+  gmMember(): StoredMember | null {
+    return this.store.listMembers().filter((m) => m.role === 'gm').sort((a, b) => b.lastSeenAt - a.lastSeenAt)[0] ?? null
+  }
+
+  /** "Já jogou aqui?": jogadores fora da mesa vistos nos últimos 7 dias, mais recentes primeiro. */
+  knownPlayers(online: Set<string>): KnownPlayer[] {
+    const now = this.now()
+    return this.store
+      .listMembers()
+      .filter((m) => m.role === 'player' && !online.has(m.clientId) && now - m.lastSeenAt <= MEMBER_RECENT_MS)
+      .sort((a, b) => b.lastSeenAt - a.lastSeenAt)
+      .map((m) => ({ nickname: m.nickname, color: m.color }))
   }
 
   snapshot(role: Role, online: Set<string>, viewerId = ''): Snapshot {

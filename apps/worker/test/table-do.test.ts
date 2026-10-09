@@ -3,7 +3,7 @@ import { runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_TURNS, type NewObject, type Op } from '@mesa/shared'
 import { SqlStore } from '../src/engine/sql-store'
-import { TestClient, createTable, tokenObject } from './helpers'
+import { LOCAL, TestClient, createTable, tokenObject } from './helpers'
 
 const SELF = exports.default
 
@@ -153,7 +153,7 @@ describe('TableDO', () => {
     await a.waitFor('ack')
     a.close()
     const again = await TestClient.connect(tableId)
-    const { welcome } = await again.hello('Ana')
+    const { welcome } = await again.hello('Bia')
     expect(welcome.snapshot.objects.map((o) => o.id)).toEqual([obj.id])
   })
 
@@ -897,5 +897,101 @@ describe('TableDO — arrasto em grupo (presença)', () => {
     gm.send({ t: 'presence', p: { kind: 'groupDragEnd' } })
     expect((await p.waitFor('presence', (m) => m.p.kind === 'groupDragEnd')).p).toEqual({ kind: 'groupDragEnd' })
     await gm.expectNone('presence')
+  })
+})
+
+describe('TableDO — vínculo entre sessões', () => {
+  it('navegador limpo com o mesmo apelido (maiúsculas/espaços) assume o jogador fora da mesa: mesmo id e cor, segredo novo, controle do token', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    const a = await TestClient.connect(tableId)
+    const { clientId: anaId, welcome: w1 } = await a.hello('Ana')
+    const tok = tokenObject()
+    a.send({ t: 'op', opId: 'op_1', op: { kind: 'create', object: tok } })
+    await a.waitFor('ack')
+    a.close()
+    await gm.waitFor('memberLeft', (m) => m.clientId === anaId)
+
+    const back = await TestClient.connect(tableId)
+    const { clientId: freshId, welcome } = await back.hello('  ANA ')
+    expect(freshId).not.toBe(anaId)
+    expect(welcome.self.clientId).toBe(anaId)
+    expect(welcome.self.color).toBe(w1.self.color)
+    expect(welcome.clientSecret).toMatch(/^[A-Za-z0-9_-]{43}$/)
+    expect(welcome.clientSecret).not.toBe(w1.clientSecret)
+    expect(welcome.snapshot.members.filter((m) => m.role === 'player')).toHaveLength(1)
+    back.send({ t: 'op', opId: 'op_2', op: { kind: 'update', id: tok.id, patch: { x: 99 } } })
+    expect(await back.waitFor('ack')).toMatchObject({ opId: 'op_2' })
+
+    // o segredo do navegador antigo deixa de valer; o novo reconecta
+    const old = await TestClient.connect(tableId)
+    old.send({ t: 'hello', v: 2, clientId: anaId, nickname: 'Ana', clientSecret: w1.clientSecret })
+    expect(await old.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
+    const tab2 = await TestClient.connect(tableId)
+    const { welcome: w3 } = await tab2.hello('Ana', { clientId: anaId, clientSecret: welcome.clientSecret })
+    expect(w3.self.clientId).toBe(anaId)
+  })
+
+  it('apelido de alguém online (jogador ou mestre) é recusado com nickname_taken; quem está online não é afetado', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    const a = await TestClient.connect(tableId)
+    await a.hello('Ana')
+    for (const nickname of ['ana', ' MESTRE ']) {
+      const intruder = await TestClient.connect(tableId)
+      intruder.send({ t: 'hello', v: 2, clientId: crypto.randomUUID(), nickname })
+      expect(await intruder.waitFor('error')).toEqual({ t: 'error', reason: 'nickname_taken' })
+    }
+    await a.expectNone('memberJoined')
+  })
+
+  it('apelido do mestre fora da mesa não assume o mestre: entra como jogador novo', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const watcher = await TestClient.connect(tableId)
+    await watcher.hello('Bia')
+    const gm = await TestClient.connect(tableId)
+    const { clientId: gmId } = await gm.hello('Mestre', { gmSecret })
+    gm.close()
+    await watcher.waitFor('memberLeft', (m) => m.clientId === gmId)
+    const p = await TestClient.connect(tableId)
+    const { clientId, welcome } = await p.hello('Mestre')
+    expect(welcome.self).toMatchObject({ clientId, role: 'player' })
+    expect(clientId).not.toBe(gmId)
+  })
+
+  // Review Focus #3
+  it('mestre com navegador limpo pelo link de mestre volta a ser o mesmo membro, mesmo com o primeiro online: uma linha só de mestre', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm1 = await TestClient.connect(tableId)
+    const { clientId: gmId } = await gm1.hello('Mestre', { gmSecret })
+    const gm2 = await TestClient.connect(tableId)
+    const { clientId: fresh, welcome } = await gm2.hello('Mestre', { gmSecret })
+    expect(fresh).not.toBe(gmId)
+    expect(welcome.self).toMatchObject({ clientId: gmId, role: 'gm' })
+    expect(welcome.clientSecret).toBeDefined()
+    expect(welcome.snapshot.members.filter((m) => m.role === 'gm')).toHaveLength(1)
+  })
+
+  it('GET /api/tables/:id/members (também pelo túnel): só jogadores fora da mesa, sem clientId; mesa inexistente → vazio', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    const a = await TestClient.connect(tableId)
+    const { clientId: aId } = await a.hello('Ana')
+    const b = await TestClient.connect(tableId)
+    await b.hello('Bia')
+    a.close()
+    await gm.waitFor('memberLeft', (m) => m.clientId === aId)
+    const res = await SELF.fetch(`https://abc-def.trycloudflare.com/api/tables/${tableId}/members`, {
+      headers: { 'cf-ray': 'x', 'cf-connecting-ip': '200.100.50.25' },
+    })
+    expect(res.status).toBe(200)
+    const body = await res.json<{ players: { nickname: string; color: string }[] }>()
+    expect(body.players.map((p) => p.nickname)).toEqual(['Ana'])
+    expect(JSON.stringify(body)).not.toContain(aId)
+    const none = await SELF.fetch(`${LOCAL}/api/tables/ZZZZZZZZZZ/members`)
+    expect(await none.json()).toEqual({ players: [] })
   })
 })

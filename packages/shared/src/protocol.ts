@@ -254,7 +254,7 @@ export interface Snapshot {
 }
 
 /** Motivos de `error` (o servidor fecha a conexão logo depois). */
-export type ServerErrorReason = 'table_not_found' | 'auth' | 'table_deleted'
+export type ServerErrorReason = 'table_not_found' | 'auth' | 'table_deleted' | 'nickname_taken'
 
 export type ServerMessage =
   | { t: 'welcome'; self: Member; snapshot: Snapshot; clientSecret?: string }

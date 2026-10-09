@@ -155,6 +155,15 @@ describe('lote no cliente', () => {
     expect(s.objects.img.x).toBe(30)
     expect(Object.keys(s.pending)).toEqual(['b1'])
   })
+
+  it('recusa depois de reconectar: o que sumiu durante a queda não volta; o que mudou volta como no snapshot', () => {
+    let s = submit(joined())
+    const a2 = { ...stroke('a'), color: '#00ff00', version: 2 } as TableObject
+    s = reduceServer(s, { t: 'welcome', self: me, snapshot: snapshot([a2], me) }, 0)
+    s = reduceServer(s, { t: 'reject', opId: 'b1', reason: 'not_found' }, 0)
+    expect(keys(s)).toEqual(['a'])
+    expect(s.objects.a).toMatchObject({ color: '#00ff00', version: 2 })
+  })
 })
 
 describe('poda do desfazer dentro de lotes', () => {

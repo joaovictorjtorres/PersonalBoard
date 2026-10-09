@@ -61,6 +61,9 @@ export default {
       if (parts.length === 4 && parts[3] === 'assets' && request.method === 'POST') {
         return uploadAsset(request, env, stub)
       }
+      if (parts.length === 4 && parts[3] === 'members' && request.method === 'GET') {
+        return stub.fetch(new Request('https://table/members', request))
+      }
     }
 
     if (parts[0] === 'files' && parts.length === 2 && request.method === 'GET') {
