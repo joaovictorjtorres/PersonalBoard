@@ -40,24 +40,39 @@ export function inverseGroupOf(op: Op, before: TableObject | null, role: Role | 
 }
 
 /**
+ * Recriação `create X from P` de um lote inverso → todos os pedaços de X que o mesmo lote apaga.
+ * Fica fora da op (não vai para o servidor); serve para a poda trocar o `from` se P for apagado.
+ */
+const cutPieces = new WeakMap<ObjectOp, readonly string[]>()
+
+export function piecesOf(op: ObjectOp): readonly string[] {
+  return cutPieces.get(op) ?? (op.kind === 'create' && op.from !== undefined ? [op.from] : [])
+}
+
+export function withPieces<T extends ObjectOp>(op: T, pieces: readonly string[]): T {
+  cutPieces.set(op, pieces)
+  return op
+}
+
+/**
  * Lote que desfaz um lote: as inversas de cada sub-ação em ordem reversa. Original cortado em pedaços
  * (`create … from: X` + `delete X`): a recriação de X sai com `from` = o primeiro pedaço, que o lote
  * inverso apaga; assim X volta com o dono e o controle de antes. Quando o mestre recria objetos
  * apagados inteiros, os updates de controle vão num segundo lote (no mesmo lote seriam id repetido).
  */
 export function batchInverse(op: BatchOp, before: Record<string, TableObject | null>, role: Role | undefined): Op[] | null {
-  const firstPiece = new Map<string, string>()
+  const pieces = new Map<string, string[]>()
   for (const sub of op.ops) {
-    if (sub.kind === 'create' && sub.from !== undefined && !firstPiece.has(sub.from)) firstPiece.set(sub.from, sub.object.id)
+    if (sub.kind === 'create' && sub.from !== undefined) pieces.set(sub.from, [...(pieces.get(sub.from) ?? []), sub.object.id])
   }
   const main: ObjectOp[] = []
   const follow: ObjectOp[] = []
   for (const sub of [...op.ops].reverse()) {
     const prior = before[opTargetId(sub)] ?? null
-    const piece = sub.kind === 'delete' ? firstPiece.get(sub.id) : undefined
-    if (piece !== undefined) {
+    const cut = sub.kind === 'delete' ? pieces.get(sub.id) : undefined
+    if (cut !== undefined) {
       const recreate = inverseOf(sub, prior)
-      if (recreate?.kind === 'create') main.push({ ...recreate, from: piece })
+      if (recreate?.kind === 'create') main.push(withPieces({ ...recreate, from: cut[0] }, cut))
       continue
     }
     const group = inverseGroupOf(sub, prior, role)

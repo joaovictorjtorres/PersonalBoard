@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, type CSSProperties, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, type CSSProperties, type RefObject } from 'react'
 
 /**
  * Fecha um popover com Esc ou clique fora. Antes de fechar, tira o foco de um campo
@@ -45,24 +45,51 @@ export function floatingStyle(x: number, y: number, width: number): CSSPropertie
   }
 }
 
+/** Desliza o overlay fixo para dentro da janela, pelo tamanho medido agora. */
+function fitInView(el: HTMLElement): void {
+  const r = el.getBoundingClientRect()
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - r.width - 8))
+  const top = Math.max(8, Math.min(r.top, window.innerHeight - r.height - 8))
+  if (Math.abs(left - r.left) > 0.5) el.style.left = `${left}px`
+  if (Math.abs(top - r.top) > 0.5) el.style.top = `${top}px`
+}
+
 /**
  * Overlay fixo: depois de medido, desliza para dentro da janela (a altura real só se sabe após o layout).
- * Também quando cresce depois (ex.: um submenu que abre dentro dele).
+ * Também quando cresce depois: o ResizeObserver pega a mudança de tamanho e o MutationObserver reajusta
+ * logo depois que o React troca o conteúdo (ex.: um submenu que abre dentro dele), antes do próximo quadro.
+ * Os observadores são criados uma vez por elemento e desligados quando ele troca ou o componente sai.
  */
 function useKeepInView(ref: RefObject<HTMLElement | null>): void {
+  const watch = useRef<{ el: HTMLElement; stop: () => void } | null>(null)
   useLayoutEffect(() => {
-    const el = ref.current
-    if (!el || getComputedStyle(el).position !== 'fixed') return
-    const fit = () => {
-      const r = el.getBoundingClientRect()
-      const left = Math.max(8, Math.min(r.left, window.innerWidth - r.width - 8))
-      const top = Math.max(8, Math.min(r.top, window.innerHeight - r.height - 8))
-      if (Math.abs(left - r.left) > 0.5) el.style.left = `${left}px`
-      if (Math.abs(top - r.top) > 0.5) el.style.top = `${top}px`
+    const raw = ref.current
+    const el = raw && getComputedStyle(raw).position === 'fixed' ? raw : null
+    if (watch.current && watch.current.el !== el) {
+      watch.current.stop()
+      watch.current = null
     }
-    fit()
-    const observer = new ResizeObserver(fit)
-    observer.observe(el)
-    return () => observer.disconnect()
+    if (!el) return
+    fitInView(el)
+    if (watch.current) return
+    const fit = () => fitInView(el)
+    const resize = new ResizeObserver(fit)
+    resize.observe(el)
+    const mutation = new MutationObserver(fit)
+    mutation.observe(el, { childList: true, subtree: true })
+    watch.current = {
+      el,
+      stop: () => {
+        resize.disconnect()
+        mutation.disconnect()
+      },
+    }
   })
+  useLayoutEffect(
+    () => () => {
+      watch.current?.stop()
+      watch.current = null
+    },
+    [],
+  )
 }

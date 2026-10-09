@@ -3,6 +3,7 @@ import useImage from 'use-image'
 import { canControl, type ImageObject } from '@mesa/shared'
 import { useTable, useTableActions, useTableStore } from '../store/context'
 import { isLockedByOther } from '../store/reducers'
+import { isInSelection } from '../selection/model'
 import { useGroupOffset } from './hooks'
 import { commitNodeChange, geometryFromNode } from './nodeChange'
 import { isPingClick, usePingDragGuard } from './ping'
@@ -19,7 +20,7 @@ export function ImageNode({ object }: { object: ImageObject }) {
   const g = lockedByOther && preview ? preview : object
   const layerEditable = useTable(() => actions.canEditLayer(object.layerId))
   // Na seleção em área, o item se move com o grupo (não sozinho) e não é selecionado pelo clique.
-  const grouped = useTable((s) => !!s.selection && (s.selection.whole.includes(object.id) || object.id in s.selection.parts))
+  const grouped = useTable((s) => isInSelection(s.selection, object.id))
   const groupOffset = useGroupOffset(object.id)
   const interactive = tool === 'select' && !lockedByOther && mayControl && layerEditable && !grouped
 

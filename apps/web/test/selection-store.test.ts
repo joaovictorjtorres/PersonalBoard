@@ -103,6 +103,51 @@ describe('seleção na store', () => {
     expect(store.getState().selection).toBeNull()
   })
 
+  it('apagar recusado: tudo volta, aviso próprio e seleção desfeita', () => {
+    const store = connected()
+    const a = store.getState().actions
+    a.selectArea(rect(50, 0, 100, 100), false)
+    a.deleteSelection()
+    sock().receive({ t: 'reject', opId: opsSent()[0].opId, reason: 'locked' })
+    const s = store.getState()
+    expect(Object.keys(s.objects).sort()).toEqual(['l', 't1'])
+    expect(s.toasts.at(-1)?.text).toBe('Não foi possível apagar a seleção')
+    expect(s.selection).toBeNull()
+  })
+
+  it('mandar para outra camada: jogador muda só os itens inteiros (traço cortado fica) e a seleção sai', () => {
+    const store = connected()
+    const a = store.getState().actions
+    a.selectArea(rect(50, 0, 100, 100), false)
+    a.selectionToLayer('drawings')
+    const [sent] = opsSent()
+    expect(sent.op).toEqual({ kind: 'batch', ops: [{ kind: 'update', id: 't1', patch: { layerId: 'drawings', zIndex: expect.any(Number) } }] })
+    const s = store.getState()
+    expect(s.objects.t1.layerId).toBe('drawings')
+    expect(s.objects.l.layerId).toBe('tokens')
+    expect(s.selection).toBeNull()
+  })
+
+  it('controle da seleção: um update por token e a seleção continua', () => {
+    const store = connected()
+    const a = store.getState().actions
+    a.selectArea(rect(50, 0, 100, 100), false)
+    a.selectionControl({ mode: 'all', clientIds: [] })
+    const [sent] = opsSent()
+    expect(sent.op).toEqual({ kind: 'batch', ops: [{ kind: 'update', id: 't1', patch: { control: { mode: 'all', clientIds: [] } } }] })
+    expect(store.getState().objects.t1.control).toEqual({ mode: 'all', clientIds: [] })
+    expect(store.getState().selection?.whole).toEqual(['t1'])
+  })
+
+  it('clicar de novo na camada ativa não desfaz a seleção', () => {
+    const store = connected()
+    const a = store.getState().actions
+    a.selectArea(rect(50, 0, 100, 100), false)
+    const before = store.getState().selection
+    a.setActiveLayer('tokens')
+    expect(store.getState().selection).toBe(before)
+  })
+
   it('mais de 200 sub-ações: aviso, nada enviado, seleção mantida', () => {
     const many = Array.from({ length: 201 }, (_, i) => tokenAt(`k${i}`, 60, 40, { layerId: 'tokens' }))
     const store = connected(many)

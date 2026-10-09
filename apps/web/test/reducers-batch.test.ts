@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { DEFAULT_LAYERS, DEFAULT_SETTINGS, type Member, type ObjectOp, type TableObject } from '@mesa/shared'
 import { pruneUndoStack, reduceServer, reduceSubmit, reduceSubmitBatch } from '../src/store/reducers'
 import { makeInitialState, type TableState } from '../src/store/state'
+import { applyLocalOp } from '../src/store/localOps'
 
 const me: Member = { clientId: 'me', nickname: 'Eu', color: '#e6194b', role: 'player', online: true }
 const gm: Member = { ...me, clientId: 'gm1', nickname: 'Mestre', role: 'gm' }
@@ -100,6 +101,34 @@ describe('lote no cliente', () => {
     expect(s.undoStack).toEqual([])
   })
 
+  it('recusa depois de o servidor apagar um item do lote: o item não volta', () => {
+    let s = submit(joined())
+    s = reduceServer(s, { t: 'op', by: 'bia', op: { kind: 'delete', id: 'img' } }, 0)
+    s = reduceServer(s, { t: 'reject', opId: 'b1', reason: 'not_found' }, 0)
+    expect(keys(s)).toEqual(['a'])
+  })
+
+  it('recusa depois de o servidor mudar um item do lote: volta o valor do servidor', () => {
+    let s = submit(joined())
+    s = reduceServer(s, { t: 'batch', by: 'bia', ops: [{ kind: 'upsert', object: { ...image('img'), x: 99, version: 2 } }] }, 0)
+    expect(s.objects.img.x).toBe(30)
+    s = reduceServer(s, { t: 'reject', opId: 'b1', reason: 'locked' }, 0)
+    expect(keys(s)).toEqual(['a', 'img'])
+    expect(s.objects.img).toMatchObject({ x: 99, version: 2 })
+  })
+
+  it('recusa depois de uma limpeza ou de a camada sumir: o que saiu no servidor não volta', () => {
+    let s = submit(joined())
+    s = reduceServer(s, { t: 'objectsRemoved', ids: ['a'], by: 'gm1' }, 0)
+    s = reduceServer(s, { t: 'reject', opId: 'b1', reason: 'not_found' }, 0)
+    expect(keys(s)).toEqual(['img'])
+
+    let t = submit(joined())
+    t = reduceServer(t, { t: 'layerRemoved', id: 'drawings' }, 0)
+    t = reduceServer(t, { t: 'reject', opId: 'b1', reason: 'not_found' }, 0)
+    expect(keys(t)).toEqual([])
+  })
+
   it('desfazer em lote recusado (item apagado por outra pessoa): tudo volta e avisa', () => {
     let s = reduceSubmitBatch(joined(), [{ opId: 'u1', op: { kind: 'batch', ops: CUT } }], { isUndo: true, groupId: 'g' })
     s = reduceServer(s, { t: 'reject', opId: 'u1', reason: 'not_found' }, 0)
@@ -131,9 +160,28 @@ describe('lote no cliente', () => {
 describe('poda do desfazer dentro de lotes', () => {
   const acked = () => reduceServer(submit(joined()), { t: 'ack', opId: 'b1', version: 0 }, 0)
 
-  it('limpar um pedaço tira o apagar dele e a recriação que dependia dele; o resto do lote fica', () => {
-    const s = reduceServer(acked(), { t: 'objectsRemoved', ids: ['p1'], by: 'gm1' }, 0)
-    expect(s.undoStack).toEqual([[{ kind: 'batch', ops: [{ kind: 'update', id: 'img', patch: { x: 0 } }, { kind: 'delete', id: 'p2' }] }]])
+  it('limpar o pedaço do `from`: a recriação passa a sair do outro pedaço; desfazer devolve o original', () => {
+    let s = reduceServer(acked(), { t: 'objectsRemoved', ids: ['p1'], by: 'gm1' }, 0)
+    expect(s.undoStack).toEqual([[{
+      kind: 'batch',
+      ops: [{ kind: 'update', id: 'img', patch: { x: 0 } }, { kind: 'create', object: STROKE_A, from: 'p2' }, { kind: 'delete', id: 'p2' }],
+    }]])
+    s = reduceSubmit(s, 'u1', s.undoStack[0][0], { isUndo: true })
+    expect(keys(s)).toEqual(['a', 'img'])
+  })
+
+  it('limpar o outro pedaço: a recriação continua do `from`', () => {
+    const s = reduceServer(acked(), { t: 'objectsRemoved', ids: ['p2'], by: 'gm1' }, 0)
+    expect(s.undoStack).toEqual([[{
+      kind: 'batch',
+      ops: [{ kind: 'update', id: 'img', patch: { x: 0 } }, { kind: 'create', object: STROKE_A, from: 'p1' }, { kind: 'delete', id: 'p1' }],
+    }]])
+  })
+
+  it('pedaços limpos um de cada vez: sem nenhum pedaço, a recriação sai junto', () => {
+    let s = reduceServer(acked(), { t: 'objectsRemoved', ids: ['p1'], by: 'gm1' }, 0)
+    s = reduceServer(s, { t: 'objectsRemoved', ids: ['p2'], by: 'gm1' }, 0)
+    expect(s.undoStack).toEqual([[{ kind: 'batch', ops: [{ kind: 'update', id: 'img', patch: { x: 0 } }] }]])
   })
 
   it('lote que fica vazio sai da pilha', () => {
@@ -144,5 +192,24 @@ describe('poda do desfazer dentro de lotes', () => {
   it('pilha sem nada apagado continua a mesma', () => {
     const stack = acked().undoStack
     expect(pruneUndoStack(stack, new Set(['zzz']))).toBe(stack)
+  })
+})
+
+describe('reaplicação de pedaço sem o original', () => {
+  it('o pedaço que já existe mantém dono e controle (não vira de quem reaplica)', () => {
+    const p1 = { ...piece('p1', 0), ...server('ana') } as TableObject
+    const out = applyLocalOp({ p1 }, { kind: 'create', object: piece('p1', 0), from: 'a' }, 'gm1')
+    expect(out.p1).toMatchObject({ ownerId: 'ana', control: { mode: 'list', clientIds: ['ana'] }, updatedBy: 'gm1' })
+  })
+
+  it('sem original nem pedaço anterior, fica com quem aplica', () => {
+    const out = applyLocalOp({}, { kind: 'create', object: piece('p1', 0), from: 'a' }, 'gm1')
+    expect(out.p1).toMatchObject({ ownerId: 'gm1', control: { mode: 'list', clientIds: ['gm1'] } })
+  })
+
+  it('mestre com corte pendente recebe o pedaço do servidor: o dono continua o do original', () => {
+    let s = submit(joined(gm, [stroke('a', 'ana'), image('img', 'ana')]))
+    s = reduceServer(s, { t: 'op', by: 'gm1', op: { kind: 'upsert', object: { ...piece('p1', 0), ...server('ana') } as TableObject } }, 0)
+    expect(s.objects.p1).toMatchObject({ ownerId: 'ana', control: { mode: 'list', clientIds: ['ana'] } })
   })
 })

@@ -13,18 +13,21 @@ export function objectOpsOf(op: Op): ObjectOp[] {
 /**
  * Aplica localmente só operações de objeto; as demais são tratadas nos reducers.
  * `create … from`: o pedaço herda dono e controle do original, se ele ainda está em `objects`
- * (por isso o lote cria os pedaços antes de apagar o original).
+ * (por isso o lote cria os pedaços antes de apagar o original); sem o original, os do objeto que já
+ * existe com esse id.
  */
 export function applyLocalOp(objects: Record<string, TableObject>, op: Op, selfId: string): Record<string, TableObject> {
   switch (op.kind) {
     case 'create': {
       const origin = op.from !== undefined ? objects[op.from] : undefined
+      // Reaplicação com o original já apagado: o pedaço que já está aqui mantém dono e controle.
+      const existing = objects[op.object.id]
       return {
         ...objects,
         [op.object.id]: {
           ...op.object,
-          control: origin?.control ?? { mode: 'list', clientIds: [selfId] },
-          ownerId: origin?.ownerId ?? selfId,
+          control: origin?.control ?? existing?.control ?? { mode: 'list', clientIds: [selfId] },
+          ownerId: origin?.ownerId ?? existing?.ownerId ?? selfId,
           version: 0,
           updatedBy: selfId,
         } as TableObject,

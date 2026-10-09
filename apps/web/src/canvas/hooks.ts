@@ -70,7 +70,7 @@ export function useFrameClock(active: boolean): number {
 
 /** Deslocamento do arrasto do grupo, se o item inteiro está na seleção em área; senão null. */
 export function useGroupOffset(id: string): Point | null {
-  return useTable((s) => (s.selectionOffset && s.selection?.whole.includes(id) ? s.selectionOffset : null))
+  return useTable((s) => (s.selectionOffset && s.selection?.wholeIds.has(id) ? s.selectionOffset : null))
 }
 
 /**

@@ -16,6 +16,7 @@ import {
   type ClearObjectsOp,
   type Layer,
   type Member,
+  type ObjectOp,
   type Op,
   type RejectReason,
   type Role,
@@ -26,7 +27,7 @@ import type { ConnStatus } from '../sync/SyncClient'
 import { chatRejectText, reduceChatEntry } from './chat'
 import { ackTurnOp, recomputeTurns } from './turns'
 import { applyLocalOp, objectOpsOf, opTargetId } from './localOps'
-import { batchInverse, inverseGroupOf } from './undo'
+import { batchInverse, inverseGroupOf, piecesOf, withPieces } from './undo'
 import { NO_SELECTION, type LocalPrev, type PendingOp, type TableState, type Toast } from './state'
 
 const REJECT_TEXT: Record<RejectReason, string> = {
@@ -202,19 +203,28 @@ function clearIds(s: TableState, op: ClearObjectsOp): Set<string> {
 /**
  * Desfazer não pode tentar mexer em objeto que a limpeza apagou: ops de update/delete para eles saem
  * da pilha (grupos que ficam vazios também). A limpeza em si não entra na pilha — o aviso é a proteção.
- * Dentro de um lote inverso, saem as sub-ações que citam os apagados, e também a recriação `from` de
- * um pedaço apagado (o servidor a recusaria sem o pedaço); lote que fica vazio sai.
+ * Dentro de um lote inverso, saem as sub-ações que citam os apagados. A recriação `from` de um pedaço
+ * apagado passa a usar outro pedaço do mesmo original que o lote ainda apaga; sem nenhum, ela sai
+ * (o servidor a recusaria sem o pedaço). Lote que fica vazio sai.
  */
 export function pruneUndoStack(stack: Op[][], gone: ReadonlySet<string>): Op[][] {
   const touchesGone = (op: Op): boolean => {
     if (op.kind === 'update' || op.kind === 'delete') return gone.has(op.id)
-    if (op.kind === 'create') return op.from !== undefined && gone.has(op.from)
+    if (op.kind === 'create') return piecesOf(op).some((id) => gone.has(id))
     return op.kind === 'batch' && op.ops.some(touchesGone)
+  }
+  const pruneSub = (op: ObjectOp): ObjectOp | null => {
+    if (!touchesGone(op)) return op
+    if (op.kind !== 'create' || op.from === undefined) return null
+    const alive = piecesOf(op).filter((id) => !gone.has(id))
+    if (alive.length === 0) return null
+    return withPieces({ ...op, from: gone.has(op.from) ? alive[0] : op.from }, alive)
   }
   const prune = (op: Op): Op | null => {
     if (op.kind !== 'batch') return touchesGone(op) ? null : op
-    const ops = op.ops.filter((sub) => !touchesGone(sub))
-    return ops.length === 0 ? null : ops.length === op.ops.length ? op : { ...op, ops }
+    if (!op.ops.some(touchesGone)) return op
+    const ops = op.ops.map(pruneSub).filter((sub): sub is ObjectOp => sub !== null)
+    return ops.length === 0 ? null : { ...op, ops }
   }
   if (!stack.some((group) => group.some(touchesGone))) return stack
   return stack
@@ -431,16 +441,44 @@ export function reduceSubmit<S extends TableState>(s: S, opId: string, op: Op, o
   return reduceSubmitBatch(s, [{ opId, op }], { isUndo: opts.isUndo, groupId: opId })
 }
 
+/**
+ * O servidor mudou ou apagou objetos: cada lote pendente que os toca passa a voltar para o valor novo
+ * (null = apagado) se for recusado, em vez de ressuscitar o que tinha antes do envio.
+ * `next(id, before)` devolve o valor novo, ou undefined se o objeto não mudou no servidor.
+ */
+function rebasePendingBatches(
+  pending: Record<string, PendingOp>,
+  next: (id: string, before: TableObject | null) => TableObject | null | undefined,
+): Record<string, PendingOp> {
+  let out = pending
+  for (const [opId, p] of Object.entries(pending)) {
+    if (p.prev?.kind !== 'batch') continue
+    let before = p.prev.before
+    for (const [id, old] of Object.entries(p.prev.before)) {
+      const value = next(id, old)
+      if (value === undefined || value === old) continue
+      if (before === p.prev.before) before = { ...before }
+      before[id] = value
+    }
+    if (before === p.prev.before) continue
+    if (out === pending) out = { ...pending }
+    out[opId] = { ...p, prev: { kind: 'batch', before } }
+  }
+  return out
+}
+
 /** Um upsert/delete vindo do servidor (op avulsa ou item de um lote). */
 function applyServerOp<S extends TableState>(s: S, op: AppliedOp, selfId: string): S {
   if (op.kind === 'upsert') {
     const object = op.object
-    const objects = reapplyPending({ ...s.objects, [object.id]: object }, s.pending, selfId, object.id)
-    return { ...s, objects, dragPreviews: omit(s.dragPreviews, object.id) }
+    const pending = rebasePendingBatches(s.pending, (id) => (id === object.id ? object : undefined))
+    const objects = reapplyPending({ ...s.objects, [object.id]: object }, pending, selfId, object.id)
+    return { ...s, pending, objects, dragPreviews: omit(s.dragPreviews, object.id) }
   }
   const id = op.id
   return {
     ...s,
+    pending: rebasePendingBatches(s.pending, (target) => (target === id ? null : undefined)),
     objects: omit(s.objects, id),
     notes: omit(s.notes, id),
     dragPreviews: omit(s.dragPreviews, id),
@@ -580,7 +618,8 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
     case 'objectsRemoved': {
       const gone = new Set(msg.ids)
       const out = withoutObjects(s, gone)
-      return { ...out, undoStack: pruneUndoStack(s.undoStack, gone) }
+      const pending = rebasePendingBatches(s.pending, (id) => (gone.has(id) ? null : undefined))
+      return { ...out, pending, undoStack: pruneUndoStack(s.undoStack, gone) }
     }
 
     case 'grabbed':
@@ -685,16 +724,22 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
     case 'layerShown': {
       const objects = { ...s.objects }
       for (const o of msg.objects) objects[o.id] = o
+      const shown = new Map(msg.objects.map((o) => [o.id, o]))
+      const pending = rebasePendingBatches(s.pending, (id) => shown.get(id))
       return recomputeLayers({
         ...s,
+        pending,
         confirmedLayers: upsertLayer(s.confirmedLayers, msg.layer),
-        objects: reapplyPending(objects, s.pending, selfId),
+        objects: reapplyPending(objects, pending, selfId),
       })
     }
 
     case 'layerHidden':
-    case 'layerRemoved':
-      return withoutLayer(recomputeLayers({ ...s, confirmedLayers: s.confirmedLayers.filter((l) => l.id !== msg.id) }), msg.id)
+    case 'layerRemoved': {
+      // Objetos da camada somem também do "antes" dos lotes pendentes (o servidor não os tem mais para mim).
+      const pending = rebasePendingBatches(s.pending, (_id, before) => (before?.layerId === msg.id ? null : undefined))
+      return withoutLayer(recomputeLayers({ ...s, pending, confirmedLayers: s.confirmedLayers.filter((l) => l.id !== msg.id) }), msg.id)
+    }
 
     case 'noteSet':
       return { ...s, notes: setNote(s.notes, msg.objectId, msg.text) }

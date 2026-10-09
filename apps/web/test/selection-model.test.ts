@@ -4,6 +4,7 @@ import {
   addArea,
   collectSelection,
   dropFromSelection,
+  isInSelection,
   pointInBox,
   selectionOfIds,
   type SelectContext,
@@ -98,13 +99,15 @@ describe('dropFromSelection, selectionOfIds e pointInBox', () => {
     expect(sel.bounds).toEqual({ x: 0, y: 0, width: 120, height: 20 })
     const kept = dropFromSelection(sel, new Set(['b']), c.objects)!
     expect(kept.whole).toEqual(['a'])
+    expect(isInSelection(kept, 'a')).toBe(true)
+    expect(isInSelection(kept, 'b')).toBe(false)
     expect(kept.bounds).toEqual({ x: 0, y: 0, width: 20, height: 20 })
     expect(dropFromSelection(kept, new Set(['a']), c.objects)).toBeNull()
   })
 
   it('selectionOfIds monta a seleção de itens inteiros (depois de mover)', () => {
     const objs = Object.fromEntries([tokenAt('a', 0, 0)].map((o) => [o.id, o]))
-    expect(selectionOfIds(['a', 'sumiu'], objs)).toEqual({ areas: [], whole: ['a'], parts: {}, bounds: { x: 0, y: 0, width: 20, height: 20 } })
+    expect(selectionOfIds(['a', 'sumiu'], objs)).toEqual({ areas: [], whole: ['a'], wholeIds: new Set(['a']), parts: {}, bounds: { x: 0, y: 0, width: 20, height: 20 } })
     expect(selectionOfIds([], objs)).toBeNull()
   })
 

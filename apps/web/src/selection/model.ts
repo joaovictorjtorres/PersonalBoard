@@ -32,6 +32,8 @@ export interface Selection {
   areas: SelectionArea[]
   /** Itens inteiros: imagens, formas e traços que caíram todos dentro. */
   whole: string[]
+  /** Os mesmos ids de `whole`, para consulta rápida por nó do canvas. */
+  wholeIds: ReadonlySet<string>
   /** Traços cortados, por id. O corte só acontece ao agir. */
   parts: Record<string, SelectionPart>
   /** Caixa de tudo que está selecionado (coordenadas do mapa). */
@@ -133,7 +135,13 @@ export function selectionBounds(whole: TableObject[], parts: SelectionPart[]): B
 
 function build(areas: SelectionArea[], whole: TableObject[], parts: Record<string, SelectionPart>): Selection | null {
   if (whole.length === 0 && Object.keys(parts).length === 0) return null
-  return { areas, whole: whole.map((o) => o.id), parts, bounds: selectionBounds(whole, Object.values(parts)) }
+  const ids = whole.map((o) => o.id)
+  return { areas, whole: ids, wholeIds: new Set(ids), parts, bounds: selectionBounds(whole, Object.values(parts)) }
+}
+
+/** O item está na seleção (inteiro ou cortado). */
+export function isInSelection(sel: Selection | null, id: string): boolean {
+  return !!sel && (sel.wholeIds.has(id) || id in sel.parts)
 }
 
 /** Seleção pelas áreas: só itens que a pessoa pode editar, na camada ativa (ou em todas). */
@@ -186,7 +194,7 @@ export function dropFromSelection(sel: Selection, ids: ReadonlySet<string>, obje
   const whole = sel.whole.filter((id) => !ids.has(id) && objects[id])
   const parts = Object.fromEntries(Object.entries(sel.parts).filter(([id]) => !ids.has(id) && objects[id]))
   if (whole.length === 0 && Object.keys(parts).length === 0) return null
-  return { ...sel, whole, parts, bounds: selectionBounds(whole.map((id) => objects[id]), Object.values(parts)) }
+  return { ...sel, whole, wholeIds: new Set(whole), parts, bounds: selectionBounds(whole.map((id) => objects[id]), Object.values(parts)) }
 }
 
 /** Seleção de itens inteiros pelos ids (o que fica selecionado depois de mover). */

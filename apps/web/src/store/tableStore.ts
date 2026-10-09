@@ -288,6 +288,8 @@ export function createTableStore(
       setStrokeWidth: (strokeWidth) => set({ strokeWidth }),
       setActiveLayer(activeLayerId) {
         const s = get()
+        // Clicar de novo na camada ativa não muda nada (nem desfaz a seleção).
+        if (activeLayerId === s.activeLayerId) return
         const layer = s.layers.find((l) => l.id === activeLayerId)
         // Jogador não escolhe camada travada (não poderia desenhar nela).
         if (layer && !canUseLayer(layer, s.self?.role)) {
