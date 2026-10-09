@@ -3,7 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { gitProblems, parseReleaseVersion, setPackageVersion } from '../../../scripts/release-lib.mjs'
+import { gitProblems, parseReleaseVersion, recoveryHint, setPackageVersion } from '../../../scripts/release-lib.mjs'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
@@ -14,7 +14,7 @@ describe('parseReleaseVersion', () => {
   })
 
   it('formato errado → mensagem de uso', () => {
-    for (const input of [undefined, '', 'v0.4.0', '0.4', '0.4.0-beta']) {
+    for (const input of [undefined, '', 'v0.4.0', '0.4', '0.4.0-beta', '01.2.3', '1.02.3', '1.2.03']) {
       expect(() => parseReleaseVersion(input, '0.3.0')).toThrow('uso: pnpm release X.Y.Z')
     }
   })
@@ -37,6 +37,20 @@ describe('gitProblems', () => {
       'a main local está 2 commit(s) atrás de origin/main; rode git pull',
       'a tag já existe',
     ])
+  })
+})
+
+describe('recoveryHint', () => {
+  it('antes do commit → nada publicado', () => {
+    for (const step of ['write', 'add', 'commit']) expect(recoveryHint(step, '0.4.0')).toContain('nada foi publicado')
+  })
+  it('falha na tag → reset do commit local', () => {
+    expect(recoveryHint('tag', '0.4.0')).toBe('o commit de release existe só localmente; para desfazer: git reset --hard HEAD~1')
+  })
+  it('falha no push → publicar ou desistir', () => {
+    const hint = recoveryHint('push', '0.4.0')
+    expect(hint).toContain('git push --atomic origin main v0.4.0')
+    expect(hint).toContain('git tag -d v0.4.0 && git reset --hard HEAD~1')
   })
 })
 

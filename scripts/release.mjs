@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readVersion } from '../apps/launcher/src/semver.mjs'
-import { gitProblems, parseReleaseVersion, setPackageVersion } from './release-lib.mjs'
+import { gitProblems, parseReleaseVersion, recoveryHint, setPackageVersion } from './release-lib.mjs'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
@@ -39,17 +39,31 @@ function main() {
   sh('pnpm typecheck')
   sh('pnpm test')
   if (dryRun) {
-    console.log(`✓ Simulação de ${tag} ok: nada foi gravado nem enviado.`)
+    console.log(`✓ Simulação de ${tag} ok: nada foi commitado nem enviado (só um git fetch).`)
     return
   }
 
   const packageFile = path.join(repo, 'package.json')
-  fs.writeFileSync(packageFile, setPackageVersion(fs.readFileSync(packageFile, 'utf8'), version))
-  fs.writeFileSync(versionFile, `${version}\n`)
-  git('add', 'package.json', 'version.txt')
-  git('commit', '-m', `release: ${tag}`)
-  git('tag', '-a', tag, '-m', `Mesa Virtual ${tag}`)
-  git('push', '--atomic', 'origin', 'main', tag)
+  let step = 'write'
+  try {
+    fs.writeFileSync(packageFile, setPackageVersion(fs.readFileSync(packageFile, 'utf8'), version))
+    fs.writeFileSync(versionFile, `${version}\n`)
+    step = 'add'
+    git('add', 'package.json', 'version.txt')
+    step = 'commit'
+    git('commit', '-m', `release: ${tag}`)
+    step = 'tag'
+    git('tag', '-a', tag, '-m', `Mesa Virtual ${tag}`)
+    step = 'push'
+    git('push', '--atomic', 'origin', 'main', tag)
+  } catch (err) {
+    if (step === 'write' || step === 'add' || step === 'commit') {
+      try {
+        git('checkout', '--', 'package.json', 'version.txt')
+      } catch {}
+    }
+    throw new Error(`${err.message}\n${recoveryHint(step, version)}`)
+  }
   console.log(`✓ ${tag} enviada. O GitHub Actions monta o pacote e cria a Release:`)
   console.log('  https://github.com/joaovictorjtorres/PersonalBoard/actions')
 }
