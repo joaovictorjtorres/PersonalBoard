@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
-import { createTable } from '../lib/api'
+import { createTable, type CreatedTable } from '../lib/api'
 import { rememberGmSecret } from '../lib/identity'
 import {
   deleteConfirmOptions,
   deleteTable,
   loadRegistry,
+  nextHomeLoad,
   renameTable,
   rotateConfirmOptions,
   rotateLink,
+  type HomeLoad,
   type RegistryLoad,
 } from '../lib/registry'
 import { askConfirm } from './confirm'
@@ -16,9 +18,16 @@ import { HomeView, type HomeActions } from './HomeView'
 const REFRESH_MS = 10_000
 
 export function HomePage() {
-  const [load, setLoad] = useState<RegistryLoad | null>(null)
+  const [state, setState] = useState<HomeLoad>({ load: null, stale: false })
   const [notice, setNotice] = useState<string | null>(null)
-  const refresh = useCallback(async () => setLoad(await loadRegistry()), [])
+  // Servidor aberto na rede (sem lista): a mesa recém-criada mostra os links uma vez.
+  const [created, setCreated] = useState<CreatedTable | null>(null)
+  const apply = useCallback((next: RegistryLoad) => setState((prev) => nextHomeLoad(prev, next)), [])
+  const refresh = useCallback(async () => {
+    const next = await loadRegistry()
+    apply(next)
+    return next
+  }, [apply])
 
   useEffect(() => {
     void refresh()
@@ -35,6 +44,7 @@ export function HomePage() {
       try {
         const result = await createTable(name.trim() || 'Nova mesa')
         rememberGmSecret(result.tableId, result.gmSecret)
+        setCreated(result)
         await refresh()
         return true
       } catch {
@@ -63,8 +73,7 @@ export function HomePage() {
         await refresh()
         return
       }
-      const next = await loadRegistry()
-      setLoad(next)
+      const next = await refresh()
       // O mestre deste PC continua entrando como mestre: o segredo guardado no navegador passa a ser o novo.
       const gmSecret = next.kind === 'local' ? next.view.tables.find((t) => t.id === table.id)?.gmSecret : undefined
       if (kind === 'gm' && gmSecret) rememberGmSecret(table.id, gmSecret)
@@ -72,5 +81,14 @@ export function HomePage() {
     retry: () => void refresh(),
   }
 
-  return <HomeView load={load} origin={window.location.origin} actions={actions} notice={notice} />
+  return (
+    <HomeView
+      load={state.load}
+      stale={state.stale}
+      created={created}
+      origin={window.location.origin}
+      actions={actions}
+      notice={notice}
+    />
+  )
 }

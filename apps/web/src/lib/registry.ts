@@ -1,18 +1,36 @@
 import type { RegistryTable, RegistryView } from '@mesa/shared'
 import type { ConfirmOptions } from '../ui/confirm'
 
-export type RegistryLoad = { kind: 'local'; view: RegistryView } | { kind: 'remote' } | { kind: 'error' }
+export type RegistryLoad = { kind: 'local'; view: RegistryView } | { kind: 'remote' } | { kind: 'exposed' } | { kind: 'error' }
 
-/** 404 = pedido de fora do PC (túnel): a página não mostra lista nem criação. */
+/**
+ * 404 = pedido de fora do PC (túnel): a página não mostra lista nem criação. 404 com `exposed` =
+ * servidor aberto na rede (`pnpm host`, VPN): sem lista, mas criar mesa continua valendo.
+ */
 export async function loadRegistry(): Promise<RegistryLoad> {
   try {
     const res = await fetch('/api/registry/tables')
-    if (res.status === 404) return { kind: 'remote' }
+    if (res.status === 404) {
+      const body = (await res.json().catch(() => null)) as { exposed?: unknown } | null
+      return body?.exposed === true ? { kind: 'exposed' } : { kind: 'remote' }
+    }
     if (!res.ok) return { kind: 'error' }
     return { kind: 'local', view: (await res.json()) as RegistryView }
   } catch {
     return { kind: 'error' }
   }
+}
+
+export interface HomeLoad {
+  load: RegistryLoad | null
+  /** A última atualização falhou: a lista mostrada é a anterior. */
+  stale: boolean
+}
+
+/** Depois da primeira carga boa, uma atualização que falha mantém a lista e só avisa; a tela de erro é só da primeira. */
+export function nextHomeLoad(prev: HomeLoad, next: RegistryLoad): HomeLoad {
+  if (next.kind === 'error' && prev.load?.kind === 'local') return { load: prev.load, stale: true }
+  return { load: next, stale: false }
 }
 
 // O índice só aceita pedidos que mudam algo com Content-Type JSON (proteção contra outros sites).

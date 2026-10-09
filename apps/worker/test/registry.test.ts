@@ -1,7 +1,9 @@
 import { env, exports } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
 import type { RegistryView } from '@mesa/shared'
+import worker from '../src/index'
 import { isJsonRequest, isLocalRequest } from '../src/local'
+import { handleRegistry } from '../src/registry-api'
 import { LOCAL, TestClient, createTable, tokenObject } from './helpers'
 
 const SELF = exports.default
@@ -265,5 +267,70 @@ describe('gerar novos links', () => {
     const { tableId } = await createTable()
     expect((await rotate(tableId, 'gm-link', { 'cf-ray': 'x' })).status).toBe(404)
     expect((await SELF.fetch(`${LOCAL}/api/registry/tables/${tableId}/player-link`, { method: 'POST' })).status).toBe(415)
+  })
+})
+
+describe('gerar link: mesa some do índice no meio do caminho', () => {
+  it('registro não grava (mesa apagada do índice) → 404', async () => {
+    const { tableId } = await createTable()
+    const gone = { findTable: async () => ({ id: tableId }), setPlayerKey: async () => false, setGmSecret: async () => false }
+    const fakeEnv = { ...env, REGISTRY: { idFromName: () => 'x', get: () => gone } } as unknown as Env
+    for (const kind of ['player-link', 'gm-link']) {
+      const res = await handleRegistry(new Request(`${LOCAL}/x`, { method: 'POST' }), fakeEnv, ['tables', tableId, kind])
+      expect(res.status, kind).toBe(404)
+    }
+  })
+})
+
+describe('servidor aberto na rede (MESA_EXPOSED, `pnpm host`)', () => {
+  const exposedEnv = { ...env, MESA_EXPOSED: '1' } as Env
+  const call = (url: string, init: RequestInit = {}) =>
+    worker.fetch!(new Request(url, init) as Parameters<NonNullable<typeof worker.fetch>>[0], exposedEnv)
+  const spoofed = { 'cf-connecting-ip': '127.0.0.1' }
+  const jsonHeaders = { 'Content-Type': 'application/json', ...spoofed }
+
+  it('toda rota /api/registry/* responde 404, mesmo com Host e cf-connecting-ip de loopback', async () => {
+    const { tableId } = await createTable()
+    const routes: [string, RequestInit][] = [
+      ['/api/registry/tables', { headers: spoofed }],
+      ['/api/registry/tunnel', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ url: null }) }],
+      [`/api/registry/tables/${tableId}`, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify({ name: 'x' }) }],
+      [`/api/registry/tables/${tableId}`, { method: 'DELETE', headers: jsonHeaders }],
+      [`/api/registry/tables/${tableId}/player-link`, { method: 'POST', headers: jsonHeaders }],
+      [`/api/registry/tables/${tableId}/gm-link`, { method: 'POST', headers: jsonHeaders }],
+    ]
+    for (const [path, init] of routes) {
+      for (const host of ['http://localhost:8787', 'http://100.64.0.2:8787']) {
+        expect((await call(`${host}${path}`, init)).status, `${init.method ?? 'GET'} ${host}${path}`).toBe(404)
+      }
+    }
+    // nada mudou: a mesa continua no índice
+    expect((await registryView()).tables.some((t) => t.id === tableId)).toBe(true)
+  })
+
+  it('POST /api/tables funciona para quem está na rede e devolve só os segredos da mesa criada', async () => {
+    const other = await createTable('Outra')
+    const res = await call('http://100.64.0.2:8787/api/tables', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'cf-connecting-ip': '100.64.0.5' },
+      body: JSON.stringify({ name: 'Pela VPN' }),
+    })
+    expect(res.status).toBe(201)
+    const text = await res.text()
+    const body = JSON.parse(text) as Record<string, unknown>
+    expect(Object.keys(body).sort()).toEqual(['gmSecret', 'playerKey', 'tableId'])
+    for (const secret of [other.gmSecret, other.playerKey, other.tableId]) expect(text).not.toContain(secret)
+    // ainda exige corpo JSON (outro site não cria mesas pelo navegador de ninguém)
+    expect((await call('http://100.64.0.2:8787/api/tables', { method: 'POST', body: '{}' })).status).toBe(415)
+  })
+
+  it('sem MESA_EXPOSED (127.0.0.1): pedido da rede não cria mesa; local vê a lista', async () => {
+    const res = await SELF.fetch('http://100.64.0.2:8787/api/tables', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'cf-connecting-ip': '100.64.0.5' },
+      body: '{}',
+    })
+    expect(res.status).toBe(404)
+    expect((await SELF.fetch(`${LOCAL}/api/registry/tables`)).status).toBe(200)
   })
 })

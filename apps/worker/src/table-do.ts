@@ -218,6 +218,12 @@ export class TableDO extends DurableObject<Env> {
     const m2 = msg.v === 2
     let clientId = msg.clientId
     const existing = this.store.getMember(clientId)
+    // Membro mestre sem o segredo de mestre atual (link de mestre gerado de novo): nunca vira jogador.
+    if (existing?.role === 'gm' && role !== 'gm') {
+      this.send(ws, { t: 'error', reason: 'link_expired' })
+      ws.close(4403, 'link_expired')
+      return
+    }
     let adopted = false
     // Navegador novo (clientId desconhecido): o mestre volta a ser o membro mestre; o jogador assume
     // quem tem o mesmo apelido e está fora da mesa; apelido de alguém online é recusado.

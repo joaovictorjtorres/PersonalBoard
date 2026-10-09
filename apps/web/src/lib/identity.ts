@@ -91,15 +91,16 @@ function captureLinkSecrets(tableId: string): void {
   }
 }
 
+/** Armazenamento primeiro: um link novo gravado por outra aba (lista de mesas) vale para esta; memória só se bloqueado. */
 export function readGmSecret(tableId: string): string | undefined {
   captureLinkSecrets(tableId)
-  return memoryGm.get(tableId) ?? safeGet(gmKey(tableId)) ?? undefined
+  return safeGet(gmKey(tableId)) ?? memoryGm.get(tableId)
 }
 
 /** Chave do link de jogador desta mesa (do link aberto agora ou guardada de antes). */
 export function readPlayerKey(tableId: string): string | undefined {
   captureLinkSecrets(tableId)
-  return memoryKeys.get(tableId) ?? safeGet(keyKey(tableId)) ?? undefined
+  return safeGet(keyKey(tableId)) ?? memoryKeys.get(tableId)
 }
 
 const secretKey = (tableId: string) => `mesa:secret:${tableId}`

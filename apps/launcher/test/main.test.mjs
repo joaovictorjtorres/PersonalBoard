@@ -119,6 +119,20 @@ describe('run: erros', () => {
     expect(await result).toBe(0)
   })
 
+  it('abre a lista local logo que o servidor sobe, antes de o túnel responder', async () => {
+    const { h, root } = setup({ tunnel: 'silent' })
+    const result = run(h.deps, { root, noUpdate: true })
+    await until(() => h.children.tunnel.length === 1)
+    expect(h.browser).toHaveLength(1)
+    expect(h.browser[0]).toContain('"http://localhost:8787/"')
+    expect(h.clipboard).toHaveLength(0)
+    h.children.tunnel[0].emit('error', new Error('spawn ENOENT'))
+    await until(() => h.output.includes(MSG.closeHint))
+    expect(h.browser).toHaveLength(1)
+    h.signal()
+    expect(await result).toBe(0)
+  })
+
   it('cloudflared.exe ausente (erro de spawn) → link local', async () => {
     const { h, root } = setup({ tunnel: 'silent' })
     const result = run(h.deps, { root, noUpdate: true })
@@ -372,16 +386,18 @@ describe('run: endurecimento (T5)', () => {
     expect(await result).toBe(0)
   })
 
-  it('espera o link do túnel responder antes de copiar e abrir o navegador', async () => {
+  it('espera o link do túnel responder antes de copiar; o navegador já abriu a lista local antes', async () => {
     const { h, root } = setup()
     const baseFetch = h.deps.fetch
     let calls = 0
     let clipboardWhenAnswered = -1
+    let browserWhenAnswered = -1
     h.deps.fetch = async (url, init) => {
       if (String(url).includes('mesa-1.trycloudflare.com')) {
         calls++
         if (calls < 4) throw new TypeError('fetch failed')
-        clipboardWhenAnswered = h.clipboard.length + h.browser.length
+        clipboardWhenAnswered = h.clipboard.length
+        browserWhenAnswered = h.browser.length
         return new Response('ok', { status: 200 })
       }
       return baseFetch(url, init)
@@ -389,6 +405,8 @@ describe('run: endurecimento (T5)', () => {
     const result = (await startServing(h, root)).result
     expect(calls).toBe(4)
     expect(clipboardWhenAnswered).toBe(0)
+    expect(browserWhenAnswered).toBe(1)
+    expect(h.browser).toHaveLength(1)
     expect(h.clipboard).toEqual(['https://mesa-1.trycloudflare.com'])
     expect(h.output).not.toContain(MSG.linkMayDelay)
     h.signal()

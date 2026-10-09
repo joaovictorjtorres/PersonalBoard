@@ -12,7 +12,8 @@
     "build:e2e": "pnpm --filter @mesa/web exec vite build --outDir dist-e2e --emptyOutDir",
     "e2e": "playwright test",
     "deploy": "pnpm build && pnpm --filter @mesa/worker run deploy",
-    "host": "pnpm build && pnpm --filter @mesa/worker exec wrangler dev --ip 0.0.0.0 --port 8787",
+    "local": "pnpm build && pnpm --filter @mesa/worker exec wrangler dev --ip 127.0.0.1 --port 8787",
+    "host": "pnpm build && pnpm --filter @mesa/worker exec wrangler dev --ip 0.0.0.0 --port 8787 --var MESA_EXPOSED:1",
     "tunnel": "cloudflared tunnel --url http://localhost:8787",
     "win:package": "node scripts/build-win-package.mjs",
     "release": "node scripts/release.mjs"

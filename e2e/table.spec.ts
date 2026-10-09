@@ -1598,3 +1598,28 @@ test('novo link de mestre: o antigo expira, "Abrir como mestre" usa o novo e ent
   expect(await again.evaluate(() => (window as any).__mesa.getState().self.role)).toBe('gm')
   expect(await gm.evaluate(() => (window as any).__mesa.getState().status)).toBe('open')
 })
+
+test('card da lista: enquanto gera um link, os botões de gerar, renomear e apagar ficam desativados', async ({ page }) => {
+  const name = `Ocupado ${Date.now()}`
+  const t = await (await page.request.post('/api/tables', { data: { name } })).json()
+  let release: () => void = () => {}
+  const held = new Promise<void>((r) => (release = r))
+  let rotations = 0
+  await page.route(`**/api/registry/tables/${t.tableId}/player-link`, async (route) => {
+    rotations++
+    await held
+    await route.continue()
+  })
+  await page.goto('/')
+  const card = tableCard(page, name)
+  const buttons = ['Gerar novo link de jogador', 'Gerar novo link de mestre', 'Renomear', 'Apagar'].map((label) =>
+    card.getByRole('button', { name: label }),
+  )
+  await buttons[0].click()
+  await confirmDialog(page).getByRole('button', { name: 'Gerar novo link' }).click()
+  await expect.poll(() => rotations).toBe(1)
+  for (const b of buttons) await expect(b).toBeDisabled()
+  release()
+  for (const b of buttons) await expect(b).toBeEnabled()
+  expect(rotations).toBe(1)
+})

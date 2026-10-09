@@ -430,6 +430,19 @@ describe('membros e snapshot', () => {
     const removed = effects(r).find((e) => e.kind === 'objectsRemoved')
     expect(removed && removed.kind === 'objectsRemoved' && removed.objects.map((o) => o.id).sort()).toEqual(['t1', 't2'])
   })
+
+  it('memberRemove apagando: não solta (released) itens apagados; só os que ficam', () => {
+    engine.join({ clientId: 'A', nickname: 'Ana', role: 'player' }, new Set())
+    engine.applyOp('A', 'player', 'a1', create(token({ id: 'mine' })))
+    engine.applyOp('G', 'gm', 'g1', create(token({ id: 'shared' })))
+    engine.applyOp('G', 'gm', 'g2', update('shared', { control: { mode: 'all', clientIds: [] } }))
+    expect(engine.grab('A', 'player', 'mine')).toBe(true)
+    expect(engine.grab('A', 'player', 'shared')).toBe(true)
+    const r = engine.applyOp('G', 'gm', 'g3', { kind: 'memberRemove', clientId: 'A', deleteItems: true }, new Set(['G']))
+    const released = effects(r).filter((e) => e.kind === 'released')
+    expect(released).toEqual([{ kind: 'released', objectId: 'shared', clientId: 'A' }])
+    expect(engine.activeLocks()).toEqual([])
+  })
 })
 
 const rect = (over: Record<string, unknown> = {}): NewObject =>

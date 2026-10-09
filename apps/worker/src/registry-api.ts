@@ -79,13 +79,15 @@ async function rotateLink(env: Env, id: string, kind: 'player' | 'gm'): Promise<
   const secret = randomSecret()
   const hash = await sha256Hex(secret)
   const table = tableStub(env, id)
-  // TableDO primeiro: se falhar no meio, o índice ainda mostra o link que funciona.
+  // Não é atômico: o TableDO passa a aceitar só o segredo novo e depois o índice o guarda. Se a segunda
+  // escrita falhar, o índice mostra um link que já não funciona; gerar o link de novo conserta os dois.
+  // Mesa que sumiu no meio do caminho (apagada) → 404.
   if (kind === 'player') {
     if (!(await table.setPlayerKeyHash(hash))) return notFound()
-    await registry.setPlayerKey(id, secret)
+    if (!(await registry.setPlayerKey(id, secret))) return notFound()
   } else {
     if (!(await table.setGmSecretHash(hash))) return notFound()
-    await registry.setGmSecret(id, secret)
+    if (!(await registry.setGmSecret(id, secret))) return notFound()
   }
   return noContent()
 }

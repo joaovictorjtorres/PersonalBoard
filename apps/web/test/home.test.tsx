@@ -1,7 +1,17 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { RegistryTable } from '@mesa/shared'
-import { deleteConfirmOptions, formatWhen, playersLabel, rotateConfirmOptions, tableLinks, type RegistryLoad } from '../src/lib/registry'
+import {
+  deleteConfirmOptions,
+  formatWhen,
+  loadRegistry,
+  nextHomeLoad,
+  playersLabel,
+  rotateConfirmOptions,
+  tableLinks,
+  type RegistryLoad,
+} from '../src/lib/registry'
+import type { CreatedTable } from '../src/lib/api'
 import { HomeView, type HomeActions } from '../src/ui/HomeView'
 
 const table: RegistryTable = {
@@ -9,8 +19,8 @@ const table: RegistryTable = {
   players: 2, gmSecret: 'segredo', playerKey: null,
 }
 const actions: HomeActions = { create: async () => true, rename: async () => true, remove: async () => {}, rotate: async () => {}, retry: () => {} }
-const render = (load: RegistryLoad | null) =>
-  renderToStaticMarkup(<HomeView load={load} origin="http://localhost:8787" actions={actions} notice={null} />).replace(/<!-- -->/g, '')
+const render = (load: RegistryLoad | null, extra: { stale?: boolean; created?: CreatedTable } = {}) =>
+  renderToStaticMarkup(<HomeView load={load} origin="http://localhost:8787" actions={actions} notice={null} {...extra} />).replace(/<!-- -->/g, '')
 
 describe('HomeView', () => {
   it('local com túnel: link do túnel, card com nome escapado, jogadores e todos os botões', () => {
@@ -40,9 +50,51 @@ describe('HomeView', () => {
 
   it('erro mostra "Tentar de novo"; nenhum estado tem travessão', () => {
     expect(render({ kind: 'error' })).toContain('Tentar de novo')
-    for (const load of [null, { kind: 'remote' }, { kind: 'error' }, { kind: 'local', view: { tables: [table], tunnelUrl: null } }] as const) {
+    for (const load of [null, { kind: 'remote' }, { kind: 'exposed' }, { kind: 'error' }, { kind: 'local', view: { tables: [table], tunnelUrl: null } }] as const) {
       expect(render(load as RegistryLoad | null)).not.toMatch(/[–—]/)
     }
+    expect(render({ kind: 'local', view: { tables: [table], tunnelUrl: null } }, { stale: true })).not.toMatch(/[–—]/)
+  })
+
+  it('atualização que falhou: mantém a lista e mostra um aviso pequeno', () => {
+    const html = render({ kind: 'local', view: { tables: [table], tunnelUrl: null } }, { stale: true })
+    expect(html).toContain('Não foi possível atualizar a lista. Mostrando a última versão.')
+    expect(html).toContain('Campanha &lt;b&gt;')
+    expect(html).not.toContain('Tentar de novo')
+    expect(render({ kind: 'local', view: { tables: [table], tunnelUrl: null } })).not.toContain('Não foi possível atualizar')
+  })
+
+  it('servidor aberto na rede: cria mesa sem lista; a mesa criada mostra os links uma vez', () => {
+    const empty = render({ kind: 'exposed' })
+    expect(empty).toContain('Criar mesa')
+    expect(empty).toContain('a lista de mesas fica desligada')
+    expect(empty).not.toContain('Suas mesas')
+    expect(empty).not.toContain('Abrir como mestre')
+    const html = render({ kind: 'exposed' }, { created: { tableId: 'AbCdEfGhIj', gmSecret: 's1', playerKey: 'k1' } })
+    expect(html).toContain('Mesa criada')
+    expect(html).toContain('href="/t/AbCdEfGhIj#gm=s1"')
+    expect(html).toContain('Copiar link de jogador')
+  })
+})
+
+describe('carregar a lista', () => {
+  afterEach(() => vi.unstubAllGlobals())
+  const local: RegistryLoad = { kind: 'local', view: { tables: [table], tunnelUrl: null } }
+
+  it('nextHomeLoad: erro depois de carga boa mantém a anterior (stale); erro na primeira mostra o erro; sucesso limpa o aviso', () => {
+    expect(nextHomeLoad({ load: null, stale: false }, { kind: 'error' })).toEqual({ load: { kind: 'error' }, stale: false })
+    expect(nextHomeLoad({ load: local, stale: false }, { kind: 'error' })).toEqual({ load: local, stale: true })
+    expect(nextHomeLoad({ load: local, stale: true }, { kind: 'error' })).toEqual({ load: local, stale: true })
+    expect(nextHomeLoad({ load: local, stale: true }, local)).toEqual({ load: local, stale: false })
+    expect(nextHomeLoad({ load: { kind: 'error' }, stale: false }, { kind: 'error' })).toEqual({ load: { kind: 'error' }, stale: false })
+  })
+
+  it('loadRegistry: 404 do túnel → remote; 404 com exposed → exposed', async () => {
+    const reply = (body: unknown) => vi.stubGlobal('fetch', async () => new Response(JSON.stringify(body), { status: 404 }))
+    reply({ error: 'not_found' })
+    expect(await loadRegistry()).toEqual({ kind: 'remote' })
+    reply({ error: 'not_found', exposed: true })
+    expect(await loadRegistry()).toEqual({ kind: 'exposed' })
   })
 })
 

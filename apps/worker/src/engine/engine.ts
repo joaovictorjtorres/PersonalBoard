@@ -453,9 +453,10 @@ export class TableEngine {
     if (member.role === 'gm') return reject('forbidden', null)
     this.store.deleteMember(clientId)
     const effects: OpEffect[] = [{ kind: 'memberRemoved', clientId }]
-    for (const objectId of this.releaseAll(clientId)) effects.push({ kind: 'released', objectId, clientId })
+    const ownLocks = this.releaseAll(clientId)
     const removed: TableObject[] = []
     const changes: ObjectChange[] = []
+    const lockReleases: OpEffect[] = []
     for (const o of this.store.listObjects()) {
       const owned = o.ownerId === clientId
       if (owned && deleteItems) {
@@ -472,11 +473,15 @@ export class TableEngine {
       const lock = this.locks.get(o.id)
       if (lock && !canControl(after, lock.clientId, lock.role)) {
         this.locks.delete(o.id)
-        effects.push({ kind: 'released', objectId: o.id, clientId: lock.clientId })
+        lockReleases.push({ kind: 'released', objectId: o.id, clientId: lock.clientId })
       }
       // `echo`: o mestre que pediu também recebe (ele não aplicou isto de forma otimista).
       changes.push({ kind: 'object', before: o, after, echo: true })
     }
+    // Itens apagados não geram `released`: o `objectsRemoved` já some com eles (e não espalha ids que a pessoa não via).
+    const removedIds = new Set(removed.map((o) => o.id))
+    for (const objectId of ownLocks) if (!removedIds.has(objectId)) effects.push({ kind: 'released', objectId, clientId })
+    effects.push(...lockReleases)
     if (changes.length > 0) effects.push({ kind: 'objects', changes })
     if (removed.length > 0) effects.push({ kind: 'objectsRemoved', objects: removed })
     return done(0, ...effects)

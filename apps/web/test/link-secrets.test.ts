@@ -42,4 +42,29 @@ describe('segredos do link', () => {
     expect(readPlayerKey('T')).toBeUndefined()
     expect(readGmSecret('T')).toBe('segredo')
   })
+
+  it('segredo de mestre e chave novos gravados por outra aba valem para a aba aberta (armazenamento antes da memória)', async () => {
+    const { mem } = stub('#gm=velho&j=chaveVelha')
+    const { readPlayerKey, readGmSecret, rememberGmSecret } = await import('../src/lib/identity')
+    expect(readGmSecret('T')).toBe('velho')
+    rememberGmSecret('T', 'novo')
+    mem.set('mesa:key:T', 'chaveNova')
+    expect(readGmSecret('T')).toBe('novo')
+    expect(readPlayerKey('T')).toBe('chaveNova')
+  })
+
+  it('armazenamento bloqueado: a memória do link aberto continua valendo', async () => {
+    stub('#gm=segredo&j=chave')
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('bloqueado')
+      },
+      setItem: () => {
+        throw new Error('bloqueado')
+      },
+    })
+    const { readPlayerKey, readGmSecret } = await import('../src/lib/identity')
+    expect(readGmSecret('T')).toBe('segredo')
+    expect(readPlayerKey('T')).toBe('chave')
+  })
 })

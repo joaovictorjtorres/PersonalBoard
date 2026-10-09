@@ -1,6 +1,12 @@
 import type { KnownPlayer } from '@mesa/shared'
 
-export async function createTable(name: string): Promise<{ tableId: string; gmSecret: string }> {
+export interface CreatedTable {
+  tableId: string
+  gmSecret: string
+  playerKey: string | null
+}
+
+export async function createTable(name: string): Promise<CreatedTable> {
   const res = await fetch('/api/tables', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

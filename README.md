@@ -22,7 +22,7 @@ pnpm dev:web      # front com hot reload em :5173 (proxy para :8787)
 pnpm test         # unitários + Durable Object
 pnpm e2e          # ponta a ponta: sobe um wrangler dev próprio em :8788 (E2E_PORT muda a porta),
                   # com build em apps/web/dist-e2e e estado em apps/worker/.wrangler/e2e-state,
-                  # não interfere num `pnpm host` rodando na 8787
+                  # não interfere num `pnpm local`/`pnpm host` rodando na 8787
 ```
 
 ## Publicar uma versão (pacote Windows)
@@ -116,7 +116,7 @@ Instale antes o `cloudflared` (binário oficial em https://github.com/cloudflare
 O Quick Tunnel não exige conta Cloudflare.
 
 ```bash
-pnpm host     # terminal 1: servidor local persistente
+pnpm local    # terminal 1: servidor local persistente (só neste PC, em 127.0.0.1)
 pnpm tunnel   # terminal 2: imprime o link https://….trycloudflare.com para o grupo
 ```
 
@@ -129,12 +129,15 @@ e mostra "Túnel indisponível, só local"; para os links já saírem com o tún
 
 Seu computador precisa ficar ligado durante a sessão.
 
-Atenção: `pnpm host` e `pnpm dev:worker` usam a mesma porta 8787; não rode os dois ao mesmo tempo.
+Atenção: `pnpm local`, `pnpm host` e `pnpm dev:worker` usam a mesma porta 8787; não rode dois ao mesmo tempo.
 
-Alternativa: VPN (Tailscale, ZeroTier, Hamachi…). Todos entram na mesma rede virtual e acessam
-`http://<IP-da-VPN-do-host>:8787`. Libere a porta 8787 no firewall do host e confira o limite de
-membros do plano gratuito da VPN escolhida (são 7 pessoas contando o host; o Hamachi gratuito,
-por exemplo, costuma limitar redes a 5).
+Alternativa: VPN (Tailscale, ZeroTier, Hamachi…). Rode `pnpm host` (servidor aberto na rede, em
+0.0.0.0) em vez de `pnpm local`. Todos entram na mesma rede virtual e acessam
+`http://<IP-da-VPN-do-host>:8787`. **No modo VPN não há lista de mesas**: aberto na rede, o servidor
+não consegue garantir que um pedido veio do próprio PC, então a lista (com os links de mestre) fica
+desligada. A página inicial só cria mesas; guarde o link de mestre mostrado ao criar. Libere a
+porta 8787 no firewall do host e confira o limite de membros do plano gratuito da VPN escolhida
+(são 7 pessoas contando o host; o Hamachi gratuito, por exemplo, costuma limitar redes a 5).
 
 Acesso por `http://` em IP funciona; o app já trata a falta de `crypto.randomUUID` fora de HTTPS.
 

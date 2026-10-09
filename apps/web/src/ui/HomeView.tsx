@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { TABLE_NAME_MAX, type RegistryTable } from '@mesa/shared'
+import type { CreatedTable } from '../lib/api'
 import { copyText, formatWhen, playersLabel, tableLinks, type LinkKind, type RegistryLoad, type TableLinks } from '../lib/registry'
 
 export interface HomeActions {
@@ -12,11 +13,15 @@ export interface HomeActions {
 
 export function HomeView({
   load,
+  stale = false,
+  created = null,
   origin,
   actions,
   notice,
 }: {
   load: RegistryLoad | null
+  stale?: boolean
+  created?: CreatedTable | null
   origin: string
   actions: HomeActions
   notice: string | null
@@ -33,6 +38,17 @@ export function HomeView({
       <main className="home">
         <h1>Mesa Virtual</h1>
         <p className="home-message">Peça o link da mesa ao mestre</p>
+      </main>
+    )
+  }
+  if (load.kind === 'exposed') {
+    return (
+      <main className="home">
+        <h1>Mesa Virtual</h1>
+        <p className="muted">Servidor aberto na rede: a lista de mesas fica desligada. Guarde o link de mestre ao criar.</p>
+        <NewTableForm onCreate={actions.create} />
+        {notice && <p role="alert" className="form-error">{notice}</p>}
+        {created && <CreatedTableBox created={created} origin={origin} />}
       </main>
     )
   }
@@ -54,6 +70,7 @@ export function HomeView({
       <TunnelBox tunnelUrl={tunnelUrl} />
       <NewTableForm onCreate={actions.create} />
       {notice && <p role="alert" className="form-error">{notice}</p>}
+      {stale && <p role="status" className="muted">Não foi possível atualizar a lista. Mostrando a última versão.</p>}
       <section aria-label="Suas mesas" className="home-section">
         <h2>Suas mesas</h2>
         {tables.length === 0 ? (
@@ -67,6 +84,22 @@ export function HomeView({
         )}
       </section>
     </main>
+  )
+}
+
+/** Sem lista (servidor aberto na rede): os links da mesa recém-criada, mostrados uma vez. */
+function CreatedTableBox({ created, origin }: { created: CreatedTable; origin: string }) {
+  const links = tableLinks(origin, null, { id: created.tableId, gmSecret: created.gmSecret, playerKey: created.playerKey })
+  return (
+    <section aria-label="Mesa criada" className="table-card">
+      <h3>Mesa criada</h3>
+      <p className="muted">Guarde o link de mestre: sem a lista de mesas, ele não aparece de novo.</p>
+      <div className="table-actions-group">
+        <a className="button primary" href={links.openAsGm}>Abrir como mestre</a>
+        <CopyButton text={links.gm} label="Copiar link de mestre" />
+        <CopyButton text={links.player} label="Copiar link de jogador" />
+      </div>
+    </section>
   )
 }
 
@@ -104,7 +137,21 @@ export function CopyButton({ text, label }: { text: string; label: string }) {
 export function TableCard({ table, links, actions }: { table: RegistryTable; links: TableLinks; actions: HomeActions }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(table.name)
+  // Uma ação por vez no card (gerar link, renomear, apagar): evita duas rotações ao mesmo tempo.
   const [busy, setBusy] = useState(false)
+  const inFlight = useRef(false)
+
+  async function guard(run: () => Promise<unknown>) {
+    if (inFlight.current) return
+    inFlight.current = true
+    setBusy(true)
+    try {
+      await run()
+    } finally {
+      inFlight.current = false
+      setBusy(false)
+    }
+  }
 
   async function save() {
     const name = draft.trim()
@@ -112,10 +159,9 @@ export function TableCard({ table, links, actions }: { table: RegistryTable; lin
       setEditing(false)
       return
     }
-    setBusy(true)
-    const ok = await actions.rename(table.id, name)
-    setBusy(false)
-    if (ok) setEditing(false)
+    await guard(async () => {
+      if (await actions.rename(table.id, name)) setEditing(false)
+    })
   }
 
   return (
@@ -155,10 +201,15 @@ export function TableCard({ table, links, actions }: { table: RegistryTable; lin
           <CopyButton text={links.player} label="Copiar link de jogador" />
         </div>
         <div className="table-actions-group">
-          <button type="button" onClick={() => void actions.rotate(table, 'player')}>Gerar novo link de jogador</button>
-          <button type="button" onClick={() => void actions.rotate(table, 'gm')}>Gerar novo link de mestre</button>
+          <button type="button" disabled={busy} onClick={() => void guard(() => actions.rotate(table, 'player'))}>
+            Gerar novo link de jogador
+          </button>
+          <button type="button" disabled={busy} onClick={() => void guard(() => actions.rotate(table, 'gm'))}>
+            Gerar novo link de mestre
+          </button>
           <button
             type="button"
+            disabled={busy}
             onClick={() => {
               setDraft(table.name)
               setEditing(true)
@@ -166,7 +217,9 @@ export function TableCard({ table, links, actions }: { table: RegistryTable; lin
           >
             Renomear
           </button>
-          <button type="button" className="danger" onClick={() => void actions.remove(table)}>Apagar</button>
+          <button type="button" className="danger" disabled={busy} onClick={() => void guard(() => actions.remove(table))}>
+            Apagar
+          </button>
         </div>
       </div>
     </li>

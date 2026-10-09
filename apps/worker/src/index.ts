@@ -33,14 +33,23 @@ async function createTable(request: Request, env: Env): Promise<Response> {
   return json({ error: 'could_not_create' }, 500)
 }
 
+/**
+ * Servidor aberto na rede (`pnpm host`, --ip 0.0.0.0): alguém da rede/VPN consegue forjar Host e
+ * cf-connecting-ip de loopback, então o filtro de pedido local não vale e o índice (com os segredos) some.
+ */
+const isExposed = (env: Env) => !!env.MESA_EXPOSED
+
+const rejectNonJson = (request: Request): Response | null =>
+  request.method !== 'GET' && request.method !== 'HEAD' && !isJsonRequest(request) ? json({ error: 'unsupported_media_type' }, 415) : null
+
 /** Índice e criação: só do próprio PC (nunca pelo túnel nem por outro site), e escrita só com corpo JSON. */
 function rejectNonLocal(request: Request): Response | null {
   if (!isLocalRequest(request)) return notFound()
-  if (request.method !== 'GET' && request.method !== 'HEAD' && !isJsonRequest(request)) {
-    return json({ error: 'unsupported_media_type' }, 415)
-  }
-  return null
+  return rejectNonJson(request)
 }
+
+/** Aberto na rede: criar mesa fica livre como antes do índice (devolve só os segredos da mesa criada). */
+const rejectCreate = (request: Request, env: Env) => (isExposed(env) ? rejectNonJson(request) : rejectNonLocal(request))
 
 export default {
   async fetch(request, env): Promise<Response> {
@@ -48,11 +57,12 @@ export default {
     const parts = url.pathname.split('/').filter(Boolean)
 
     if (parts[0] === 'api' && parts[1] === 'registry') {
+      if (isExposed(env)) return json({ error: 'not_found', exposed: true }, 404)
       return rejectNonLocal(request) ?? handleRegistry(request, env, parts.slice(2))
     }
 
     if (parts[0] === 'api' && parts[1] === 'tables') {
-      if (parts.length === 2 && request.method === 'POST') return rejectNonLocal(request) ?? createTable(request, env)
+      if (parts.length === 2 && request.method === 'POST') return rejectCreate(request, env) ?? createTable(request, env)
       const tableId = parts[2]
       if (!tableId || !TABLE_ID_RE.test(tableId)) return json({ error: 'invalid_table' }, 400)
       const stub = env.TABLES.get(env.TABLES.idFromName(tableId))

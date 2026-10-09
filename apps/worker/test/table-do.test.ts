@@ -268,7 +268,7 @@ describe('TableDO — migração M1→M2 e recuperação do mestre', () => {
     expect(await intruder.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
   })
 
-  it('mestre com gmSecret válido recupera identidade e rotaciona o segredo; jogador com segredo errado leva auth', async () => {
+  it('mestre com gmSecret válido recupera identidade e rotaciona o segredo; sem gmSecret, link_expired; jogador com segredo errado leva auth', async () => {
     const { tableId, gmSecret } = await createTable()
     const first = await TestClient.connect(tableId)
     const { clientId, welcome } = await first.hello('Mestre', { gmSecret })
@@ -289,7 +289,8 @@ describe('TableDO — migração M1→M2 e recuperação do mestre', () => {
 
     const stale = await TestClient.connect(tableId)
     stale.send({ t: 'hello', v: 2, clientId, nickname: 'Mestre', clientSecret: oldSecret, playerKey: playerKeyOf(tableId) })
-    expect(await stale.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
+    // membro mestre sem o segredo de mestre: recusado antes de olhar o segredo do navegador
+    expect(await stale.waitFor('error')).toEqual({ t: 'error', reason: 'link_expired' })
 
     const player = await TestClient.connect(tableId)
     const { clientId: pid } = await player.hello('Ana')
@@ -1119,6 +1120,29 @@ describe('TableDO — chave de jogador', () => {
     const tab2 = await TestClient.connect(tableId)
     tab2.send({ t: 'hello', v: 2, clientId, nickname: 'Ana', clientSecret: welcome.clientSecret })
     expect(await tab2.waitFor('error')).toEqual({ t: 'error', reason: 'link_expired' })
+  })
+
+  it('mestre com segredo de mestre antigo (link gerado de novo) e a chave atual: link_expired, nunca vira jogador', async () => {
+    const { tableId, gmSecret, playerKey } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    const { clientId, welcome } = await gm.hello('Mestre', { gmSecret })
+    gm.close()
+    const rotated = await SELF.fetch(`${LOCAL}/api/registry/tables/${tableId}/gm-link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+    expect(rotated.status).toBe(204)
+    const stale = await TestClient.connect(tableId)
+    stale.send({ t: 'hello', v: 2, clientId, nickname: 'Mestre', clientSecret: welcome.clientSecret, gmSecret, playerKey })
+    expect(await stale.waitFor('error')).toEqual({ t: 'error', reason: 'link_expired' })
+    // sem segredo de mestre nenhum, também não
+    const noGm = await TestClient.connect(tableId)
+    noGm.send({ t: 'hello', v: 2, clientId, nickname: 'Mestre', clientSecret: welcome.clientSecret, playerKey })
+    expect(await noGm.waitFor('error')).toEqual({ t: 'error', reason: 'link_expired' })
+    const role = await runInDurableObject(env.TABLES.get(env.TABLES.idFromName(tableId)), (_o, state) =>
+      new SqlStore(state.storage.sql).getMember(clientId)?.role,
+    )
+    expect(role).toBe('gm')
   })
 
   it('/members exige X-Mesa-Key: sem ela 403, com ela a lista', async () => {

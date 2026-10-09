@@ -317,6 +317,8 @@ function createSession(deps, ctx, { app, port, inspectorPort }) {
     const ok = await bootServer()
     if (shuttingDown) return done
     if (!ok) return 1
+    // A lista local de mesas abre já: ela mesma busca o endereço do túnel quando o launcher o informar.
+    openBrowser(deps, `${localUrl}/`)
     if (removeOldApp(deps.fs, ctx.root, { sleepSync: deps.sleepSync })) log.write('versão anterior (app.old) removida')
     watchServer(server)
     const link = await openTunnel()
@@ -328,8 +330,6 @@ function createSession(deps, ctx, { app, port, inspectorPort }) {
       deps.print(MSG.tunnelFailed)
     }
     await announce(link ?? localUrl, { remote: link !== null, proc: link ? tunnel : null })
-    // A página local tem a lista de mesas com os links (que já usam o túnel).
-    if (!shuttingDown) openBrowser(deps, `${localUrl}/`)
     deps.print(MSG.closeHint)
     return done
   }
