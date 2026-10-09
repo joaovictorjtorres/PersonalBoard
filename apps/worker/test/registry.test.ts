@@ -104,7 +104,7 @@ describe('índice de mesas', () => {
     expect(ia).toBeGreaterThanOrEqual(0)
     expect(ib).toBeGreaterThanOrEqual(0)
     expect(ib).toBeLessThan(ia)
-    expect(tables[ia]).toMatchObject({ name: 'Primeira', players: 0, gmSecret: a.gmSecret })
+    expect(tables[ia]).toMatchObject({ name: 'Primeira', players: 0, gmSecret: a.gmSecret, playerKey: a.playerKey })
     expect(tables[ia].lastActivityAt).toBe(tables[ia].createdAt)
   })
 

@@ -19,7 +19,7 @@ interface Obj {
   ownerId: string
 }
 
-async function newTable(page: Page): Promise<{ tableId: string; gmSecret: string; playerKey?: string }> {
+async function newTable(page: Page): Promise<{ tableId: string; gmSecret: string; playerKey: string }> {
   const res = await page.request.post('/api/tables', { data: { name: 'E2E' } })
   expect(res.status()).toBe(201)
   return res.json()
@@ -28,9 +28,8 @@ async function newTable(page: Page): Promise<{ tableId: string; gmSecret: string
 const waitOpen = (page: Page) =>
   page.waitForFunction(() => (window as any).__mesa?.getState().status === 'open')
 
-/** Caminho do jogador; a partir da chave de jogador (#j=), leva a chave da mesa. */
-const playerPath = (t: { tableId: string; playerKey?: string }) =>
-  `/t/${t.tableId}?debug=1${t.playerKey ? `#j=${t.playerKey}` : ''}`
+/** Caminho do jogador: leva a chave da mesa (#j=). */
+const playerPath = (t: { tableId: string; playerKey: string }) => `/t/${t.tableId}?debug=1#j=${t.playerKey}`
 
 const selfId = (page: Page): Promise<string> => page.evaluate(() => (window as any).__mesa.getState().self.clientId)
 
@@ -93,9 +92,9 @@ async function dragObject(page: Page, obj: Obj, dx: number, dy: number): Promise
 }
 
 test('token arrastado pelo mestre se move na tela do jogador', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await uploadToken(gm)
   await expect.poll(async () => (await objects(player)).length).toBe(1)
@@ -112,9 +111,9 @@ test('token arrastado pelo mestre se move na tela do jogador', async ({ browser,
 })
 
 test('jogador não vê a camada do mestre', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await expect(layersPanel(gm).locator('.layer-row')).toHaveText(['Mestre', 'Desenhos', 'Tokens', 'Mapa'])
   await expect(layersPanel(player).locator('.layer-row')).toHaveText(['Desenhos', 'Tokens', 'Mapa'])
@@ -126,9 +125,9 @@ test('jogador não vê a camada do mestre', async ({ browser, page }) => {
 })
 
 test('desenho aparece para o outro, persiste após recarregar e Ctrl+Z desfaz', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await selectLayer(player, 'Desenhos')
   await pickPencil(player)
@@ -169,8 +168,8 @@ test('link de mesa inexistente mostra aviso', async ({ browser }) => {
 })
 
 test('botão direito na caneta abre opções; modo Apagar vira Borracha (E)', async ({ browser, page }) => {
-  const { tableId } = await newTable(page)
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const { tableId, playerKey } = await newTable(page)
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await player.getByRole('button', { name: 'Lápis (P)' }).click({ button: 'right' })
   const pop = player.getByRole('dialog', { name: 'Opções da caneta' })
@@ -208,9 +207,9 @@ test('botão direito na caneta abre opções; modo Apagar vira Borracha (E)', as
 })
 
 test('passar o mouse nas ferramentas abre o menu; atravessar o vão não fecha; sair fecha na hora; um aberto por vez', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
   const pen = gm.getByRole('dialog', { name: 'Opções da caneta' })
   const shape = gm.getByRole('dialog', { name: 'Opções das formas' })
 
@@ -238,9 +237,9 @@ test('passar o mouse nas ferramentas abre o menu; atravessar o vão não fecha; 
 })
 
 test('mestre esconde e revela uma camada; jogador vê os objetos sumirem e voltarem', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await uploadToken(gm)
   await expect.poll(async () => (await objects(player)).length).toBe(1)
@@ -256,9 +255,9 @@ test('mestre esconde e revela uma camada; jogador vê os objetos sumirem e volta
 })
 
 test('nova camada entra abaixo do Mestre; subir/descer respeita os limites', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await layersPanel(gm).getByRole('button', { name: 'Nova camada', exact: true }).first().click()
   await expect(layersPanel(gm).locator('.layer-row')).toHaveText(['Mestre', 'Nova camada', 'Desenhos', 'Tokens', 'Mapa'])
@@ -283,9 +282,9 @@ test('nova camada entra abaixo do Mestre; subir/descer respeita os limites', asy
 })
 
 test('título aparece para o jogador; anotação do mestre não chega a ele', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await uploadToken(gm)
   await expect.poll(async () => (await objects(player)).length).toBe(1)
@@ -308,9 +307,9 @@ test('título aparece para o jogador; anotação do mestre não chega a ele', as
 })
 
 test('mestre move token da camada Mestre para Tokens; jogador passa a vê-lo no mesmo lugar', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await selectLayer(gm, 'Mestre')
   await uploadToken(gm)
@@ -331,9 +330,9 @@ test('mestre move token da camada Mestre para Tokens; jogador passa a vê-lo no 
 })
 
 test('token "só o mestre": o arrasto do jogador não move o token na tela do mestre', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await uploadToken(gm)
   await expect.poll(async () => (await objects(player)).length).toBe(1)
@@ -360,9 +359,9 @@ test('token "só o mestre": o arrasto do jogador não move o token na tela do me
 })
 
 test('passada de borracha no meio de uma linha deixa 2 pedaços na tela do outro', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await selectLayer(player, 'Desenhos')
   await pickPencil(player)
@@ -383,10 +382,10 @@ test('passada de borracha no meio de uma linha deixa 2 pedaços na tela do outro
 })
 
 test('mestre remove da lista um membro offline', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
-  const observer = await open(browser, `/t/${tableId}?debug=1`, 'Bia')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
+  const observer = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Bia')
   const row = (page: Page, name: string) =>
     page.locator('.members li').filter({ hasText: new RegExp(`^\\s*${name}(?![\\p{L}\\d])`, 'u') })
   const anaRow = row(gm, 'Ana')
@@ -442,9 +441,9 @@ async function dragOnCanvas(page: Page, from: [number, number], to: [number, num
 const DICE_BUTTON = 'Rolar 1d20 (botão direito: mais opções)'
 
 test('clique no dado rola 1d20 e aparece no chat do outro', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await player.getByRole('button', { name: DICE_BUTTON }).click()
   await expect(chatEntries(gm)).toHaveCount(1)
@@ -453,9 +452,9 @@ test('clique no dado rola 1d20 e aparece no chat do outro', async ({ browser, pa
 })
 
 test('rolagem secreta do mestre não aparece para o jogador', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await gm.getByRole('button', { name: DICE_BUTTON }).click({ button: 'right' })
   const modal = gm.getByRole('dialog', { name: 'Rolar dados' })
@@ -474,10 +473,10 @@ test('rolagem secreta do mestre não aparece para o jogador', async ({ browser, 
 })
 
 test('conversa privada chega só ao destinatário; o mestre não recebe; fechar a aba apaga', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
-  const bia = await open(browser, `/t/${tableId}?debug=1`, 'Bia')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
+  const bia = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Bia')
 
   await expect(memberRow(ana, 'Bia')).toBeVisible()
   await (await memberMenu(ana, 'Bia')).getByRole('button', { name: 'Conversa privada' }).click()
@@ -515,10 +514,10 @@ test('conversa privada chega só ao destinatário; o mestre não recebe; fechar 
 })
 
 test('botão direito no nome do chat: conversa privada; o mestre também edita apelido e cor', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
-  const bia = await open(browser, `/t/${tableId}?debug=1`, 'Bia')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
+  const bia = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Bia')
 
   await ana.getByLabel('Mensagem', { exact: true }).fill('oi mesa')
   await ana.getByLabel('Mensagem', { exact: true }).press('Enter')
@@ -541,9 +540,9 @@ test('botão direito no nome do chat: conversa privada; o mestre também edita a
 })
 
 test('imagem enviada no chat aparece no outro cliente', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   const uploaded = player.waitForResponse((r) => r.url().includes('/assets') && r.status() === 201)
   await player.getByTestId('chat-image-input').setInputFiles({ name: 'foto.png', mimeType: 'image/png', buffer: PNG })
@@ -554,9 +553,9 @@ test('imagem enviada no chat aparece no outro cliente', async ({ browser, page }
 })
 
 test('mestre liga grade e encaixe: token solto cai alinhado na tela do jogador', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await gm.getByRole('button', { name: 'Grade', exact: true }).click()
   const pop = gm.getByRole('dialog', { name: 'Grade' })
@@ -629,9 +628,9 @@ test('título e ícone de anotação acompanham o token durante o arrasto; encai
 })
 
 test('régua do mestre aparece para o jogador com nome e distância', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
   const labels = () => player.evaluate(() => (window as any).__stage.find('.ruler-label').map((n: any) => n.text()))
 
   await gm.getByRole('button', { name: 'Régua (R)' }).click()
@@ -644,9 +643,9 @@ test('régua do mestre aparece para o jogador com nome e distância', async ({ b
 })
 
 test('régua com dobra: botão direito dobra, o outro vê a linha quebrada com a soma', async ({ browser, page }) => {
-  const { tableId } = await newTable(page)
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
-  const bia = await open(browser, `/t/${tableId}?debug=1`, 'Bia')
+  const { tableId, playerKey } = await newTable(page)
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
+  const bia = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Bia')
   const seen = () =>
     bia.evaluate(() => {
       const stage = (window as any).__stage
@@ -676,9 +675,9 @@ test('régua com dobra: botão direito dobra, o outro vê a linha quebrada com a
 })
 
 test('retângulo, elipse e linha aparecem para o outro', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   const drawShape = async (label: string, from: [number, number], to: [number, number]) => {
     await gm.getByRole('button', { name: 'Formas (S)' }).click({ button: 'right' })
@@ -703,9 +702,9 @@ test('retângulo, elipse e linha aparecem para o outro', async ({ browser, page 
 })
 
 test('Ctrl + clique do mestre centraliza a câmera do jogador', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await gm.keyboard.down('Control')
   await gm.mouse.click(900, 500)
@@ -724,9 +723,9 @@ test('Ctrl + clique do mestre centraliza a câmera do jogador', async ({ browser
 })
 
 test('mestre renomeia o jogador: muda na tela dele e persiste ao recarregar', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   const menu = await memberMenu(gm, 'Ana')
   await menu.getByRole('button', { name: 'Editar apelido e cor' }).click()
@@ -748,11 +747,11 @@ test('mestre renomeia o jogador: muda na tela dele e persiste ao recarregar', as
 })
 
 test('modais e menus cabem na janela 1280x720 sem rolagem', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
 
   // modal de apelido, em um contexto novo
   const fresh = await (await browser.newContext()).newPage()
-  await fresh.goto(`/t/${tableId}?debug=1`)
+  await fresh.goto(`/t/${tableId}?debug=1#j=${playerKey}`)
   await expect(fresh.getByLabel('Seu apelido')).toBeVisible()
   const noScroll = (loc: import('@playwright/test').Locator, name: string) =>
     loc.evaluate((el) => ({ w: el.scrollWidth <= el.clientWidth, h: el.scrollHeight <= el.clientHeight }))
@@ -760,7 +759,7 @@ test('modais e menus cabem na janela 1280x720 sem rolagem', async ({ browser, pa
   await noScroll(fresh.locator('.modal'), 'nickname')
 
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
   await expect(memberRow(gm, 'Ana')).toBeVisible()
   await expect(player.locator('.members')).toBeVisible()
   await uploadToken(gm)
@@ -926,10 +925,10 @@ const settled = (page: Page) =>
   })
 
 test('jogador apaga os próprios desenhos na camada e em todas, pelo aviso; o resto fica', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
-  const bia = await open(browser, `/t/${tableId}?debug=1`, 'Bia')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
+  const bia = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Bia')
   const dialogs = trackNativeDialogs(gm, ana, bia)
 
   await addStroke(ana, 'ana-d', 'drawings')
@@ -965,10 +964,10 @@ test('jogador apaga os próprios desenhos na camada e em todas, pelo aviso; o re
 })
 
 test('mestre apaga os desenhos de um jogador pelo menu do membro', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
-  const bia = await open(browser, `/t/${tableId}?debug=1`, 'Bia')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
+  const bia = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Bia')
   const dialogs = trackNativeDialogs(gm, ana, bia)
 
   await addStroke(ana, 'ana-d', 'drawings')
@@ -992,9 +991,9 @@ test('mestre apaga os desenhos de um jogador pelo menu do membro', async ({ brow
 })
 
 test('mestre limpa a camada (a camada fica) e remove camada pelo aviso do app', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
   const dialogs = trackNativeDialogs(gm, ana)
 
   await uploadToken(gm)
@@ -1027,9 +1026,9 @@ test('mestre limpa a camada (a camada fica) e remove camada pelo aviso do app', 
 })
 
 test('olho e cadeado na linha da camada; a camada ativa do jogador muda quando fica travada ou oculta', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
   const active = () => ana.evaluate(() => (window as any).__mesa.getState().activeLayerId)
 
   await selectLayer(ana, 'Tokens')
@@ -1056,9 +1055,9 @@ const turnsState = (page: Page) => page.evaluate(() => (window as any).__mesa.ge
 const ringCount = (page: Page): Promise<number> => page.evaluate(() => (window as any).__stage.find('.turn-ring').length)
 
 test('turnos: mestre monta pelo token, duplica, rola e inicia; jogador acompanha a vez e o anel; encerrar mantendo participantes', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
   const dialogs = trackNativeDialogs(gm, player)
 
   await uploadToken(gm)
@@ -1167,9 +1166,9 @@ test('turnos: mestre monta pelo token, duplica, rola e inicia; jogador acompanha
 })
 
 test('turnos: cada um minimiza a própria janela (lembrada ao recarregar); o mestre fecha para todos', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   const toolbarButton = gm.getByRole('button', { name: 'Turnos', exact: true })
   await toolbarButton.click()
@@ -1203,9 +1202,9 @@ test('turnos: cada um minimiza a própria janela (lembrada ao recarregar); o mes
 // ── Seleção em área ─────────────────────────────────────────────────────────
 
 test('seleção em retângulo corta o traço e move junto com o token; o outro vê; Ctrl+Z desfaz tudo', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await uploadToken(ana) // camada Tokens, centro da tela: x 605..675, y 325..395
   await addStrokeAt(ana, 'risco', 'tokens', [450, 300, 850, 300])
@@ -1231,9 +1230,9 @@ test('seleção em retângulo corta o traço e move junto com o token; o outro v
 })
 
 test('seleção em laço apaga só a parte de dentro do traço (Delete)', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await selectLayer(gm, 'Desenhos')
   await addStrokeAt(gm, 'linha', 'drawings', [300, 300, 700, 300])
@@ -1248,9 +1247,9 @@ test('seleção em laço apaga só a parte de dentro do traço (Delete)', async 
 })
 
 test('seleção em todas as camadas: o mestre leva itens de duas camadas para o Mapa pelo menu do grupo', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await addStrokeAt(gm, 'a', 'drawings', [300, 300, 400, 300])
   await addStrokeAt(gm, 'b', 'tokens', [300, 350, 400, 350])
@@ -1268,9 +1267,9 @@ test('seleção em todas as camadas: o mestre leva itens de duas camadas para o 
 })
 
 test('seleção: jogador não pega o token do mestre', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await uploadToken(gm)
   await expect.poll(async () => (await objects(ana)).length).toBe(1)
@@ -1291,9 +1290,9 @@ test('seleção: jogador não pega o token do mestre', async ({ browser, page })
 })
 
 test('seleção: Shift + arrastar soma; Shift + clique pinga sem mexer na seleção; Esc desfaz', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await addStrokeAt(ana, 'a', 'tokens', [300, 300, 400, 300])
   await addStrokeAt(ana, 'b', 'tokens', [300, 500, 400, 500])
@@ -1322,9 +1321,9 @@ test('seleção: Shift + arrastar soma; Shift + clique pinga sem mexer na seleç
 })
 
 test('seleção: quem assiste vê o contorno do grupo sendo arrastado, com o nome de quem arrasta', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
   const groupDrags = () => ana.evaluate(() => Object.keys((window as any).__mesa.getState().groupDrags).length)
 
   await addStrokeAt(gm, 'a', 'tokens', [300, 300, 400, 300])
@@ -1341,9 +1340,9 @@ test('seleção: quem assiste vê o contorno do grupo sendo arrastado, com o nom
 })
 
 test('borracha em todas as camadas corta traços de duas camadas numa passada', async ({ browser, page }) => {
-  const { tableId, gmSecret } = await newTable(page)
+  const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
-  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
 
   await addStrokeAt(ana, 'a', 'drawings', [300, 300, 600, 300])
   await addStrokeAt(ana, 'b', 'tokens', [300, 330, 600, 330])
@@ -1449,7 +1448,7 @@ test('links das mesas usam o túnel informado; sem túnel, aviso e links locais'
   const name = `Túnel ${Date.now()}`
   const t = await (await page.request.post('/api/tables', { data: { name } })).json()
   const tunnel = 'https://e2e-teste.trycloudflare.com'
-  const key = t.playerKey ? `#j=${t.playerKey}` : ''
+  const key = `#j=${t.playerKey}`
   expect((await page.request.post('/api/registry/tunnel', { data: { url: tunnel } })).status()).toBe(204)
   try {
     await page.goto('/')
@@ -1539,4 +1538,12 @@ test('excluir jogador apagando as coisas: o token dele some para todos', async (
   await expect(player.getByText('Você foi removido da mesa')).toBeVisible()
   await expect.poll(async () => (await objects(gm)).length).toBe(0)
   await expect.poll(async () => (await objects(observer)).length).toBe(0)
+})
+
+test('link de jogador sem a chave: "Este link expirou. Peça o link novo ao mestre" antes de pedir o apelido', async ({ browser, page }) => {
+  const t = await newTable(page)
+  const stray = await (await browser.newContext()).newPage()
+  await stray.goto(`/t/${t.tableId}`)
+  await expect(stray.getByText('Este link expirou. Peça o link novo ao mestre')).toBeVisible()
+  await expect(stray.getByLabel('Seu apelido')).toHaveCount(0)
 })

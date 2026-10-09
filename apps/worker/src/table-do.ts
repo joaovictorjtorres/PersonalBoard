@@ -68,8 +68,9 @@ export class TableDO extends DurableObject<Env> {
 
     if (url.pathname === '/init' && request.method === 'POST') {
       if (this.store.getMeta()) return new Response('exists', { status: 409 })
-      const body = await request.json<{ id: string; name: string; gmSecretHash: string }>()
-      this.store.initTable({ ...body, createdAt: Date.now() }, DEFAULT_LAYERS)
+      const body = await request.json<{ id: string; name: string; gmSecretHash: string; playerKeyHash?: string }>()
+      this.store.initTable({ id: body.id, name: body.name, gmSecretHash: body.gmSecretHash, createdAt: Date.now() }, DEFAULT_LAYERS)
+      if (body.playerKeyHash) this.store.setPlayerKeyHash(body.playerKeyHash)
       return new Response(null, { status: 201 })
     }
 
@@ -91,6 +92,9 @@ export class TableDO extends DurableObject<Env> {
 
     if (url.pathname === '/members' && request.method === 'GET') {
       if (!this.store.getMeta()) return Response.json({ players: [] })
+      const keyHash = this.store.getPlayerKeyHash()
+      const key = request.headers.get('x-mesa-key')
+      if (keyHash && !(key && safeEqual(await sha256Hex(key), keyHash))) return new Response('link expirado', { status: 403 })
       return Response.json({ players: this.engine.knownPlayers(this.onlineClientIds()) })
     }
     return new Response('not found', { status: 404 })
@@ -184,10 +188,18 @@ export class TableDO extends DurableObject<Env> {
     if (msg.gmSecret && safeEqual(await sha256Hex(msg.gmSecret), meta.gmSecretHash)) role = 'gm'
     // Todos os awaits antes de ler o membro: ler-decidir-gravar fica atômico no DO.
     const providedHash = msg.clientSecret ? await sha256Hex(msg.clientSecret) : null
+    const providedKeyHash = msg.playerKey ? await sha256Hex(msg.playerKey) : null
     const candidate = randomSecret()
     const candidateHash = await sha256Hex(candidate)
 
     const online = this.onlineClientIds()
+    // Link de jogador: quem não tem o segredo de mestre precisa da chave atual (mesa antiga, sem chave: livre).
+    const keyHash = this.store.getPlayerKeyHash()
+    if (role !== 'gm' && keyHash && !(providedKeyHash && safeEqual(providedKeyHash, keyHash))) {
+      this.send(ws, { t: 'error', reason: 'link_expired' })
+      ws.close(4403, 'link_expired')
+      return
+    }
     // Cliente M1 (sem v:2) não guarda segredo: admitido sem emitir hash, para não se trancar fora.
     const m2 = msg.v === 2
     let clientId = msg.clientId

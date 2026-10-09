@@ -185,6 +185,8 @@ const HelloSchema = z.object({
   nickname: NicknameSchema,
   gmSecret: z.string().max(128).optional(),
   clientSecret: z.string().max(128).optional(),
+  /** Chave do link de jogador (`#j=`); quem tem o segredo de mestre não precisa. */
+  playerKey: z.string().max(128).optional(),
   /** Versão do protocolo do cliente; 2 = guarda clientSecret (M2). */
   v: z.number().int().optional(),
 })
@@ -255,7 +257,7 @@ export interface Snapshot {
 }
 
 /** Motivos de `error` (o servidor fecha a conexão logo depois). */
-export type ServerErrorReason = 'table_not_found' | 'auth' | 'table_deleted' | 'nickname_taken' | 'removed'
+export type ServerErrorReason = 'table_not_found' | 'auth' | 'table_deleted' | 'nickname_taken' | 'removed' | 'link_expired'
 
 export type ServerMessage =
   | { t: 'welcome'; self: Member; snapshot: Snapshot; clientSecret?: string }

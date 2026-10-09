@@ -19,14 +19,15 @@ async function createTable(request: Request, env: Env): Promise<Response> {
   for (let attempt = 0; attempt < 3; attempt++) {
     const tableId = randomId(10)
     const gmSecret = randomSecret()
+    const playerKey = randomSecret()
     const stub = env.TABLES.get(env.TABLES.idFromName(tableId))
     const res = await stub.fetch('https://table/init', {
       method: 'POST',
-      body: JSON.stringify({ id: tableId, name, gmSecretHash: await sha256Hex(gmSecret) }),
+      body: JSON.stringify({ id: tableId, name, gmSecretHash: await sha256Hex(gmSecret), playerKeyHash: await sha256Hex(playerKey) }),
     })
     if (res.status === 201) {
-      await registryStub(env).register({ id: tableId, name, gmSecret, playerKey: null })
-      return json({ tableId, gmSecret }, 201)
+      await registryStub(env).register({ id: tableId, name, gmSecret, playerKey })
+      return json({ tableId, gmSecret, playerKey }, 201)
     }
   }
   return json({ error: 'could_not_create' }, 500)

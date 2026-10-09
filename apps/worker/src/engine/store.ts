@@ -25,6 +25,9 @@ export interface TableStore {
   getMeta(): TableMeta | null
   initTable(meta: TableMeta, layers: Layer[]): void
   renameTable(name: string): void
+  /** Hash da chave do link de jogador; null = mesa sem chave (antiga): entrada livre. */
+  getPlayerKeyHash(): string | null
+  setPlayerKeyHash(hash: string): void
   getLayers(): Layer[]
   putLayer(layer: Layer): void
   deleteLayer(id: string): void

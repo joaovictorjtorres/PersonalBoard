@@ -22,6 +22,7 @@ export class MemoryStore implements TableStore {
   private settings: TableSettings = structuredClone(DEFAULT_SETTINGS)
   private chat: ChatEntry[] = []
   private turns: Turns = defaultTurns()
+  private playerKeyHash: string | null = null
 
   getMeta() { return this.meta }
 
@@ -32,6 +33,14 @@ export class MemoryStore implements TableStore {
 
   renameTable(name: string) {
     if (this.meta) this.meta = { ...this.meta, name }
+  }
+
+  getPlayerKeyHash(): string | null {
+    return this.playerKeyHash
+  }
+
+  setPlayerKeyHash(hash: string): void {
+    this.playerKeyHash = hash
   }
 
   getLayers() { return [...this.layers].sort((a, b) => a.order - b.order) }

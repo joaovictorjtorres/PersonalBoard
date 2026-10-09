@@ -5,7 +5,7 @@ import { BATCH_MAX, CHAT_TEXT_MAX, DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, TURNS_
 import { SyncClient, type SyncClientOptions } from '../sync/SyncClient'
 import { throttle, type Throttled } from '../lib/throttle'
 import {
-  getTableClientId, readClientSecret, readGmSecret, rememberClientSecret, rememberTableClientId, shouldRetryAuth,
+  getTableClientId, readClientSecret, readGmSecret, readPlayerKey, rememberClientSecret, rememberTableClientId, shouldRetryAuth,
 } from '../lib/identity'
 import { uploadAsset, wsUrl } from '../lib/api'
 import { initialSize, prepareChatImage, prepareImage, uploadErrorText, viewportCenter } from '../lib/image'
@@ -200,6 +200,7 @@ export function createTableStore(
           url: wsUrl(tableId),
           hello: () => {
             const gmSecret = readGmSecret(tableId)
+            const playerKey = readPlayerKey(tableId)
             sentSecret = readClientSecret(tableId)
             sentClientId = getTableClientId(tableId)
             return {
@@ -209,6 +210,7 @@ export function createTableStore(
               nickname,
               ...(gmSecret ? { gmSecret } : {}),
               ...(sentSecret ? { clientSecret: sentSecret } : {}),
+              ...(playerKey ? { playerKey } : {}),
             }
           },
           onMessage: (msg) => {

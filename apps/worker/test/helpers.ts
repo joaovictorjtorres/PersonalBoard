@@ -6,16 +6,21 @@ const SELF = exports.default
 /** Origem local: as rotas do índice e o POST /api/tables só respondem a pedidos locais. */
 export const LOCAL = 'http://localhost'
 const BASE = LOCAL
+const playerKeys = new Map<string, string>()
+/** Chave de jogador da mesa criada por createTable (para mandar hello cru nos testes). */
+export const playerKeyOf = (tableId: string) => playerKeys.get(tableId)
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
-export async function createTable(name = 'Teste'): Promise<{ tableId: string; gmSecret: string }> {
+export async function createTable(name = 'Teste'): Promise<{ tableId: string; gmSecret: string; playerKey: string }> {
   const res = await SELF.fetch(`${BASE}/api/tables`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   })
   expect(res.status).toBe(201)
-  return res.json()
+  const body = await res.json<{ tableId: string; gmSecret: string; playerKey: string }>()
+  playerKeys.set(body.tableId, body.playerKey)
+  return body
 }
 
 export function tokenObject(over: Partial<NewObject> = {}): NewObject {
@@ -35,7 +40,7 @@ export class TestClient {
   readonly raw: string[] = []
   private consumed = new Set<number>()
 
-  private constructor(private ws: WebSocket) {
+  private constructor(private ws: WebSocket, private tableId: string) {
     ws.addEventListener('message', (e) => {
       const data = e.data as string
       try {
@@ -51,15 +56,19 @@ export class TestClient {
     const ws = res.webSocket
     if (!ws) throw new Error(`no websocket (status ${res.status})`)
     ws.accept()
-    return new TestClient(ws)
+    return new TestClient(ws, tableId)
   }
 
   send(msg: ClientMessage | string): void {
     this.ws.send(typeof msg === 'string' ? msg : JSON.stringify(msg))
   }
 
-  async hello(nickname: string, opts: { clientId?: string; gmSecret?: string; clientSecret?: string; v?: number | null } = {}) {
+  async hello(
+    nickname: string,
+    opts: { clientId?: string; gmSecret?: string; clientSecret?: string; v?: number | null; playerKey?: string | null } = {},
+  ) {
     const clientId = opts.clientId ?? crypto.randomUUID()
+    const playerKey = opts.playerKey === undefined ? playerKeys.get(this.tableId) : (opts.playerKey ?? undefined)
     this.send({
       t: 'hello',
       clientId,
@@ -67,6 +76,7 @@ export class TestClient {
       ...(opts.v === null ? {} : { v: opts.v ?? 2 }),
       ...(opts.gmSecret ? { gmSecret: opts.gmSecret } : {}),
       ...(opts.clientSecret ? { clientSecret: opts.clientSecret } : {}),
+      ...(playerKey ? { playerKey } : {}),
     })
     const welcome = await this.waitFor('welcome')
     return { clientId, welcome }

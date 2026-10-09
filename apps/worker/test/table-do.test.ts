@@ -3,7 +3,7 @@ import { runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_TURNS, type NewObject, type Op } from '@mesa/shared'
 import { SqlStore } from '../src/engine/sql-store'
-import { LOCAL, TestClient, createTable, tokenObject } from './helpers'
+import { LOCAL, TestClient, createTable, playerKeyOf, tokenObject } from './helpers'
 
 const SELF = exports.default
 
@@ -203,11 +203,11 @@ describe('TableDO — identidade (clientSecret)', () => {
     expect(welcome.clientSecret).toMatch(/^[A-Za-z0-9_-]{43}$/)
 
     const noSecret = await TestClient.connect(tableId)
-    noSecret.send({ t: 'hello', clientId, nickname: 'Falsa' })
+    noSecret.send({ t: 'hello', clientId, nickname: 'Falsa', playerKey: playerKeyOf(tableId) })
     expect(await noSecret.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
 
     const wrongSecret = await TestClient.connect(tableId)
-    wrongSecret.send({ t: 'hello', clientId, nickname: 'Falsa', clientSecret: 'b'.repeat(43) })
+    wrongSecret.send({ t: 'hello', clientId, nickname: 'Falsa', clientSecret: 'b'.repeat(43), playerKey: playerKeyOf(tableId) })
     expect(await wrongSecret.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
     await wrongSecret.expectNone('welcome')
 
@@ -235,7 +235,7 @@ describe('TableDO — identidade (clientSecret)', () => {
     first.close()
 
     const intruder = await TestClient.connect(tableId)
-    intruder.send({ t: 'hello', clientId, nickname: 'Ana' })
+    intruder.send({ t: 'hello', clientId, nickname: 'Ana', playerKey: playerKeyOf(tableId) })
     expect(await intruder.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
   })
 })
@@ -264,7 +264,7 @@ describe('TableDO — migração M1→M2 e recuperação do mestre', () => {
     fresh.close()
 
     const intruder = await TestClient.connect(tableId)
-    intruder.send({ t: 'hello', v: 2, clientId, nickname: 'Ana' })
+    intruder.send({ t: 'hello', v: 2, clientId, nickname: 'Ana', playerKey: playerKeyOf(tableId) })
     expect(await intruder.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
   })
 
@@ -288,14 +288,14 @@ describe('TableDO — migração M1→M2 e recuperação do mestre', () => {
     noSecret.close()
 
     const stale = await TestClient.connect(tableId)
-    stale.send({ t: 'hello', v: 2, clientId, nickname: 'Mestre', clientSecret: oldSecret })
+    stale.send({ t: 'hello', v: 2, clientId, nickname: 'Mestre', clientSecret: oldSecret, playerKey: playerKeyOf(tableId) })
     expect(await stale.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
 
     const player = await TestClient.connect(tableId)
     const { clientId: pid } = await player.hello('Ana')
     player.close()
     const bad = await TestClient.connect(tableId)
-    bad.send({ t: 'hello', v: 2, clientId: pid, nickname: 'Ana', clientSecret: 'b'.repeat(43), gmSecret: 'errado' })
+    bad.send({ t: 'hello', v: 2, clientId: pid, nickname: 'Ana', clientSecret: 'b'.repeat(43), gmSecret: 'errado', playerKey: playerKeyOf(tableId) })
     expect(await bad.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
   })
 })
@@ -964,7 +964,7 @@ describe('TableDO — vínculo entre sessões', () => {
 
     // o segredo do navegador antigo deixa de valer; o novo reconecta
     const old = await TestClient.connect(tableId)
-    old.send({ t: 'hello', v: 2, clientId: anaId, nickname: 'Ana', clientSecret: w1.clientSecret })
+    old.send({ t: 'hello', v: 2, clientId: anaId, nickname: 'Ana', clientSecret: w1.clientSecret, playerKey: playerKeyOf(tableId) })
     expect(await old.waitFor('error')).toEqual({ t: 'error', reason: 'auth' })
     const tab2 = await TestClient.connect(tableId)
     const { welcome: w3 } = await tab2.hello('Ana', { clientId: anaId, clientSecret: welcome.clientSecret })
@@ -979,7 +979,7 @@ describe('TableDO — vínculo entre sessões', () => {
     await a.hello('Ana')
     for (const nickname of ['ana', ' MESTRE ']) {
       const intruder = await TestClient.connect(tableId)
-      intruder.send({ t: 'hello', v: 2, clientId: crypto.randomUUID(), nickname })
+      intruder.send({ t: 'hello', v: 2, clientId: crypto.randomUUID(), nickname, playerKey: playerKeyOf(tableId) })
       expect(await intruder.waitFor('error')).toEqual({ t: 'error', reason: 'nickname_taken' })
     }
     await a.expectNone('memberJoined')
@@ -1059,8 +1059,8 @@ describe('TableDO — vínculo entre sessões', () => {
 
     const c1 = await TestClient.connect(tableId)
     const c2 = await TestClient.connect(tableId)
-    c1.send({ t: 'hello', v: 2, clientId: crypto.randomUUID(), nickname: 'Ana' })
-    c2.send({ t: 'hello', v: 2, clientId: crypto.randomUUID(), nickname: 'ana' })
+    c1.send({ t: 'hello', v: 2, clientId: crypto.randomUUID(), nickname: 'Ana', playerKey: playerKeyOf(tableId) })
+    c2.send({ t: 'hello', v: 2, clientId: crypto.randomUUID(), nickname: 'ana', playerKey: playerKeyOf(tableId) })
     const outcome = async (c: TestClient) => {
       for (let i = 0; i < 200; i++) {
         const m = c.messages.find((x) => x.t === 'welcome' || x.t === 'error')
@@ -1077,7 +1077,7 @@ describe('TableDO — vínculo entre sessões', () => {
   })
 
   it('GET /api/tables/:id/members (também pelo túnel): só jogadores fora da mesa, sem clientId; mesa inexistente → vazio', async () => {
-    const { tableId, gmSecret } = await createTable()
+    const { tableId, gmSecret, playerKey } = await createTable()
     const gm = await TestClient.connect(tableId)
     await gm.hello('Mestre', { gmSecret })
     const a = await TestClient.connect(tableId)
@@ -1087,7 +1087,7 @@ describe('TableDO — vínculo entre sessões', () => {
     a.close()
     await gm.waitFor('memberLeft', (m) => m.clientId === aId)
     const res = await SELF.fetch(`https://abc-def.trycloudflare.com/api/tables/${tableId}/members`, {
-      headers: { 'cf-ray': 'x', 'cf-connecting-ip': '200.100.50.25' },
+      headers: { 'cf-ray': 'x', 'cf-connecting-ip': '200.100.50.25', 'X-Mesa-Key': playerKey },
     })
     expect(res.status).toBe(200)
     const body = await res.json<{ players: { nickname: string; color: string }[] }>()
@@ -1095,5 +1095,36 @@ describe('TableDO — vínculo entre sessões', () => {
     expect(JSON.stringify(body)).not.toContain(aId)
     const none = await SELF.fetch(`${LOCAL}/api/tables/ZZZZZZZZZZ/members`)
     expect(await none.json()).toEqual({ players: [] })
+  })
+})
+
+describe('TableDO — chave de jogador', () => {
+  it('sem chave ou com chave errada → link_expired; com a chave entra; o mestre entra só com o segredo', async () => {
+    const { tableId, gmSecret } = await createTable()
+    for (const key of [null, 'chave-errada']) {
+      const c = await TestClient.connect(tableId)
+      c.send({ t: 'hello', v: 2, clientId: crypto.randomUUID(), nickname: 'Ana', ...(key ? { playerKey: key } : {}) })
+      expect(await c.waitFor('error')).toEqual({ t: 'error', reason: 'link_expired' })
+    }
+    const ok = await TestClient.connect(tableId)
+    expect((await ok.hello('Ana')).welcome.self.role).toBe('player')
+    const gm = await TestClient.connect(tableId)
+    expect((await gm.hello('Mestre', { gmSecret, playerKey: null })).welcome.self.role).toBe('gm')
+  })
+
+  it('quem volta com o segredo guardado também precisa da chave', async () => {
+    const { tableId } = await createTable()
+    const a = await TestClient.connect(tableId)
+    const { clientId, welcome } = await a.hello('Ana')
+    const tab2 = await TestClient.connect(tableId)
+    tab2.send({ t: 'hello', v: 2, clientId, nickname: 'Ana', clientSecret: welcome.clientSecret })
+    expect(await tab2.waitFor('error')).toEqual({ t: 'error', reason: 'link_expired' })
+  })
+
+  it('/members exige X-Mesa-Key: sem ela 403, com ela a lista', async () => {
+    const { tableId, playerKey } = await createTable()
+    expect((await SELF.fetch(`${LOCAL}/api/tables/${tableId}/members`)).status).toBe(403)
+    const res = await SELF.fetch(`${LOCAL}/api/tables/${tableId}/members`, { headers: { 'X-Mesa-Key': playerKey } })
+    expect(await res.json()).toEqual({ players: [] })
   })
 })

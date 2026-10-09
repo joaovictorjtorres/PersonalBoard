@@ -8,6 +8,12 @@ const image = {
 }
 
 describe('ClientMessageSchema', () => {
+  it('hello aceita playerKey opcional', () => {
+    const base = { t: 'hello', clientId: '3f1c2b9e-8a4d-4c1e-9b7a-2d5e6f708192', nickname: 'Ana', v: 2 }
+    expect(ClientMessageSchema.safeParse({ ...base, playerKey: 'k' }).success).toBe(true)
+    expect(ClientMessageSchema.safeParse({ ...base, playerKey: 'k'.repeat(129) }).success).toBe(false)
+  })
+
   it('aceita hello válido e apara o apelido', () => {
     const r = ClientMessageSchema.parse({ t: 'hello', clientId: uuid, nickname: '  Ana  ' })
     expect(r).toEqual({ t: 'hello', clientId: uuid, nickname: 'Ana' })

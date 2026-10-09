@@ -26,10 +26,11 @@ export function wsUrl(tableId: string): string {
   return `${proto}://${window.location.host}/api/tables/${tableId}/ws`
 }
 
-/** "Já jogou aqui?": jogadores fora da mesa; qualquer falha vira lista vazia. */
-export async function fetchKnownPlayers(tableId: string): Promise<KnownPlayer[]> {
+/** "Já jogou aqui?": jogadores fora da mesa; 'expired' = chave de jogador inválida; outra falha vira lista vazia. */
+export async function fetchKnownPlayers(tableId: string, playerKey: string | undefined): Promise<KnownPlayer[] | 'expired'> {
   try {
-    const res = await fetch(`/api/tables/${tableId}/members`)
+    const res = await fetch(`/api/tables/${tableId}/members`, { headers: playerKey ? { 'X-Mesa-Key': playerKey } : {} })
+    if (res.status === 403) return 'expired'
     if (!res.ok) return []
     const body = (await res.json()) as { players?: unknown }
     return Array.isArray(body.players) ? (body.players as KnownPlayer[]) : []

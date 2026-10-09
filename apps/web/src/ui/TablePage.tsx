@@ -3,7 +3,7 @@ import { useStore } from 'zustand'
 import type { KnownPlayer, ServerErrorReason } from '@mesa/shared'
 import { TableCanvas } from '../canvas/TableCanvas'
 import { fetchKnownPlayers } from '../lib/api'
-import { getNickname, setNickname } from '../lib/identity'
+import { getNickname, readGmSecret, readPlayerKey, setNickname } from '../lib/identity'
 import { TableStoreContext, useTable, useTableActions } from '../store/context'
 import { createTableStore } from '../store/tableStore'
 import { ChatPanel } from './chat/ChatPanel'
@@ -20,12 +20,14 @@ import { TurnsWindow } from './turns/TurnsWindow'
 import { useKeyboard } from './useKeyboard'
 
 const debug = new URLSearchParams(window.location.search).has('debug')
+export const LINK_EXPIRED = 'Este link expirou. Peça o link novo ao mestre'
 
 export function TablePage({ tableId }: { tableId: string }) {
   const store = useMemo(() => createTableStore(tableId), [tableId])
   const [nickname, setNick] = useState<string | null>(() => getNickname())
   const [nickError, setNickError] = useState<string | null>(null)
   const [known, setKnown] = useState<KnownPlayer[]>([])
+  const [expired, setExpired] = useState(false)
   const fatal = useStore(store, (s) => s.fatal)
 
   useEffect(() => {
@@ -47,9 +49,13 @@ export function TablePage({ tableId }: { tableId: string }) {
 
   useEffect(() => {
     if (nickname) return
+    // Com o segredo de mestre não há lista (o mestre volta sozinho) e quem decide é o hello.
+    if (readGmSecret(tableId)) return
     let alive = true
-    void fetchKnownPlayers(tableId).then((players) => {
-      if (alive) setKnown(players)
+    void fetchKnownPlayers(tableId, readPlayerKey(tableId)).then((players) => {
+      if (!alive) return
+      if (players === 'expired') setExpired(true)
+      else setKnown(players)
     })
     return () => {
       alive = false
@@ -58,7 +64,9 @@ export function TablePage({ tableId }: { tableId: string }) {
 
   return (
     <TableStoreContext.Provider value={store}>
-      {nickname ? (
+      {expired ? (
+        <ExpiredNotice />
+      ) : nickname ? (
         <TableView />
       ) : (
         <NicknameModal
@@ -123,6 +131,7 @@ function TableView() {
 function FatalMessage({ reason }: { reason: ServerErrorReason }) {
   if (reason === 'nickname_taken') return null
   if (reason === 'table_deleted') return <DeletedNotice />
+  if (reason === 'link_expired') return <ExpiredNotice />
   if (reason === 'removed') {
     return (
       <div className="fullscreen-msg">
@@ -161,6 +170,16 @@ function DeletedNotice() {
       <div>
         <p>A mesa foi apagada</p>
         <a href="/" style={{ color: '#9db4ff' }}>Voltar à página inicial</a>
+      </div>
+    </div>
+  )
+}
+
+function ExpiredNotice() {
+  return (
+    <div className="fullscreen-msg">
+      <div>
+        <p>{LINK_EXPIRED}</p>
       </div>
     </div>
   )

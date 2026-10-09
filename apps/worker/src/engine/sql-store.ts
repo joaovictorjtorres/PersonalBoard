@@ -23,6 +23,7 @@ export class SqlStore implements TableStore {
     sql.exec('CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)')
     sql.exec('CREATE TABLE IF NOT EXISTS chat (seq INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL)')
     sql.exec('CREATE TABLE IF NOT EXISTS turns (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)')
+    sql.exec('CREATE TABLE IF NOT EXISTS player_key (id INTEGER PRIMARY KEY CHECK (id = 1), hash TEXT NOT NULL)')
   }
 
   getMeta(): TableMeta | null {
@@ -39,6 +40,14 @@ export class SqlStore implements TableStore {
 
   renameTable(name: string): void {
     this.sql.exec('UPDATE meta SET name = ?', name)
+  }
+
+  getPlayerKeyHash(): string | null {
+    return this.sql.exec<{ hash: string }>('SELECT hash FROM player_key WHERE id = 1').toArray()[0]?.hash ?? null
+  }
+
+  setPlayerKeyHash(hash: string): void {
+    this.sql.exec('INSERT OR REPLACE INTO player_key (id, hash) VALUES (1, ?)', hash)
   }
 
   getLayers(): Layer[] {

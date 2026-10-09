@@ -65,23 +65,41 @@ export function rememberGmSecret(tableId: string, secret: string): void {
   safeSet(gmKey(tableId), secret)
 }
 
-// fallback em memória quando o localStorage está bloqueado (o hash já foi removido)
+// fallback em memória quando o localStorage está bloqueado (o fragmento já foi removido)
 const memoryGm = new Map<string, string>()
+const keyKey = (tableId: string) => `mesa:key:${tableId}`
+const memoryKeys = new Map<string, string>()
+
+/** Lê `#gm=` e `#j=` numa passada, guarda por mesa e tira o fragmento da barra (histórico, prints, compartilhamento). */
+function captureLinkSecrets(tableId: string): void {
+  const hash = typeof window === 'undefined' ? '' : (window.location.hash ?? '')
+  const gm = /(?:^#|&)gm=([^&]+)/.exec(hash)?.[1]
+  const key = /(?:^#|&)j=([^&]+)/.exec(hash)?.[1]
+  if (!gm && !key) return
+  if (gm) {
+    rememberGmSecret(tableId, gm)
+    memoryGm.set(tableId, gm)
+  }
+  if (key) {
+    memoryKeys.set(tableId, key)
+    safeSet(keyKey(tableId), key)
+  }
+  try {
+    history.replaceState(null, '', window.location.pathname + window.location.search)
+  } catch {
+    // ignora
+  }
+}
 
 export function readGmSecret(tableId: string): string | undefined {
-  const match = /(?:^#|&)gm=([^&]+)/.exec(window.location.hash)
-  if (match) {
-    rememberGmSecret(tableId, match[1])
-    memoryGm.set(tableId, match[1])
-    // tira o segredo da barra de endereço (histórico, screenshots, compartilhamento)
-    try {
-      history.replaceState(null, '', window.location.pathname + window.location.search)
-    } catch {
-      // ignora
-    }
-    return match[1]
-  }
-  return safeGet(gmKey(tableId)) ?? memoryGm.get(tableId)
+  captureLinkSecrets(tableId)
+  return memoryGm.get(tableId) ?? safeGet(gmKey(tableId)) ?? undefined
+}
+
+/** Chave do link de jogador desta mesa (do link aberto agora ou guardada de antes). */
+export function readPlayerKey(tableId: string): string | undefined {
+  captureLinkSecrets(tableId)
+  return memoryKeys.get(tableId) ?? safeGet(keyKey(tableId)) ?? undefined
 }
 
 const secretKey = (tableId: string) => `mesa:secret:${tableId}`
