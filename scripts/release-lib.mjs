@@ -25,13 +25,33 @@ export function setPackageVersion(packageJsonText, version) {
   return `${JSON.stringify(next, null, 2)}\n`
 }
 
-export function recoveryHint(step, version) {
+export const RESTORE_COMMAND = 'git restore --source=HEAD --staged --worktree -- package.json version.txt'
+
+// Restaura os arquivos de versão a partir do HEAD (índice e árvore). Retorna true se conseguiu.
+export function restoreFromHead(git) {
+  const attempts = [
+    ['restore', '--source=HEAD', '--staged', '--worktree', '--', 'package.json', 'version.txt'],
+    ['checkout', 'HEAD', '--', 'package.json', 'version.txt'],
+  ]
+  for (const args of attempts) {
+    try {
+      git(...args)
+      return true
+    } catch {}
+  }
+  return false
+}
+
+export function recoveryHint(step, version, restored = false) {
   const tag = `v${version}`
+  const warn = '(git reset --hard descarta alterações não commitadas)'
   if (step === 'push') {
-    return `o commit e a tag ${tag} existem só localmente. Para publicar: git push --atomic origin main ${tag}. Para desistir: git tag -d ${tag} && git reset --hard HEAD~1`
+    return `o commit e a tag ${tag} existem só localmente. Para publicar: git push --atomic origin main ${tag}. Para desistir: git tag -d ${tag} && git reset --hard HEAD~1 ${warn}`
   }
   if (step === 'tag') {
-    return 'o commit de release existe só localmente; para desfazer: git reset --hard HEAD~1'
+    return `o commit de release existe só localmente; para desfazer: git reset --hard HEAD~1 ${warn}`
   }
-  return 'nada foi publicado; package.json e version.txt foram restaurados (se não, rode: git checkout -- package.json version.txt)'
+  return restored
+    ? 'nada foi publicado; package.json e version.txt foram restaurados'
+    : `nada foi publicado, mas não consegui restaurar package.json e version.txt; rode: ${RESTORE_COMMAND}`
 }

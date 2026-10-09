@@ -7,7 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readVersion } from '../apps/launcher/src/semver.mjs'
-import { gitProblems, parseReleaseVersion, recoveryHint, setPackageVersion } from './release-lib.mjs'
+import { gitProblems, parseReleaseVersion, recoveryHint, restoreFromHead, setPackageVersion } from './release-lib.mjs'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const args = process.argv.slice(2)
@@ -57,12 +57,8 @@ function main() {
     step = 'push'
     git('push', '--atomic', 'origin', 'main', tag)
   } catch (err) {
-    if (step === 'write' || step === 'add' || step === 'commit') {
-      try {
-        git('checkout', '--', 'package.json', 'version.txt')
-      } catch {}
-    }
-    throw new Error(`${err.message}\n${recoveryHint(step, version)}`)
+    const restored = step === 'write' || step === 'add' || step === 'commit' ? restoreFromHead(git) : false
+    throw new Error(`${err.message}\n${recoveryHint(step, version, restored)}`)
   }
   console.log(`✓ ${tag} enviada. O GitHub Actions monta o pacote e cria a Release:`)
   console.log('  https://github.com/joaovictorjtorres/PersonalBoard/actions')

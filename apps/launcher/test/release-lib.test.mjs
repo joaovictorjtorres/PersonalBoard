@@ -1,9 +1,10 @@
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { gitProblems, parseReleaseVersion, recoveryHint, setPackageVersion } from '../../../scripts/release-lib.mjs'
+import { gitProblems, parseReleaseVersion, recoveryHint, restoreFromHead, setPackageVersion } from '../../../scripts/release-lib.mjs'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 
@@ -44,13 +45,48 @@ describe('recoveryHint', () => {
   it('antes do commit → nada publicado', () => {
     for (const step of ['write', 'add', 'commit']) expect(recoveryHint(step, '0.4.0')).toContain('nada foi publicado')
   })
+  it('sem restauração → comando manual exato; com → "restaurados"', () => {
+    expect(recoveryHint('commit', '0.4.0', true)).toContain('foram restaurados')
+    expect(recoveryHint('commit', '0.4.0', false)).toContain(
+      'git restore --source=HEAD --staged --worktree -- package.json version.txt',
+    )
+    expect(recoveryHint('commit', '0.4.0', false)).not.toContain('foram restaurados')
+  })
   it('falha na tag → reset do commit local', () => {
-    expect(recoveryHint('tag', '0.4.0')).toBe('o commit de release existe só localmente; para desfazer: git reset --hard HEAD~1')
+    expect(recoveryHint('tag', '0.4.0')).toContain('git reset --hard HEAD~1')
   })
   it('falha no push → publicar ou desistir', () => {
     const hint = recoveryHint('push', '0.4.0')
     expect(hint).toContain('git push --atomic origin main v0.4.0')
     expect(hint).toContain('git tag -d v0.4.0 && git reset --hard HEAD~1')
+  })
+})
+
+describe('restoreFromHead (git real)', () => {
+  it('desfaz alteração já staged, voltando ao HEAD', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'rel-'))
+    try {
+      const git = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' })
+      git('init', '-q')
+      git('config', 'user.email', 't@t')
+      git('config', 'user.name', 't')
+      fs.writeFileSync(path.join(dir, 'package.json'), '{"version":"0.3.0"}\n')
+      fs.writeFileSync(path.join(dir, 'version.txt'), '0.3.0\n')
+      git('add', '.')
+      git('commit', '-q', '-m', 'init')
+      fs.writeFileSync(path.join(dir, 'package.json'), '{"version":"0.4.0"}\n')
+      fs.writeFileSync(path.join(dir, 'version.txt'), '0.4.0\n')
+      git('add', 'package.json', 'version.txt')
+      expect(restoreFromHead(git)).toBe(true)
+      expect(fs.readFileSync(path.join(dir, 'version.txt'), 'utf8')).toBe('0.3.0\n')
+      expect(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).toBe('{"version":"0.3.0"}\n')
+      expect(git('status', '--porcelain')).toBe('')
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
+  it('falha → false', () => {
+    expect(restoreFromHead(() => { throw new Error('x') })).toBe(false)
   })
 })
 
