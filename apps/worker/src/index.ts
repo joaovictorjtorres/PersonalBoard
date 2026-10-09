@@ -1,7 +1,7 @@
 import { TABLE_ID_RE, TABLE_NAME_MAX } from '@mesa/shared'
 import { randomId, randomSecret, sha256Hex } from './crypto'
 import { serveFile, uploadAsset } from './files'
-import { isLocalRequest } from './local'
+import { isJsonRequest, isLocalRequest } from './local'
 import { handleRegistry, json, notFound } from './registry-api'
 import { registryStub } from './registry-do'
 
@@ -32,18 +32,26 @@ async function createTable(request: Request, env: Env): Promise<Response> {
   return json({ error: 'could_not_create' }, 500)
 }
 
+/** Índice e criação: só do próprio PC (nunca pelo túnel nem por outro site), e escrita só com corpo JSON. */
+function rejectNonLocal(request: Request): Response | null {
+  if (!isLocalRequest(request)) return notFound()
+  if (request.method !== 'GET' && request.method !== 'HEAD' && !isJsonRequest(request)) {
+    return json({ error: 'unsupported_media_type' }, 415)
+  }
+  return null
+}
+
 export default {
   async fetch(request, env): Promise<Response> {
     const url = new URL(request.url)
     const parts = url.pathname.split('/').filter(Boolean)
 
-    // Índice e criação: só do próprio PC (nunca pelo túnel).
     if (parts[0] === 'api' && parts[1] === 'registry') {
-      return isLocalRequest(request) ? handleRegistry(request, env, parts.slice(2)) : notFound()
+      return rejectNonLocal(request) ?? handleRegistry(request, env, parts.slice(2))
     }
 
     if (parts[0] === 'api' && parts[1] === 'tables') {
-      if (parts.length === 2 && request.method === 'POST') return isLocalRequest(request) ? createTable(request, env) : notFound()
+      if (parts.length === 2 && request.method === 'POST') return rejectNonLocal(request) ?? createTable(request, env)
       const tableId = parts[2]
       if (!tableId || !TABLE_ID_RE.test(tableId)) return json({ error: 'invalid_table' }, 400)
       const stub = env.TABLES.get(env.TABLES.idFromName(tableId))

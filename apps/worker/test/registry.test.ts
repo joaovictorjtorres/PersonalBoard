@@ -1,7 +1,7 @@
 import { exports } from 'cloudflare:workers'
 import { describe, expect, it } from 'vitest'
 import type { RegistryView } from '@mesa/shared'
-import { isLocalRequest } from '../src/local'
+import { isJsonRequest, isLocalRequest } from '../src/local'
 import { LOCAL, createTable } from './helpers'
 
 const SELF = exports.default
@@ -25,6 +25,9 @@ describe('isLocalRequest', () => {
     }
     expect(isLocalRequest(req('http://localhost/'))).toBe(true)
     expect(isLocalRequest(req('http://localhost/', { 'cf-connecting-ip': '::1' }))).toBe(true)
+    for (const origin of ['http://localhost:5173', 'http://127.0.0.1:8787', 'http://[::1]:8787']) {
+      expect(isLocalRequest(req('http://localhost:8787/', { Origin: origin })), origin).toBe(true)
+    }
   })
 
   it('não local: Host da Cloudflare, qualquer cabeçalho da borda, IP de fora, IP da rede ou Host parecido', () => {
@@ -36,6 +39,19 @@ describe('isLocalRequest', () => {
     expect(isLocalRequest(req('http://localhost:8787/', { 'cf-connecting-ip': '200.100.50.25' }))).toBe(false)
     expect(isLocalRequest(req('http://192.168.0.10:8787/'))).toBe(false)
     expect(isLocalRequest(req('http://localhost.evil.com/'))).toBe(false)
+    for (const origin of ['https://evil.example', 'http://localhost.evil.com', 'null', 'https://abc-def.trycloudflare.com']) {
+      expect(isLocalRequest(req('http://localhost:8787/', { Origin: origin })), origin).toBe(false)
+    }
+  })
+
+  it('isJsonRequest: só application/json (com ou sem charset)', () => {
+    const post = (type?: string) => new Request('http://localhost/', { method: 'POST', headers: type ? { 'Content-Type': type } : {}, body: '{}' })
+    expect(isJsonRequest(post('application/json'))).toBe(true)
+    expect(isJsonRequest(post('Application/JSON; charset=utf-8'))).toBe(true)
+    for (const type of ['text/plain', 'application/x-www-form-urlencoded', 'multipart/form-data; boundary=x']) {
+      expect(isJsonRequest(post(type)), type).toBe(false)
+    }
+    expect(isJsonRequest(new Request('http://localhost/', { method: 'POST' }))).toBe(false)
   })
 })
 
@@ -55,6 +71,28 @@ describe('índice de mesas', () => {
     expect(
       (await SELF.fetch('https://abc-def.trycloudflare.com/api/registry/tunnel', { method: 'POST', headers: TUNNEL_HEADERS, body: '{"url":null}' })).status,
     ).toBe(404)
+  })
+
+  it('outro site aberto no navegador (CSRF): Origin de fora dá 404; corpo que não é JSON dá 415; Origin local passa', async () => {
+    const evil = { Origin: 'https://evil.example', 'Content-Type': 'application/json' }
+    expect((await SELF.fetch(`${LOCAL}/api/tables`, { method: 'POST', headers: evil, body: '{"name":"x"}' })).status).toBe(404)
+    expect((await SELF.fetch(`${LOCAL}/api/registry/tunnel`, { method: 'POST', headers: evil, body: '{"url":null}' })).status).toBe(404)
+    expect((await SELF.fetch(`${LOCAL}/api/registry/tables`, { headers: { Origin: 'https://evil.example' } })).status).toBe(404)
+    // Sem Content-Type JSON (o que um <form> ou fetch "simples" de outro site mandaria): recusado.
+    for (const headers of [{}, { 'Content-Type': 'text/plain' }, { 'Content-Type': 'application/x-www-form-urlencoded' }] as Record<string, string>[]) {
+      expect((await SELF.fetch(`${LOCAL}/api/tables`, { method: 'POST', headers, body: '{"name":"x"}' })).status, JSON.stringify(headers)).toBe(415)
+      expect((await SELF.fetch(`${LOCAL}/api/registry/tunnel`, { method: 'POST', headers, body: '{"url":null}' })).status, JSON.stringify(headers)).toBe(415)
+    }
+    const ok = await SELF.fetch(`${LOCAL}/api/tables`, {
+      method: 'POST',
+      headers: { Origin: 'http://localhost:5173', 'Content-Type': 'application/json' },
+      body: '{"name":"Mesmo site"}',
+    })
+    expect(ok.status).toBe(201)
+    expect(ok.headers.get('access-control-allow-origin')).toBeNull()
+    expect(
+      (await SELF.fetch(`${LOCAL}/api/registry/tunnel`, { method: 'POST', headers: { Origin: 'http://127.0.0.1:8787', 'Content-Type': 'application/json' }, body: '{"url":null}' })).status,
+    ).toBe(204)
   })
 
   it('criar registra a mesa; a lista traz nome, datas, jogadores e o segredo do mestre, mais recente primeiro', async () => {
