@@ -11,7 +11,8 @@ import { UPDATE_EXIT_CODE } from '../src/swap.mjs'
 import { STAGING_DIR_NAME } from '../src/update.mjs'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-const read = (...p) => fs.readFileSync(path.join(repo, ...p), 'utf8')
+// Normaliza CRLF → LF (checkout no Windows); o .cmd é testado depois de toCrlf/split(/\r?\n/).
+const read = (...p) => fs.readFileSync(path.join(repo, ...p), 'utf8').replace(/\r\n/g, '\n')
 
 describe('pins', () => {
   it('Node portátil na mesma major do projeto; versões nas URLs; SHA-256 em hex', () => {

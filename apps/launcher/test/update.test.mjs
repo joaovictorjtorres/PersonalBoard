@@ -233,14 +233,17 @@ describe('stageUpdate com arquivos presos', () => {
         if (to === p.appNew && fails.rename++ < 2) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
         return fs.renameSync(from, to)
       },
-      rmSync(target, opts) {
-        if (String(target).endsWith('MesaVirtual-update') && fails.rm++ < 2) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
-        return fs.rmSync(target, opts)
+      lstatSync(target, opts) {
+        if (String(target).endsWith('MesaVirtual-update') && fails.rm < 2) {
+          fails.rm++
+          throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+        }
+        return fs.lstatSync(target, opts)
       },
     }
     expect(await checkForUpdate(h.deps, ctx)).toBe(true)
     expect(fails.rename).toBe(3)
-    expect(fails.rm).toBe(3)
+    expect(fails.rm).toBe(2)
     expect(versionOf(p.appNew)).toBe('0.5.0')
   })
 })

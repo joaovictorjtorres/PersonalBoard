@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { removeTree } from './rm.mjs'
 
 export const LOG_MAX_BYTES = 1024 * 1024
 export const LOG_FILES = 3
@@ -11,7 +12,7 @@ export function rotatedName(file, index) {
 }
 
 export function rotateLogs(fs, file, maxFiles = LOG_FILES) {
-  fs.rmSync(rotatedName(file, maxFiles - 1), { force: true })
+  removeTree(fs, rotatedName(file, maxFiles - 1), { attempts: 1 })
   for (let i = maxFiles - 2; i >= 0; i--) {
     const from = rotatedName(file, i)
     if (fs.existsSync(from)) fs.renameSync(from, rotatedName(file, i + 1))

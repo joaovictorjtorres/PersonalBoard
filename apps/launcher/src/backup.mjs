@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { removeTree } from './rm.mjs'
 import { writeConfig } from './config.mjs'
 
 export const KEEP_BACKUPS = 10
@@ -41,7 +42,7 @@ export function makeBackup(fs, { stateDir, backupsDir, date, keep = KEEP_BACKUPS
   fs.mkdirSync(backupsDir, { recursive: true })
   for (const entry of fs.readdirSync(backupsDir)) {
     if (entry.startsWith('.') && entry.endsWith('.partial')) {
-      fs.rmSync(path.join(backupsDir, entry), { recursive: true, force: true })
+      removeTree(fs, path.join(backupsDir, entry))
     }
   }
   const base = backupName(date)
@@ -51,7 +52,7 @@ export function makeBackup(fs, { stateDir, backupsDir, date, keep = KEEP_BACKUPS
   fs.cpSync(stateDir, partial, { recursive: true })
   fs.renameSync(partial, path.join(backupsDir, name))
   for (const old of backupsToDelete(fs.readdirSync(backupsDir), keep, name)) {
-    fs.rmSync(path.join(backupsDir, old), { recursive: true, force: true })
+    removeTree(fs, path.join(backupsDir, old))
   }
   return name
 }

@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { removeTree } from './rm.mjs'
 
 /** Código de saída que pede ao "Iniciar Mesa.cmd" para aplicar a atualização. Contrato congelado. */
 export const UPDATE_EXIT_CODE = 75
@@ -35,7 +36,8 @@ export function swapApp(fs, root, retryOptions = {}) {
   if (!fs.existsSync(path.join(p.appNew, 'launcher', 'launcher.mjs'))) {
     throw new Error('a versão nova está incompleta')
   }
-  fs.rmSync(p.appOld, { recursive: true, force: true })
+  // No Windows, renomear uma pasta por cima de outra que existe dá EPERM: app.old precisa sumir antes.
+  removeTree(fs, p.appOld, { sleepSync: retryOptions.sleepSync })
   renameWithRetry(fs, p.app, p.appOld, retryOptions)
   try {
     renameWithRetry(fs, p.appNew, p.app, retryOptions)
@@ -58,18 +60,18 @@ export function restoreOldApp(fs, root, retryOptions = {}) {
 }
 
 /** Sobras de uma atualização interrompida. */
-export function removeLeftovers(fs, root) {
+export function removeLeftovers(fs, root, { sleepSync } = {}) {
   const p = appPaths(root)
-  fs.rmSync(p.appNewTmp, { recursive: true, force: true })
-  fs.rmSync(p.appNew, { recursive: true, force: true })
+  removeTree(fs, p.appNewTmp, { sleepSync })
+  removeTree(fs, p.appNew, { sleepSync })
 }
 
 /** Apaga app.old\ (chamado depois que o servidor respondeu). true se havia o que apagar. */
-export function removeOldApp(fs, root) {
+export function removeOldApp(fs, root, { sleepSync } = {}) {
   const { appOld } = appPaths(root)
   if (!fs.existsSync(appOld)) return false
   try {
-    fs.rmSync(appOld, { recursive: true, force: true })
+    removeTree(fs, appOld, { sleepSync })
     return true
   } catch {
     return false

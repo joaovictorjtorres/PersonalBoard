@@ -107,7 +107,7 @@ async function runMain(deps, opts) {
   const stagedNotInstalled = fs.existsSync(appPaths(root).appNew) && !fs.existsSync(paths.updateFailedFile)
   if (stagedNotInstalled) log.write('app.new encontrada sem recado de falha: atualização preparada não instalada')
   try {
-    removeLeftovers(fs, root)
+    removeLeftovers(fs, root, { sleepSync: deps.sleepSync })
   } catch (err) {
     log.write(`limpeza de app.new falhou: ${err?.stack ?? err}`)
     deps.print(MSG.leftoversFailed(err?.message ?? String(err)))
@@ -298,7 +298,7 @@ function createSession(deps, ctx, { app, port, inspectorPort }) {
     const ok = await bootServer()
     if (shuttingDown) return done
     if (!ok) return 1
-    if (removeOldApp(deps.fs, ctx.root)) log.write('versão anterior (app.old) removida')
+    if (removeOldApp(deps.fs, ctx.root, { sleepSync: deps.sleepSync })) log.write('versão anterior (app.old) removida')
     watchServer(server)
     const link = await openTunnel()
     if (shuttingDown) return done

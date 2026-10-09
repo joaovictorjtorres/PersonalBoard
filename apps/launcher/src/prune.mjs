@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { removeTree } from './rm.mjs'
 
 export const KEEP_WRANGLER_LOGS = 10
 
@@ -18,7 +19,7 @@ export function pruneOldFiles(fs, dir, keep = KEEP_WRANGLER_LOGS) {
     files.sort((a, b) => b.mtime - a.mtime || (a.name < b.name ? 1 : -1))
     for (const old of files.slice(keep)) {
       try {
-        fs.rmSync(old.full, { force: true })
+        removeTree(fs, old.full, { attempts: 1 })
       } catch {
         // arquivo preso: fica para a próxima
       }

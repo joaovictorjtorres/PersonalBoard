@@ -6,24 +6,26 @@ import { PINS, assetName } from '../../../scripts/win-package/lib.mjs'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
 const workflowFile = path.join(repo, '.github', 'workflows', 'release.yml')
+// Checkout com core.autocrlf=true (runner Windows) traz CRLF: normaliza antes de casar linhas.
+const readWorkflow = () => fs.readFileSync(workflowFile, 'utf8').replace(/\r\n/g, '\n')
 
 describe('release.yml', () => {
   it('existe e segue o spec (tag v*, main, dispatch, windows-latest, contents: write)', () => {
-    const yml = fs.readFileSync(workflowFile, 'utf8')
+    const yml = readWorkflow()
     expect(yml).toMatch(/on:\s*\n\s*push:\s*\n\s*branches:\s*\[main\]\s*\n\s*tags:\s*\['v\*'\]\s*\n\s*workflow_dispatch:/)
     expect(yml).toMatch(/runs-on:\s*windows-latest/)
     expect(yml).toMatch(/permissions:\s*\n\s*contents:\s*write/)
   })
 
   it('Node do CI = Node portátil do pacote; pnpm 12; lockfile congelado', () => {
-    const yml = fs.readFileSync(workflowFile, 'utf8')
+    const yml = readWorkflow()
     expect(yml).toContain(`node-version: ${PINS.node.version}`)
     expect(yml).toMatch(/version:\s*12\.\d+\.\d+/)
     expect(yml).toContain('pnpm install --frozen-lockfile')
   })
 
   it('confere a tag, testa, monta, faz a fumaça no zip extraído e publica', () => {
-    const yml = fs.readFileSync(workflowFile, 'utf8')
+    const yml = readWorkflow()
     const order = [
       'version.txt', 'pnpm typecheck', '@mesa/shared exec vitest', '@mesa/launcher exec vitest',
       '@mesa/web exec vitest', '@mesa/worker exec vitest', 'pnpm build', 'pnpm win:package',
@@ -39,7 +41,7 @@ describe('release.yml', () => {
   })
 
   it('o build do front roda imediatamente antes do pacote, no mesmo job', () => {
-    const yml = fs.readFileSync(workflowFile, 'utf8')
+    const yml = readWorkflow()
     const build = yml.indexOf('run: pnpm build')
     const pkg = yml.indexOf('run: pnpm win:package')
     expect(build).toBeGreaterThan(0)
@@ -50,7 +52,7 @@ describe('release.yml', () => {
   })
 
   it('ensaio sem tag: confere a tag e cria a Release só em refs/tags/v*; version.txt dá a versão', () => {
-    const yml = fs.readFileSync(workflowFile, 'utf8')
+    const yml = readWorkflow()
     const steps = yml.split(/^ {6}- /m)
     const tagStep = steps.find((s) => s.includes('name: Tag confere com version.txt'))
     const releaseStep = steps.find((s) => s.includes('name: Criar a Release'))
@@ -74,14 +76,14 @@ describe('release.yml', () => {
   })
 
   it('fumaça com timeout de 5 min e checkout sem credenciais', () => {
-    const yml = fs.readFileSync(workflowFile, 'utf8')
+    const yml = readWorkflow()
     const smoke = yml.split(/^ {6}- /m).find((s) => s.includes('Teste de fumaça'))
     expect(smoke).toContain('timeout-minutes: 5')
     expect(yml).toContain('persist-credentials: false')
   })
 
   it('todo `uses:` fixado em SHA de 40 hex com comentário de versão', () => {
-    const yml = fs.readFileSync(workflowFile, 'utf8')
+    const yml = readWorkflow()
     const uses = yml.split('\n').filter((l) => /^\s*(- )?uses:/.test(l))
     expect(uses.length).toBeGreaterThanOrEqual(3)
     for (const line of uses) expect(line).toMatch(/uses:\s*[\w.-]+\/[\w.-]+@[0-9a-f]{40}\s+# v\d+(\.\d+)*\s*$/)

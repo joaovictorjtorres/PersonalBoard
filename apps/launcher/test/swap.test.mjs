@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { removeTree } from '../src/rm.mjs'
 import { UPDATE_EXIT_CODE, appPaths, removeLeftovers, removeOldApp, restoreOldApp, renameWithRetry, swapApp } from '../src/swap.mjs'
 
 let base
@@ -12,7 +13,14 @@ beforeEach(() => {
   writeApp(path.join(root, 'app'), '0.4.0')
   writeApp(path.join(root, 'app.new'), '0.5.0')
 })
-afterEach(() => fs.rmSync(base, { recursive: true, force: true }))
+afterEach(() => removeTree(fs, base))
+
+/*
+ * No Windows (Node 24) o fs.rmSync ignora em silêncio caminhos com acento ("João"): ele monta o
+ * caminho na code page ANSI e não acha nada. Este fs reproduz isso no Linux: rmSync não faz nada.
+ * Os testes de produção usam este fs para garantir que a troca/limpeza não dependem do rmSync.
+ */
+const winFs = { ...fs, rmSync() {} }
 
 function writeApp(dir, version) {
   fs.mkdirSync(path.join(dir, 'launcher'), { recursive: true })
@@ -51,8 +59,9 @@ describe('swapApp', () => {
 
   it('app.old antigo é substituído', () => {
     writeApp(path.join(root, 'app.old'), '0.3.0')
-    swapApp(fs, root, noSleep)
+    swapApp(winFs, root, noSleep)
     expect(versionOf(appPaths(root).appOld)).toBe('0.4.0')
+    expect(versionOf(appPaths(root).app)).toBe('0.5.0')
   })
 
   it('falha no segundo rename → restaura app e avisa "arquivo em uso"', () => {
@@ -74,8 +83,8 @@ describe('swapApp', () => {
   })
 
   it('app.new incompleto → recusa sem tocar em nada', () => {
-    fs.rmSync(path.join(root, 'app.new', 'launcher'), { recursive: true })
-    expect(() => swapApp(fs, root, noSleep)).toThrow('a versão nova está incompleta')
+    removeTree(fs, path.join(root, 'app.new', 'launcher'))
+    expect(() => swapApp(winFs, root, noSleep)).toThrow('a versão nova está incompleta')
     expect(versionOf(appPaths(root).app)).toBe('0.4.0')
   })
 })
@@ -120,21 +129,21 @@ describe('limpeza', () => {
   it('removeLeftovers apaga app.new e app.new.tmp; removeOldApp apaga app.old', () => {
     const p = appPaths(root)
     fs.mkdirSync(p.appNewTmp)
-    removeLeftovers(fs, root)
+    removeLeftovers(winFs, root, noSleep)
     expect(fs.existsSync(p.appNew)).toBe(false)
     expect(fs.existsSync(p.appNewTmp)).toBe(false)
-    expect(removeOldApp(fs, root)).toBe(false)
+    expect(removeOldApp(winFs, root, noSleep)).toBe(false)
     writeApp(p.appOld, '0.3.0')
-    expect(removeOldApp(fs, root)).toBe(true)
+    expect(removeOldApp(winFs, root, noSleep)).toBe(true)
     expect(fs.existsSync(p.appOld)).toBe(false)
   })
 })
 
 describe('restoreOldApp', () => {
   it('app\\ ausente e app.old\\ presente → renomeia de volta', () => {
-    fs.rmSync(path.join(root, 'app'), { recursive: true })
+    removeTree(fs, path.join(root, 'app'))
     writeApp(path.join(root, 'app.old'), '0.3.0')
-    expect(restoreOldApp(fs, root, noSleep)).toBe(true)
+    expect(restoreOldApp(winFs, root, noSleep)).toBe(true)
     expect(versionOf(path.join(root, 'app'))).toBe('0.3.0')
     expect(fs.existsSync(path.join(root, 'app.old'))).toBe(false)
   })
@@ -143,8 +152,42 @@ describe('restoreOldApp', () => {
     writeApp(path.join(root, 'app.old'), '0.3.0')
     expect(restoreOldApp(fs, root, noSleep)).toBe(false)
     expect(versionOf(path.join(root, 'app'))).toBe('0.4.0')
-    fs.rmSync(path.join(root, 'app'), { recursive: true })
-    fs.rmSync(path.join(root, 'app.old'), { recursive: true })
+    removeTree(fs, path.join(root, 'app'))
+    removeTree(fs, path.join(root, 'app.old'))
     expect(restoreOldApp(fs, root, noSleep)).toBe(false)
+  })
+})
+
+describe('removeTree', () => {
+  it('apaga pasta com subpastas e arquivo somente-leitura sem usar fs.rmSync', () => {
+    const dir = path.join(root, 'app.old')
+    writeApp(dir, '0.3.0')
+    const ro = path.join(dir, 'launcher', 'somente-leitura.txt')
+    fs.writeFileSync(ro, 'x')
+    fs.chmodSync(ro, 0o444)
+    removeTree(winFs, dir, noSleep)
+    expect(fs.existsSync(dir)).toBe(false)
+    removeTree(winFs, dir, noSleep) // ausente não é erro
+  })
+
+  it('erro temporário → tenta de novo; persistente → lança em vez de fingir que apagou', () => {
+    const dir = path.join(root, 'app.old')
+    writeApp(dir, '0.3.0')
+    let fails = 0
+    const busy = (times) => ({
+      ...winFs,
+      rmdirSync(p) {
+        if (p === dir && fails++ < times) throw Object.assign(new Error('EBUSY: resource busy or locked'), { code: 'EBUSY' })
+        return fs.rmdirSync(p)
+      },
+    })
+    const waits = []
+    removeTree(busy(2), dir, { sleepSync: (ms) => waits.push(ms) })
+    expect(fs.existsSync(dir)).toBe(false)
+    expect(waits).toEqual([200, 200])
+    writeApp(dir, '0.3.0')
+    fails = 0
+    expect(() => removeTree(busy(Infinity), dir, noSleep)).toThrow('EBUSY')
+    expect(fs.existsSync(dir)).toBe(true)
   })
 })

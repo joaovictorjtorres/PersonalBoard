@@ -328,9 +328,9 @@ describe('run: endurecimento (T5)', () => {
     writeFakeApp(path.join(root, 'app.new'), '0.5.0')
     h.deps.fs = {
       ...fs,
-      rmSync: (p, o) => {
+      lstatSync: (p, o) => {
         if (String(p).endsWith('app.new.tmp')) throw new Error('EBUSY: em uso')
-        return fs.rmSync(p, o)
+        return fs.lstatSync(p, o)
       },
     }
     const result = (await startServing(h, root)).result

@@ -7,6 +7,7 @@ import { MSG } from './messages.mjs'
 import { extractZip } from './processes.mjs'
 import { DOWNLOAD_PREFIX, LATEST_URL, pickUpdate } from './release.mjs'
 import { readVersion } from './semver.mjs'
+import { removeTree } from './rm.mjs'
 import { appPaths, renameWithRetry, swapApp } from './swap.mjs'
 
 /** Pasta em %TEMP% de onde o "Iniciar Mesa.cmd" roda a troca. Contrato congelado. */
@@ -21,7 +22,8 @@ const YES = new Set(['', 's', 'sim', 'y', 'yes'])
 function rmWithRetry(deps, target, { attempts = 5, delayMs = 500 } = {}) {
   for (let attempt = 1; ; attempt++) {
     try {
-      deps.fs.rmSync(target, { recursive: true, force: true })
+      // removeTree e não fs.rmSync: no Windows o rmSync do Node 24 ignora caminhos com acento.
+      removeTree(deps.fs, target, { attempts: 1 })
       return
     } catch (err) {
       if (attempt >= attempts) throw err
@@ -48,7 +50,7 @@ export function describeError(err, timeoutText = 'sem resposta em 5 s') {
 
 export async function downloadAsset(deps, asset, destFile) {
   const { fs } = deps
-  fs.rmSync(destFile, { force: true })
+  removeTree(fs, destFile, { attempts: 1 })
   try {
     if (typeof asset.url !== 'string' || !asset.url.startsWith(DOWNLOAD_PREFIX)) {
       throw new Error('o endereço do download não é do repositório oficial')
@@ -69,7 +71,7 @@ export async function downloadAsset(deps, asset, destFile) {
       }
     }
   } catch (err) {
-    fs.rmSync(destFile, { force: true })
+    removeTree(fs, destFile, { attempts: 1 })
     throw err
   }
 }
@@ -207,7 +209,7 @@ export function consumeUpdateFailure(fs, paths) {
   let reason = 'erro desconhecido'
   try {
     reason = fs.readFileSync(paths.updateFailedFile, 'utf8').trim() || reason
-    fs.rmSync(paths.updateFailedFile, { force: true })
+    removeTree(fs, paths.updateFailedFile, { attempts: 1 })
   } catch {
     // ignora
   }

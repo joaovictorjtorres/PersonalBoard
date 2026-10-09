@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
-const readme = fs.readFileSync(path.join(repo, 'README.md'), 'utf8')
+// CRLF (checkout no Windows com core.autocrlf=true) → LF, para as frases com quebra de linha casarem.
+const readme = fs.readFileSync(path.join(repo, 'README.md'), 'utf8').replace(/\r\n/g, '\n')
 
 describe('README', () => {
   it('cobre o §9 do spec', () => {

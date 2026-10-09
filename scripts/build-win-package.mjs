@@ -4,6 +4,7 @@
 // que o npm só instala na plataforma certa. Pré-requisito: `pnpm build` (apps/web/dist).
 import { execFileSync, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
+import { removeTree } from '../apps/launcher/src/rm.mjs'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -43,7 +44,7 @@ async function main() {
   const webDist = path.join(repo, 'apps', 'web', 'dist')
   if (!fs.existsSync(path.join(webDist, 'index.html'))) throw new Error('apps/web/dist não existe: rode `pnpm build` antes')
 
-  fs.rmSync(out, { recursive: true, force: true })
+  removeTree(fs, out) // não fs.rmSync: no Windows (Node 24) ele ignora caminhos com acento
   const pkg = path.join(out, 'MesaVirtual')
   const app = path.join(pkg, 'app')
   const server = path.join(app, 'server')

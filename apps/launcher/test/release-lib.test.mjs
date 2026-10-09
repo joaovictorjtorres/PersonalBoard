@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
+import { removeTree } from '../src/rm.mjs'
 import { gitProblems, parseReleaseVersion, recoveryHint, restoreFromHead, setPackageVersion } from '../../../scripts/release-lib.mjs'
 
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -68,6 +69,11 @@ describe('restoreFromHead (git real)', () => {
     try {
       const git = (...a) => execFileSync('git', a, { cwd: dir, encoding: 'utf8' })
       git('init', '-q')
+      // Determinístico em qualquer máquina: sem conversão de fim de linha (o runner Windows tem
+      // core.autocrlf=true global) e sem hooks globais.
+      git('config', 'core.autocrlf', 'false')
+      git('config', 'core.eol', 'lf')
+      git('config', 'core.hooksPath', '')
       git('config', 'user.email', 't@t')
       git('config', 'user.name', 't')
       fs.writeFileSync(path.join(dir, 'package.json'), '{"version":"0.3.0"}\n')
@@ -82,7 +88,7 @@ describe('restoreFromHead (git real)', () => {
       expect(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')).toBe('{"version":"0.3.0"}\n')
       expect(git('status', '--porcelain')).toBe('')
     } finally {
-      fs.rmSync(dir, { recursive: true, force: true })
+      removeTree(fs, dir)
     }
   })
   it('falha → false', () => {
@@ -101,7 +107,7 @@ describe('setPackageVersion', () => {
   })
 
   it('substitui a versão existente do package.json real', () => {
-    const real = fs.readFileSync(path.join(repo, 'package.json'), 'utf8')
+    const real = fs.readFileSync(path.join(repo, 'package.json'), 'utf8').replace(/\r\n/g, '\n')
     const next = JSON.parse(setPackageVersion(real, '9.9.9'))
     expect(next.version).toBe('9.9.9')
     expect(next.scripts).toEqual(JSON.parse(real).scripts)

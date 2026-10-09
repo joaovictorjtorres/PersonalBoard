@@ -1,1 +1,22 @@
+# LF em todo checkout, em qualquer SO (o runner Windows tem core.autocrlf=true).
+* text=auto eol=lf
+# O cmd.exe precisa de CRLF.
 *.cmd text eol=crlf
+*.bat text eol=crlf
+# Binários: nunca converter.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.zip binary
+*.exe binary
+*.dll binary
+*.wasm binary
+*.sqlite binary
+*.pdf binary
