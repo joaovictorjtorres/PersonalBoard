@@ -77,11 +77,11 @@ describe('run: caminho feliz', () => {
 })
 
 describe('run: erros', () => {
-  it('portas 8787–8797 ocupadas → mensagem clara e código 1', async () => {
+  it('portas 8787 a 8797 ocupadas → mensagem clara e código 1', async () => {
     const { h, root } = setup({ freePorts: [] })
     expect(await run(h.deps, { root, noUpdate: true })).toBe(1)
     expect(h.output.at(-1)).toBe(MSG.portsBusy)
-    expect(h.output.at(-1)).toContain('Feche outros programas usando as portas 8787–8797')
+    expect(h.output.at(-1)).toContain('Feche outros programas usando as portas 8787 a 8797')
     expect(h.children.server).toHaveLength(0)
   })
 

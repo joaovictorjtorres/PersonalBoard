@@ -40,7 +40,7 @@ export function Toolbar() {
       <div className="pen-anchor" ref={penAnchor}>
         <button
           aria-label={penLabel}
-          title={`${penLabel} — passe o mouse: opções`}
+          title={`${penLabel} (passe o mouse: opções)`}
           aria-pressed={tool === 'pencil'}
           aria-haspopup="dialog"
           aria-expanded={menus.open === 'pen'}
@@ -58,7 +58,7 @@ export function Toolbar() {
       <div className="pen-anchor" ref={shapeAnchor}>
         <button
           aria-label="Formas (S)"
-          title="Formas (S) — passe o mouse: tipo e preenchimento"
+          title="Formas (S): passe o mouse para tipo e preenchimento"
           aria-pressed={tool === 'shape'}
           aria-haspopup="dialog"
           aria-expanded={menus.open === 'shape'}
@@ -75,7 +75,7 @@ export function Toolbar() {
       </div>
       <button
         aria-label="Régua (R)"
-        title="Régua (R) — clique fixa o início; botão direito dobra; novo clique ou Esc remove"
+        title="Régua (R): clique fixa o início; botão direito dobra; novo clique ou Esc remove"
         aria-pressed={tool === 'ruler'}
         onClick={() => actions.setTool('ruler')}
       >

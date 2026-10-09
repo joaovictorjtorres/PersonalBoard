@@ -69,7 +69,7 @@ describe('ações de chat', () => {
   it('/r xx mostra o aviso e não envia nada', () => {
     const store = connected()
     expect(store.getState().actions.sendChatText('/r xx')).toBe(false)
-    expect(store.getState().toasts.at(-1)?.text).toBe('Fórmula inválida — ex.: /r 2d6+3')
+    expect(store.getState().toasts.at(-1)?.text).toBe('Fórmula inválida. Ex.: /r 2d6+3')
     expect(chatSent()).toEqual([])
   })
 
@@ -95,7 +95,7 @@ describe('ações de chat', () => {
     expect(store.getState().actions.sendChatText('oi')).toBe(false)
     expect(store.getState().actions.sendRoll({ die: 20, count: 1, bonus: 0, mode: 'normal' }, false)).toBe(false)
     await store.getState().actions.sendChatImage(new Blob(['x'], { type: 'image/gif' }))
-    expect(store.getState().toasts.at(-1)?.text).toBe('Sem conexão — aguarde reconectar')
+    expect(store.getState().toasts.at(-1)?.text).toBe('Sem conexão. Aguarde reconectar')
     expect(store.getState().chatPending).toEqual({})
     expect(FakeSocket.all).toEqual([])
   })

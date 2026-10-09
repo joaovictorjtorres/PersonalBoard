@@ -125,7 +125,7 @@ export function ChatPanel() {
               const el = e.currentTarget
               wasNearBottom.current = isNearBottom(el.scrollHeight, el.scrollTop, el.clientHeight)
             }}
-            className="chat-list" aria-label={`Mensagens — ${tabName(active)}`}>
+            className="chat-list" aria-label={`Mensagens: ${tabName(active)}`}>
             {entries.map((entry) => {
               const author = members[entry.authorId]
               const options = memberMenuOptions(entry.authorId, selfId, isGm)
@@ -163,7 +163,7 @@ export function ChatPanel() {
               type="button"
               className="icon-button"
               aria-label="Rolar 1d20 (botão direito: mais opções)"
-              title="Rolar 1d20 — botão direito: mais opções"
+              title="Rolar 1d20 (botão direito: mais opções)"
               onClick={() => actions.sendRoll(D20, false)}
               onContextMenu={(e) => {
                 e.preventDefault()

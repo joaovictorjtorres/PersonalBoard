@@ -104,7 +104,7 @@ export function createTableStore(
       if (ops.length === 0) return true
       const s = get()
       if (s.status !== 'open' || !sync) {
-        set(addToast(s, 'Sem conexão — aguarde reconectar'))
+        set(addToast(s, 'Sem conexão. Aguarde reconectar'))
         return false
       }
       const items = ops.map((op) => ({ opId: `op_${nanoid()}`, op }))
@@ -117,7 +117,7 @@ export function createTableStore(
     const sendChat = (channel: ChatChannel, build: (reqId: string) => ClientMessage): boolean => {
       const s = get()
       if (s.status !== 'open' || !sync) {
-        set(addToast(s, 'Sem conexão — aguarde reconectar'))
+        set(addToast(s, 'Sem conexão. Aguarde reconectar'))
         return false
       }
       const reqId = `c_${nanoid()}`
@@ -311,7 +311,7 @@ export function createTableStore(
         if (!trimmed) return false
         const command = parseCommand(trimmed)
         if (command?.kind === 'invalid') {
-          set((s) => addToast(s, 'Fórmula inválida — ex.: /r 2d6+3'))
+          set((s) => addToast(s, 'Fórmula inválida. Ex.: /r 2d6+3'))
           return false
         }
         if (command?.kind === 'roll') return actions.sendRoll(command.request, false)
@@ -327,7 +327,7 @@ export function createTableStore(
         // canal capturado antes do upload: trocar de aba durante o envio não muda o destino
         const channel = channelOf(get().chatActive)
         if (get().status !== 'open' || !sync) {
-          set((s) => addToast(s, 'Sem conexão — aguarde reconectar'))
+          set((s) => addToast(s, 'Sem conexão. Aguarde reconectar'))
           return
         }
         try {

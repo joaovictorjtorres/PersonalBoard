@@ -41,7 +41,7 @@ export function HomePage() {
         </form>
       ) : (
         <>
-          <p>Mesa criada! Guarde o link de mestre — ele não pode ser recuperado.</p>
+          <p>Mesa criada! Guarde o link de mestre, ele não pode ser recuperado.</p>
           <LinkRow label="Link dos jogadores" value={playerLink} />
           <LinkRow label="Link do mestre (secreto)" value={gmLink} />
           <button onClick={() => window.location.assign(gmLink)}>Abrir como mestre</button>
@@ -68,7 +68,7 @@ function LinkRow({ label, value }: { label: string; value: string }) {
               setFeedback('Copiado')
             } catch {
               inputRef.current?.select()
-              setFeedback('Selecionado — copie com Ctrl+C')
+              setFeedback('Selecionado. Copie com Ctrl+C')
             }
           }}
         >
