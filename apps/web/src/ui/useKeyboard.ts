@@ -11,7 +11,7 @@ export function useKeyboard(): void {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (isTypingTarget(e.target)) return
-      const { actions, selectedId } = store.getState()
+      const { actions, selectedId, selection } = store.getState()
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault()
         actions.undo()
@@ -25,10 +25,14 @@ export function useKeyboard(): void {
         case 'e': actions.setPen('erase'); break
         case 'r': actions.setTool('ruler'); break
         case 's': actions.setTool('shape'); break
-        case 'escape': actions.rulerCancel(); break
+        case 'escape':
+          actions.rulerCancel()
+          actions.clearSelection()
+          break
         case 'delete':
         case 'backspace':
-          if (selectedId) {
+          if (selection) actions.deleteSelection()
+          else if (selectedId) {
             actions.submit({ kind: 'delete', id: selectedId })
             actions.select(null)
           }

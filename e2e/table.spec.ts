@@ -781,6 +781,14 @@ test('modais e menus cabem na janela 1280x720 sem rolagem', async ({ browser, pa
   await noScroll(shape, 'formas')
   await gm.keyboard.press('Escape')
 
+  await gm.getByRole('button', { name: 'Selecionar (V)' }).click({ button: 'right' })
+  const select = gm.getByRole('dialog', { name: 'Opções da seleção' })
+  await expect(select).toBeVisible()
+  await noScroll(select, 'seleção')
+  const box = await select.boundingBox()
+  expect(box && box.x >= 0 && box.y >= 0 && box.x + box.width <= 1280 && box.y + box.height <= 720, 'seleção na janela').toBe(true)
+  await gm.keyboard.press('Escape')
+
   const layer = await openLayerMenu(gm, 'Tokens')
   await noScroll(layer, 'camada')
   await gm.keyboard.press('Escape')

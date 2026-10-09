@@ -27,7 +27,7 @@ import { chatRejectText, reduceChatEntry } from './chat'
 import { ackTurnOp, recomputeTurns } from './turns'
 import { applyLocalOp, objectOpsOf, opTargetId } from './localOps'
 import { batchInverse, inverseGroupOf } from './undo'
-import type { LocalPrev, PendingOp, TableState, Toast } from './state'
+import { NO_SELECTION, type LocalPrev, type PendingOp, type TableState, type Toast } from './state'
 
 const REJECT_TEXT: Record<RejectReason, string> = {
   invalid: 'Ação inválida',
@@ -172,7 +172,9 @@ function recomputeLayers<S extends TableState>(s: S, pending: Record<string, Pen
 /** `prev`: as camadas antes da mudança, para achar a vizinha mais próxima da ativa que sumiu. */
 function withActiveLayer<S extends TableState>(s: S, prev: Layer[]): S {
   const activeLayerId = pickActiveLayer(prev, s.layers, s.activeLayerId, s.self?.role)
-  return activeLayerId === s.activeLayerId ? s : { ...s, activeLayerId, selectedId: null }
+  if (activeLayerId === s.activeLayerId) return s
+  // A camada ativa mudou: a seleção em área só sobrevive com "Todas as camadas".
+  return { ...s, activeLayerId, selectedId: null, ...(s.selectAllLayers ? {} : NO_SELECTION) }
 }
 
 /** Tira objetos (e o que depende deles) do estado local. */
@@ -393,7 +395,8 @@ function rejectBatch<S extends TableState>(s: S, opId: string, p: PendingOp, rea
   const selfId = s.self?.clientId ?? ''
   for (const id of Object.keys(before)) objects = reapplyPending(objects, pending, selfId, id)
   const next = settleGroup({ ...s, pending, objects }, p, null)
-  return addToast(next, p.isUndo ? 'Não foi possível desfazer' : (p.failText ?? rejectText(p.op, reason)))
+  // Lote recusado: a seleção em área é desfeita.
+  return addToast({ ...next, ...NO_SELECTION }, p.isUndo ? 'Não foi possível desfazer' : (p.failText ?? rejectText(p.op, reason)))
 }
 
 export function reduceSubmitBatch<S extends TableState>(

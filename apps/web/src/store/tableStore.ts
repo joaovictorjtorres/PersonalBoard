@@ -1,6 +1,6 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { nanoid } from 'nanoid'
-import type { ChatChannel, ClientMessage, MemberPatch, ObjectOp, Op, Point, Presence, RollRequest, SettingsPatch, ShapeKind } from '@mesa/shared'
+import type { ChatChannel, ClientMessage, Control, MemberPatch, ObjectOp, Op, Point, Presence, RollRequest, SettingsPatch, ShapeKind } from '@mesa/shared'
 import { BATCH_MAX, CHAT_TEXT_MAX, DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, TURNS_MAX, canControl, parseCommand, snapToGrid } from '@mesa/shared'
 import { SyncClient, type SyncClientOptions } from '../sync/SyncClient'
 import { throttle, type Throttled } from '../lib/throttle'
@@ -9,6 +9,7 @@ import { uploadAsset, wsUrl } from '../lib/api'
 import { initialSize, prepareChatImage, prepareImage, uploadErrorText, viewportCenter } from '../lib/image'
 import {
   makeInitialState,
+  NO_SELECTION,
   type Geometry,
   type PenMode,
   type Ruler,
@@ -19,10 +20,14 @@ import {
   type Viewport,
 } from './state'
 import { rulerBend as bendRuler, rulerMoveTo, rulerStart } from '../canvas/ruler'
-import { addToast, canUseLayer, reduceServer, reduceStatus, reduceSubmitBatch } from './reducers'
+import { addToast, canUseLayer, isLockedByOther, reduceServer, reduceStatus, reduceSubmitBatch } from './reducers'
 import { rotatedBounds } from '../canvas/bounds'
 import { linkedImage, turnNameFor } from './turns'
 import { channelOf, closeDmTab, openDmTab, selectChatTab, setChatOpen, type ChatTab } from './chat'
+import { addArea, collectSelection, selectionOfIds, type SelectContext, type SelectionArea, type SelectShape } from '../selection/model'
+import { planControl, planDelete, planMove, planToLayer, type PlanInput } from '../selection/plan'
+import { reconcileSelection } from '../selection/reconcile'
+import { loadSelectPrefs, saveSelectPrefs } from '../lib/selectPrefs'
 
 export interface TableActions {
   connect(nickname: string): void
@@ -85,6 +90,19 @@ export interface TableActions {
   setTurnHover(tokenId: string | null): void
   /** Desliza a minha câmera até o centro do objeto, mantendo o zoom. */
   focusObject(objectId: string): void
+  /** Troca (ou soma, com Shift) a seleção pela área; área sem nada editável não seleciona nada. */
+  selectArea(area: SelectionArea, additive: boolean): void
+  clearSelection(): void
+  /** Arrasto do grupo: deslocamento atual (null = parado). */
+  setSelectionOffset(offset: Point | null): void
+  moveSelection(dx: number, dy: number): void
+  deleteSelection(): void
+  selectionToLayer(layerId: string): void
+  selectionControl(control: Control): void
+  openSelectionMenu(x: number, y: number): void
+  closeSelectionMenu(): void
+  setSelectShape(shape: SelectShape): void
+  setSelectAllLayers(value: boolean): void
 }
 
 export type TableStoreState = TableState & { actions: TableActions }
@@ -139,6 +157,23 @@ export function createTableStore(
       return true
     }
 
+    const selectContext = (s: TableStoreState): SelectContext | null => {
+      if (!s.self) return null
+      const now = Date.now()
+      return {
+        objects: s.objects, layers: s.layers, activeLayerId: s.activeLayerId, allLayers: s.selectAllLayers,
+        selfId: s.self.clientId, role: s.self.role, isLocked: (id) => isLockedByOther(s, id, now),
+      }
+    }
+
+    const planInput = (s: TableStoreState): PlanInput | null =>
+      s.selection && s.self
+        ? {
+            selection: s.selection, objects: s.objects, selfId: s.self.clientId, role: s.self.role,
+            newId: () => nanoid(), nextZ: (layerId) => actions.nextZ(layerId), grid: s.settings.grid,
+          }
+        : null
+
     const actions: TableActions = {
       connect(nickname) {
         sync?.close()
@@ -168,7 +203,7 @@ export function createTableStore(
               actions.connect(nickname)
               return
             }
-            set((s) => reduceServer(s, msg, Date.now()))
+            set((s) => reconcileSelection(s, reduceServer(s, msg, Date.now())))
           },
           onStatus: (status) => {
             if (sync === client) set((s) => reduceStatus(s, status))
@@ -224,11 +259,12 @@ export function createTableStore(
       sendPresence: (p) => sync?.send({ t: 'presence', p }),
       setTool(tool) {
         if (tool !== 'ruler') actions.rulerCancel()
-        set({ tool, selectedId: tool === 'select' ? get().selectedId : null })
+        const s = get()
+        set({ tool, selectedId: tool === 'select' ? s.selectedId : null, ...(tool === s.tool ? {} : NO_SELECTION) })
       },
       setPen(penMode) {
         actions.rulerCancel()
-        set({ tool: 'pencil', penMode, selectedId: null })
+        set({ tool: 'pencil', penMode, selectedId: null, ...NO_SELECTION })
       },
       setEraseAll: (eraseAll) => set({ eraseAll }),
       setColor: (color) => set({ color }),
@@ -241,21 +277,22 @@ export function createTableStore(
           set(addToast(s, 'Camada travada pelo mestre'))
           return
         }
-        set({ activeLayerId, selectedId: null })
+        set({ activeLayerId, selectedId: null, ...(s.selectAllLayers ? {} : NO_SELECTION) })
       },
       createLayer() {
         const id = nanoid()
         if (actions.submit({ kind: 'layerCreate', layer: { id, name: DEFAULT_LAYER_NAME } })) {
-          set({ activeLayerId: id, selectedId: null })
+          set({ activeLayerId: id, selectedId: null, ...(get().selectAllLayers ? {} : NO_SELECTION) })
         }
       },
-      select: (selectedId) => set({ selectedId }),
+      // Clique num item (ou no vazio) desfaz a seleção em área.
+      select: (selectedId) => set({ selectedId, ...NO_SELECTION }),
       openObjectMenu(objectId, x, y) {
         const s = get()
         const object = s.objects[objectId]
         // Jogador que não controla o objeto: o menu não abre.
         if (!object || !s.self || !canControl(object, s.self.clientId, s.self.role)) return
-        set({ objectMenu: { objectId, x, y }, selectedId: objectId })
+        set({ objectMenu: { objectId, x, y }, selectedId: objectId, ...NO_SELECTION })
       },
       closeObjectMenu: () => set({ objectMenu: null }),
       moveObjectToLayer(objectId, layerId) {
@@ -289,7 +326,7 @@ export function createTableStore(
       },
       setShapeKind(shapeKind) {
         actions.rulerCancel()
-        set({ tool: 'shape', shapeKind, selectedId: null })
+        set({ tool: 'shape', shapeKind, selectedId: null, ...NO_SELECTION })
       },
       setShapeFill: (patch) => set((s) => ({ shapeFill: { ...s.shapeFill, ...patch } })),
       rulerClick(p) {
@@ -418,8 +455,57 @@ export function createTableStore(
           )
         }
       },
+      selectArea(area, additive) {
+        const s = get()
+        const ctx = selectContext(s)
+        if (!ctx) return
+        const selection = additive ? addArea(s.selection, area, ctx) : collectSelection([area], ctx)
+        set({ selection, selectionOffset: null, selectionMenu: null, selectedId: null })
+      },
+      clearSelection: () => set(NO_SELECTION),
+      setSelectionOffset(selectionOffset) {
+        set({ selectionOffset })
+      },
+      moveSelection(dx, dy) {
+        const input = planInput(get())
+        if (!input || (dx === 0 && dy === 0)) {
+          set({ selectionOffset: null })
+          return
+        }
+        const plan = planMove(input, dx, dy)
+        // Recusado no navegador (grande demais ou sem conexão): volta para o lugar, seleção mantida.
+        if (!actions.submitBatches(plan.batches, 'Não foi possível mover a seleção')) {
+          set({ selectionOffset: null })
+          return
+        }
+        set((s) => ({ selection: selectionOfIds(plan.selectAfter ?? [], s.objects), selectionOffset: null }))
+      },
+      deleteSelection() {
+        const input = planInput(get())
+        if (input && actions.submitBatches(planDelete(input).batches, 'Não foi possível apagar a seleção')) set(NO_SELECTION)
+      },
+      selectionToLayer(layerId) {
+        const input = planInput(get())
+        if (input && actions.submitBatches(planToLayer(input, layerId).batches, 'Não foi possível mover a seleção')) set(NO_SELECTION)
+      },
+      selectionControl(control) {
+        const input = planInput(get())
+        if (input) actions.submitBatches(planControl(input, control).batches, 'Não foi possível mudar as permissões')
+      },
+      openSelectionMenu(x, y) {
+        if (get().selection) set({ selectionMenu: { x, y }, objectMenu: null })
+      },
+      closeSelectionMenu: () => set({ selectionMenu: null }),
+      setSelectShape(selectShape) {
+        set({ selectShape })
+        saveSelectPrefs({ selectShape, selectAllLayers: get().selectAllLayers })
+      },
+      setSelectAllLayers(selectAllLayers) {
+        set({ selectAllLayers, ...NO_SELECTION })
+        saveSelectPrefs({ selectShape: get().selectShape, selectAllLayers })
+      },
     }
 
-    return { ...makeInitialState(), actions }
+    return { ...makeInitialState(), ...loadSelectPrefs(), actions }
   })
 }

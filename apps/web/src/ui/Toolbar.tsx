@@ -3,6 +3,7 @@ import { Eraser, Grid3x3, Hand, ImagePlus, MousePointer2, Pencil, Ruler, Shapes,
 import { useTable, useTableActions } from '../store/context'
 import { GridPopover } from './GridPopover'
 import { PenPopover } from './PenPopover'
+import { SelectPopover } from './SelectPopover'
 import { ShapePopover } from './ShapePopover'
 import { useHoverMenus, type HoverMenuBinding } from './useHoverMenu'
 
@@ -16,14 +17,16 @@ export function Toolbar() {
   const actions = useTableActions()
   const fileInput = useRef<HTMLInputElement>(null)
   // Menus abrem ao passar o mouse (e pelo botão direito / toque longo); um aberto por vez.
-  const menus = useHoverMenus<'pen' | 'shape' | 'grid'>()
+  const menus = useHoverMenus<'select' | 'pen' | 'shape' | 'grid'>()
+  const selectAnchor = useRef<HTMLDivElement>(null)
   const penAnchor = useRef<HTMLDivElement>(null)
   const shapeAnchor = useRef<HTMLDivElement>(null)
   const gridAnchor = useRef<HTMLDivElement>(null)
+  const selectHover = useMemo<HoverMenuBinding>(() => ({ anchor: selectAnchor }), [])
   const penHover = useMemo<HoverMenuBinding>(() => ({ anchor: penAnchor }), [])
   const shapeHover = useMemo<HoverMenuBinding>(() => ({ anchor: shapeAnchor }), [])
   const gridHover = useMemo<HoverMenuBinding>(() => ({ anchor: gridAnchor }), [])
-  const openOnContextMenu = (id: 'pen' | 'shape' | 'grid') => (e: MouseEvent) => {
+  const openOnContextMenu = (id: 'select' | 'pen' | 'shape' | 'grid') => (e: MouseEvent) => {
     e.preventDefault()
     menus.show(id)
   }
@@ -31,9 +34,24 @@ export function Toolbar() {
 
   return (
     <div className="panel toolbar">
-      <button aria-label="Selecionar (V)" title="Selecionar (V)" aria-pressed={tool === 'select'} onClick={() => actions.setTool('select')}>
-        <MousePointer2 size={ICON} aria-hidden />
-      </button>
+      <div className="pen-anchor" ref={selectAnchor} {...menus.trigger('select')}>
+        <button
+          aria-label="Selecionar (V)"
+          title="Selecionar (V): passe o mouse para a forma da seleção e o alcance"
+          aria-pressed={tool === 'select'}
+          aria-haspopup="dialog"
+          aria-expanded={menus.open === 'select'}
+          onClick={() => actions.setTool('select')}
+          onContextMenu={openOnContextMenu('select')}
+        >
+          <MousePointer2 size={ICON} aria-hidden />
+        </button>
+        {menus.open === 'select' && (
+          <div className="popover-bridge">
+            <SelectPopover onClose={menus.close} hover={selectHover} />
+          </div>
+        )}
+      </div>
       <button aria-label="Mão (H)" title="Mão (H)" aria-pressed={tool === 'hand'} onClick={() => actions.setTool('hand')}>
         <Hand size={ICON} aria-hidden />
       </button>

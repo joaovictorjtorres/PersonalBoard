@@ -14,6 +14,7 @@ import {
   type Turns,
 } from '@mesa/shared'
 import type { ConnStatus } from '../sync/SyncClient'
+import type { Selection, SelectShape } from '../selection/model'
 
 export type Tool = 'select' | 'hand' | 'pencil' | 'ruler' | 'shape'
 export type PenMode = 'draw' | 'erase'
@@ -157,6 +158,15 @@ export interface TableState {
   confirmedTurns: Turns
   /** Token do card sob o mouse na janela de turnos (destaque só na minha tela). */
   turnHover: string | null
+  /** Seleção em área (retângulo/laço). `selectedId` continua sendo o clique num item só. */
+  selection: Selection | null
+  /** Arrasto do grupo em andamento (só local): deslocamento desde o início, em coordenadas do mapa. */
+  selectionOffset: Point | null
+  /** Menu do botão direito sobre a seleção (posição na tela). */
+  selectionMenu: { x: number; y: number } | null
+  /** Opções do Selecionar (guardadas no localStorage). */
+  selectShape: SelectShape
+  selectAllLayers: boolean
 }
 
 export function makeInitialState(): TableState {
@@ -206,5 +216,17 @@ export function makeInitialState(): TableState {
     turns: defaultTurns(),
     confirmedTurns: defaultTurns(),
     turnHover: null,
+    selection: null,
+    selectionOffset: null,
+    selectionMenu: null,
+    selectShape: 'rect',
+    selectAllLayers: false,
   }
+}
+
+/** Campos que desfazem a seleção em área. */
+export const NO_SELECTION: Pick<TableState, 'selection' | 'selectionOffset' | 'selectionMenu'> = {
+  selection: null,
+  selectionOffset: null,
+  selectionMenu: null,
 }
