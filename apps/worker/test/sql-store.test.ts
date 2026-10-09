@@ -69,6 +69,17 @@ describe('SqlStore — migração do M1', () => {
       expect(store.getSettings()).toEqual({ grid: { enabled: true, size: 70, snap: false } })
     })
   })
+
+  it('grade ligada sem configuração gravada; desligada pelo mestre continua desligada', async () => {
+    await runInDurableObject(freshStub(), (_instance, state) => {
+      const store = new SqlStore(state.storage.sql)
+      expect(store.getSettings().grid.enabled).toBe(true)
+      state.storage.sql.exec('INSERT INTO settings (id, data) VALUES (1, ?)', JSON.stringify({ grid: { size: 50 } }))
+      expect(store.getSettings()).toEqual({ grid: { enabled: true, size: 50, snap: false } })
+      store.putSettings({ grid: { enabled: false, size: 70, snap: false } })
+      expect(store.getSettings().grid.enabled).toBe(false)
+    })
+  })
 })
 
 describe('contrato do TableStore', () => {

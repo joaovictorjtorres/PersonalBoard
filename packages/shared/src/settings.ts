@@ -14,7 +14,11 @@ export type TableSettings = z.infer<typeof TableSettingsSchema>
 export const SettingsPatchSchema = z.strictObject({ grid: GridSchema.partial() }).partial()
 export type SettingsPatch = z.infer<typeof SettingsPatchSchema>
 
-export const DEFAULT_SETTINGS: TableSettings = { grid: { enabled: false, size: DEFAULT_GRID_SIZE, snap: false } }
+/**
+ * Grade ligada por padrão. Só é gravado algo quando o mestre mexe na grade (o objeto inteiro), então
+ * mesas antigas sem configuração gravada passam a mostrar a grade, e escolhas gravadas são mantidas.
+ */
+export const DEFAULT_SETTINGS: TableSettings = { grid: { enabled: true, size: DEFAULT_GRID_SIZE, snap: false } }
 
 export function mergeSettings(current: TableSettings, patch: SettingsPatch): TableSettings {
   return { ...current, grid: { ...current.grid, ...patch.grid } }
