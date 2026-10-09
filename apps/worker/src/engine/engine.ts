@@ -322,7 +322,8 @@ export class TableEngine {
    * Lote atômico: cada sub-ação passa pelas regras de create/update/delete numa cópia de trabalho;
    * a primeira falha recusa tudo (nada muda). Id repetido no lote é contraditório → invalid.
    * `create … from: X` (pedaço de traço): o lote também apaga X, X existia antes do lote e os dois
-   * são traços; o pedaço herda dono e controle de X (a permissão sobre X vem do `delete` de X).
+   * são traços; o pedaço herda dono e controle de X (a permissão sobre X vem do `delete` de X) e, para
+   * o jogador, fica na camada de X.
    */
   private batch(clientId: string, role: Role, op: BatchOp): OpResult {
     if (!batchTargetsUnique(op.ops)) return rejectInvalid()
@@ -340,6 +341,8 @@ export class TableEngine {
         const origin = this.store.getObject(sub.from)
         if (!origin || !this.canSeeObject(role, origin)) return { ok: false, reason: 'not_found' }
         if (origin.type !== 'stroke') return rejectInvalid()
+        // Mudar de camada é só do mestre: o pedaço do jogador fica na camada do original.
+        if (role !== 'gm' && sub.object.layerId !== origin.layerId) return { ok: false, reason: 'forbidden' }
         r = this.create(clientId, role, sub.object, tx, { ownerId: origin.ownerId, control: origin.control })
       }
       // `current` fala de um objeto só; o cliente volta o lote inteiro para o estado de antes.

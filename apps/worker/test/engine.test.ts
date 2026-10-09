@@ -894,6 +894,31 @@ describe('applyOp batch', () => {
       expect(engine.applyOp('A', 'player', 'b1', cut('zzz'))).toEqual({ ok: false, reason: 'not_found' })
     })
 
+    it('jogador não leva o pedaço para outra camada (forbidden, nada muda); o mestre pode', () => {
+      engine.applyOp('G', 'gm', 'g1', update('s1', { control: ALL }))
+      const moved = (from = 's1'): Op => batch(
+        { kind: 'create', object: strokeObj('p1', { layerId: 'tokens' }), from },
+        { kind: 'delete', id: from },
+      )
+      expect(engine.applyOp('B', 'player', 'b1', moved())).toEqual({ ok: false, reason: 'forbidden' })
+      expect(engine.applyOp('A', 'player', 'b2', moved())).toEqual({ ok: false, reason: 'forbidden' })
+      expect(store.getObject('s1')).not.toBeNull()
+      expect(store.getObject('p1')).toBeNull()
+      expect(engine.applyOp('G', 'gm', 'b3', moved())).toMatchObject({ ok: true })
+      expect(store.getObject('p1')).toMatchObject({ layerId: 'tokens', ownerId: 'A' })
+    })
+
+    it('jogador usando from num traço da camada do mestre: not_found, nada muda', () => {
+      engine.applyOp('G', 'gm', 'g1', create(strokeObj('gs', { layerId: 'gm' })))
+      const op = batch(
+        { kind: 'create', object: strokeObj('p1', { layerId: 'drawings' }), from: 'gs' },
+        { kind: 'delete', id: 'gs' },
+      )
+      expect(engine.applyOp('A', 'player', 'b1', op)).toEqual({ ok: false, reason: 'not_found' })
+      expect(store.getObject('gs')).not.toBeNull()
+      expect(store.getObject('p1')).toBeNull()
+    })
+
     it('create avulso com from é invalid', () => {
       const op: Op = { kind: 'create', object: strokeObj('p1', { layerId: 'drawings' }), from: 's1' }
       expect(engine.applyOp('A', 'player', 'c1', op)).toEqual({ ok: false, reason: 'invalid' })
