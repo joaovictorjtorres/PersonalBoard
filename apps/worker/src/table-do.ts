@@ -4,6 +4,7 @@ import {
   ClientMessageSchema,
   DEFAULT_LAYERS,
   PING_RATE_PER_SEC,
+  isTurnOp,
   RULER_RATE_PER_SEC,
   readChatReqId,
   readOpId,
@@ -187,7 +188,11 @@ export class TableDO extends DurableObject<Env> {
       return
     }
     this.send(ws, { t: 'ack', opId: msg.opId, version: res.version })
-    if (res.duplicate) return
+    if (res.duplicate) {
+      // Cliente que perdeu o ack e reenviou após reconectar: reenvia o estado atual para não ficar defasado.
+      if (isTurnOp(msg.op)) this.send(ws, { t: 'turnsUpdated', turns: this.engine.turns() })
+      return
+    }
     for (const effect of res.effects) this.broadcastEffect(att, effect)
   }
 
@@ -233,6 +238,10 @@ export class TableDO extends DurableObject<Env> {
         return
       case 'memberUpdated':
         this.broadcast(null, () => ({ t: 'memberUpdated', member: effect.member }))
+        return
+      case 'turns':
+        // Tudo nos turnos é visível para todos; o autor também recebe (o ack não traz a rolagem).
+        this.broadcast(null, () => ({ t: 'turnsUpdated', turns: effect.turns }))
         return
       case 'objectsRemoved': {
         // O autor também recebe: a lista do servidor é a definitiva (o cliente só estimou).

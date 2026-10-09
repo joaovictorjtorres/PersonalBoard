@@ -1,7 +1,7 @@
 import { env, exports } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
-import type { NewObject, Op } from '@mesa/shared'
+import { DEFAULT_TURNS, type NewObject, type Op } from '@mesa/shared'
 import { SqlStore } from '../src/engine/sql-store'
 import { TestClient, createTable, tokenObject } from './helpers'
 
@@ -709,5 +709,85 @@ describe('TableDO — limpar desenhos (clearObjects)', () => {
     const { welcome } = await again.hello('Bia')
     expect(welcome.snapshot.layers.map((l) => l.id)).toContain('tokens')
     expect(welcome.snapshot.objects).toEqual([])
+  })
+})
+
+describe('TableDO — turnos', () => {
+  const op = (opId: string, o: Op) => ({ t: 'op' as const, opId, op: o })
+
+  async function table() {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    const p = await TestClient.connect(tableId)
+    const { welcome } = await gm.hello('Mestre', { gmSecret })
+    await p.hello('Ana')
+    return { tableId, gm, p, gmWelcome: welcome }
+  }
+
+  it('jogador recusado; mestre muda e todos, inclusive ele, recebem turnsUpdated; quem entra depois recebe no welcome', async () => {
+    const { tableId, gm, p, gmWelcome } = await table()
+    expect(gmWelcome.snapshot.turns).toEqual(DEFAULT_TURNS)
+    p.send(op('p1', { kind: 'turnsOpen', open: true }))
+    expect(await p.waitFor('reject')).toMatchObject({ opId: 'p1', reason: 'forbidden' })
+    await gm.expectNone('turnsUpdated')
+
+    gm.send(op('g1', { kind: 'turnAdd', entry: { id: 'a', name: 'Ana' } }))
+    await gm.waitFor('ack', (m) => m.opId === 'g1')
+    const expected = { ...DEFAULT_TURNS, entries: [{ id: 'a', name: 'Ana', tokenId: null, initiative: null }] }
+    expect(await p.waitFor('turnsUpdated')).toEqual({ t: 'turnsUpdated', turns: expected })
+    expect(await gm.waitFor('turnsUpdated')).toEqual({ t: 'turnsUpdated', turns: expected })
+    const late = await TestClient.connect(tableId)
+    expect((await late.hello('Bia')).welcome.snapshot.turns).toEqual(expected)
+  })
+
+  it('rolagem no servidor: iniciativas de 1 a 20 em ordem decrescente; opId repetido não rola de novo', async () => {
+    const { gm, p } = await table()
+    for (const id of ['a', 'b', 'c', 'd', 'e']) gm.send(op(`add_${id}`, { kind: 'turnAdd', entry: { id, name: id.toUpperCase() } }))
+    await gm.waitFor('ack', (m) => m.opId === 'add_e')
+    gm.send(op('r1', { kind: 'turnsRoll', all: true }))
+    const rolled = await p.waitFor('turnsUpdated', (m) => m.turns.entries.every((e) => e.initiative !== null))
+    const values = rolled.turns.entries.map((e) => e.initiative as number)
+    for (const v of values) {
+      expect(v).toBeGreaterThanOrEqual(1)
+      expect(v).toBeLessThanOrEqual(20)
+    }
+    expect([...values].sort((x, y) => y - x)).toEqual(values)
+    await gm.waitFor('ack', (m) => m.opId === 'r1')
+    gm.send(op('r1', { kind: 'turnsRoll', all: true }))
+    await gm.waitFor('ack', (m) => m.opId === 'r1')
+    await p.expectNone('turnsUpdated', (m) => m.turns.entries.every((e) => e.initiative !== null))
+  })
+
+  it('opId repetido de turno: o autor recebe o estado atual de novo, os outros nada', async () => {
+    const { gm, p } = await table()
+    gm.send(op('g1', { kind: 'turnAdd', entry: { id: 'a', name: 'Ana' } }))
+    await gm.waitFor('ack', (m) => m.opId === 'g1')
+    const first = await gm.waitFor('turnsUpdated')
+    await p.waitFor('turnsUpdated')
+    gm.send(op('g1', { kind: 'turnAdd', entry: { id: 'a', name: 'Ana' } }))
+    expect(await gm.waitFor('turnsUpdated')).toEqual(first)
+    await p.expectNone('turnsUpdated')
+  })
+
+  it('fora da fase ou dado inválido: reject invalid e ninguém recebe turnsUpdated', async () => {
+    const { gm, p } = await table()
+    gm.send(op('n1', { kind: 'turnNext' }))
+    expect(await gm.waitFor('reject', (m) => m.opId === 'n1')).toMatchObject({ reason: 'invalid' })
+    gm.send(JSON.stringify({ t: 'op', opId: 'u1', op: { kind: 'turnUpdate', id: 'a', patch: { initiative: 1000 } } }))
+    expect(await gm.waitFor('reject', (m) => m.opId === 'u1')).toMatchObject({ reason: 'invalid' })
+    await p.expectNone('turnsUpdated')
+  })
+
+  it('reconecta depois que todos saem e recebe o estado dos turnos no welcome', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    gm.send(op('g1', { kind: 'turnAdd', entry: { id: 'a', name: 'Ana' } }))
+    gm.send(op('g2', { kind: 'turnsStart' }))
+    await gm.waitFor('ack', (m) => m.opId === 'g2')
+    gm.close()
+    const again = await TestClient.connect(tableId)
+    const { welcome } = await again.hello('Ana')
+    expect(welcome.snapshot.turns).toMatchObject({ open: true, phase: 'combat', round: 1, currentId: 'a' })
   })
 })
