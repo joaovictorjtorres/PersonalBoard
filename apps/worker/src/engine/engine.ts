@@ -7,6 +7,8 @@ import {
   TableObjectSchema,
   canControl,
   changedLayers,
+  clearAllowed,
+  clearTargets,
   insertLayer,
   mergePatch,
   mergeSettings,
@@ -15,6 +17,7 @@ import {
   snapPatch,
   snapToGrid,
   type ChatEntry,
+  type ClearObjectsOp,
   type Layer,
   type LayerPatch,
   type LockInfo,
@@ -47,6 +50,8 @@ export type OpEffect =
   | { kind: 'released'; objectId: string; clientId: string }
   | { kind: 'settings'; settings: TableSettings }
   | { kind: 'memberUpdated'; member: Member }
+  /** Apagados em lote (clearObjects); cada pessoa recebe só os que enxerga. */
+  | { kind: 'objectsRemoved'; objects: TableObject[] }
 
 export type OpResult =
   | { ok: true; duplicate: true; version: number }
@@ -186,6 +191,7 @@ export class TableEngine {
   private execute(clientId: string, role: Role, op: Op, online: Set<string>): OpResult {
     if (op.kind === 'create') return this.create(clientId, role, op.object)
     if (op.kind === 'update' || op.kind === 'delete') return this.change(clientId, role, op)
+    if (op.kind === 'clearObjects') return this.clearObjects(clientId, role, op)
     // Camadas, anotações, membros e configurações: só o mestre.
     if (role !== 'gm') return reject('forbidden', null)
     switch (op.kind) {
@@ -246,6 +252,25 @@ export class TableEngine {
     if (!parsed.success) return rejectInvalid()
     this.store.putObject(parsed.data)
     return done(parsed.data.version, { kind: 'object', before, after: parsed.data, ...(snap ? { echo: true as const } : {}) })
+  }
+
+  /**
+   * Apagar em lote. Objetos travados (sendo arrastados) por outra pessoa também saem: a limpeza é uma
+   * decisão explícita, confirmada em um aviso, e esperar todas as travas a tornaria imprevisível. As travas
+   * somem junto; quem arrastava recebe o objectsRemoved e o arrasto termina.
+   */
+  private clearObjects(clientId: string, role: Role, op: ClearObjectsOp): OpResult {
+    const actor = { clientId, role }
+    if (!clearAllowed(op, actor)) return reject('forbidden', null)
+    // Camada específica oculta ou travada para o jogador: recusa (com null, essas camadas são puladas).
+    if (op.layerId !== null && !this.canEditLayer(role, op.layerId)) return reject('forbidden', null)
+    const removed = clearTargets(this.store.listObjects(), this.store.getLayers(), op, actor)
+    for (const o of removed) {
+      this.store.deleteObject(o.id)
+      this.store.deleteNote(o.id)
+      this.locks.delete(o.id)
+    }
+    return done(0, { kind: 'objectsRemoved', objects: removed })
   }
 
   private saveLayers(before: Layer[], after: Layer[], extra: OpEffect[] = []): OpResult {

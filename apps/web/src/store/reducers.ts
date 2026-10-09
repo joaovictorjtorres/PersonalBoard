@@ -2,15 +2,19 @@ import {
   LOCK_TTL_MS,
   PING_DURATION_MS,
   UNDO_LIMIT,
+  canClearLayer,
+  clearTargets,
   insertLayer,
   isObjectOp,
   mergeSettings,
   moveLayer,
   sortLayers,
+  type ClearObjectsOp,
   type Layer,
   type Member,
   type Op,
   type RejectReason,
+  type Role,
   type ServerMessage,
   type TableObject,
 } from '@mesa/shared'
@@ -29,6 +33,10 @@ const REJECT_TEXT: Record<RejectReason, string> = {
 }
 
 export function rejectText(op: Op, reason: RejectReason, layerGone = false): string {
+  if (op.kind === 'clearObjects') {
+    if (reason === 'forbidden') return 'Sem permissão para apagar nessa camada'
+    return 'Não foi possível apagar'
+  }
   if (op.kind === 'settingsUpdate' || op.kind === 'memberUpdate') {
     if (reason === 'forbidden') return 'Só o mestre pode fazer isso'
     if (reason === 'not_found') return 'Essa pessoa não está mais na lista'
@@ -121,6 +129,27 @@ export function topLayerId(layers: Layer[]): string {
   return (visible.at(-1) ?? sorted.at(-1))?.id ?? ''
 }
 
+/** Camada em que eu posso desenhar: o jogador não usa camada oculta (nem a recebe) nem travada. */
+export function canUseLayer(layer: Layer, role: Role | undefined): boolean {
+  return canClearLayer(layer, role ?? 'player')
+}
+
+/**
+ * A camada ativa continua se ainda posso usá-la; senão vai para a permitida mais próxima (pela posição
+ * que a ativa tinha em `prev`; empate: a de cima). Sem nenhuma permitida, fica onde está se ainda existe.
+ */
+export function pickActiveLayer(prev: Layer[], next: Layer[], activeId: string, role: Role | undefined): string {
+  const current = next.find((l) => l.id === activeId)
+  if (current && canUseLayer(current, role)) return activeId
+  const allowed = sortLayers(next).filter((l) => canUseLayer(l, role))
+  if (allowed.length === 0) return current ? activeId : topLayerId(next)
+  const order = (current ?? prev.find((l) => l.id === activeId))?.order
+  if (order === undefined) return topLayerId(allowed)
+  let best = allowed[0]
+  for (const l of allowed) if (Math.abs(l.order - order) <= Math.abs(best.order - order)) best = l
+  return best.id
+}
+
 function replayLayerOp(layers: Layer[], op: Op, orders: Record<string, number> | null): Layer[] {
   if (op.kind === 'layerMove' && orders) return sortLayers(layers.map((l) => (l.id in orders ? { ...l, order: orders[l.id] } : l)))
   return applyLayerOp(layers, op)
@@ -130,11 +159,45 @@ function replayLayerOp(layers: Layer[], op: Op, orders: Record<string, number> |
 function recomputeLayers<S extends TableState>(s: S, pending: Record<string, PendingOp> = s.pending): S {
   let layers = s.confirmedLayers
   for (const p of Object.values(pending)) layers = replayLayerOp(layers, p.op, p.layerOrders)
-  return withActiveLayer({ ...s, layers })
+  return withActiveLayer({ ...s, layers }, s.layers)
 }
 
-function withActiveLayer<S extends TableState>(s: S): S {
-  return s.layers.some((l) => l.id === s.activeLayerId) ? s : { ...s, activeLayerId: topLayerId(s.layers), selectedId: null }
+/** `prev`: as camadas antes da mudança, para achar a vizinha mais próxima da ativa que sumiu. */
+function withActiveLayer<S extends TableState>(s: S, prev: Layer[]): S {
+  const activeLayerId = pickActiveLayer(prev, s.layers, s.activeLayerId, s.self?.role)
+  return activeLayerId === s.activeLayerId ? s : { ...s, activeLayerId, selectedId: null }
+}
+
+/** Tira objetos (e o que depende deles) do estado local. */
+function withoutObjects<S extends TableState>(s: S, ids: ReadonlySet<string>): S {
+  if (ids.size === 0) return s
+  const keep = <T>(record: Record<string, T>) => Object.fromEntries(Object.entries(record).filter(([id]) => !ids.has(id)))
+  return {
+    ...s,
+    objects: keep(s.objects),
+    notes: keep(s.notes),
+    locks: keep(s.locks),
+    dragPreviews: keep(s.dragPreviews),
+    ownDragPreviews: keep(s.ownDragPreviews),
+    deniedGrabs: keep(s.deniedGrabs),
+    selectedId: s.selectedId && ids.has(s.selectedId) ? null : s.selectedId,
+    objectMenu: s.objectMenu && ids.has(s.objectMenu.objectId) ? null : s.objectMenu,
+  }
+}
+
+function clearIds(s: TableState, op: ClearObjectsOp): Set<string> {
+  if (!s.self) return new Set()
+  return new Set(clearTargets(Object.values(s.objects), s.layers, op, s.self).map((o) => o.id))
+}
+
+/**
+ * Desfazer não pode tentar mexer em objeto que a limpeza apagou: ops de update/delete para eles saem
+ * da pilha (grupos que ficam vazios também). A limpeza em si não entra na pilha — o aviso é a proteção.
+ */
+export function pruneUndoStack(stack: Op[][], gone: ReadonlySet<string>): Op[][] {
+  const touchesGone = (op: Op) => (op.kind === 'update' || op.kind === 'delete') && gone.has(op.id)
+  if (!stack.some((group) => group.some(touchesGone))) return stack
+  return stack.map((group) => group.filter((op) => !touchesGone(op))).filter((group) => group.length > 0)
 }
 
 function withoutLayer<S extends TableState>(s: S, layerId: string): S {
@@ -150,7 +213,7 @@ function withoutLayer<S extends TableState>(s: S, layerId: string): S {
     deniedGrabs: keep(s.deniedGrabs),
     strokePreviews: Object.fromEntries(Object.entries(s.strokePreviews).filter(([, p]) => p.layerId !== layerId)),
     selectedId: s.selectedId && gone.has(s.selectedId) ? null : s.selectedId,
-  })
+  }, s.layers)
 }
 
 function applyOptimistic<S extends TableState>(
@@ -181,7 +244,7 @@ function applyOptimistic<S extends TableState>(
         layerOrders = Object.fromEntries(layers.filter((l) => old.get(l.id) !== l.order).map((l) => [l.id, l.order]))
       }
       return {
-        next: withActiveLayer({ ...s, layers }),
+        next: withActiveLayer({ ...s, layers }, s.layers),
         before: null,
         prev: { kind: 'layers', layers: s.layers, objects: [], notes: {} },
         layerOrders,
@@ -222,6 +285,12 @@ function applyOptimistic<S extends TableState>(
         layerOrders: null,
       }
     }
+    case 'clearObjects': {
+      const ids = clearIds(s, op)
+      const objects = Object.values(s.objects).filter((o) => ids.has(o.id))
+      const notes = Object.fromEntries(objects.filter((o) => s.notes[o.id] !== undefined).map((o) => [o.id, s.notes[o.id]]))
+      return { next: withoutObjects(s, ids), before: null, prev: { kind: 'objects', objects, notes }, layerOrders: null }
+    }
     default: {
       const unreachable: never = op
       return unreachable
@@ -246,6 +315,11 @@ function revertLocal<S extends TableState>(s: S, p: PendingOp): S {
       return prev.member ? withMember(s, prev.member) : s
     case 'settings':
       return { ...s, settings: prev.settings }
+    case 'objects': {
+      const objects = { ...s.objects }
+      for (const o of prev.objects) objects[o.id] = o
+      return { ...s, objects, notes: { ...s.notes, ...prev.notes } }
+    }
   }
 }
 
@@ -305,11 +379,12 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
       const objects = reapplyPending(Object.fromEntries(snap.objects.map((o) => [o.id, o])), s.pending, msg.self.clientId)
       const layers = sortLayers(snap.layers)
       const pendingLayers = recomputeLayers({ ...s, confirmedLayers: layers }).layers
-      const activeLayerId = pendingLayers.some((l) => l.id === s.activeLayerId)
+      const preferred = pendingLayers.some((l) => l.id === s.activeLayerId)
         ? s.activeLayerId
         : layers.some((l) => l.id === 'tokens')
           ? 'tokens'
           : topLayerId(pendingLayers)
+      const activeLayerId = pickActiveLayer(s.layers, pendingLayers, preferred, msg.self.role)
       const base: S = {
         ...s,
         status: 'open',
@@ -360,6 +435,9 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
             if (member) out = withMember(out, { ...member, ...p.op.patch })
             break
           }
+          case 'clearObjects':
+            out = withoutObjects(out, clearIds(out, p.op))
+            break
         }
       }
       return out
@@ -421,6 +499,12 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         locks: omit(s.locks, id),
         selectedId: s.selectedId === id ? null : s.selectedId,
       }
+    }
+
+    case 'objectsRemoved': {
+      const gone = new Set(msg.ids)
+      const out = withoutObjects(s, gone)
+      return { ...out, undoStack: pruneUndoStack(s.undoStack, gone) }
     }
 
     case 'grabbed':

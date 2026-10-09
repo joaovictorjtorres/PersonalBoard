@@ -25,6 +25,8 @@ export type LocalPrev =
   | { kind: 'note'; objectId: string; text: string | null }
   | { kind: 'member'; member: Member | null }
   | { kind: 'settings'; settings: TableSettings }
+  /** clearObjects: o que a limpeza otimista tirou, para voltar se o servidor recusar. */
+  | { kind: 'objects'; objects: TableObject[]; notes: Record<string, string> }
 
 export interface PendingOp {
   op: Op

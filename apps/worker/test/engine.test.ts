@@ -518,3 +518,74 @@ describe('M3 — chat e dados', () => {
     expect(engine.snapshot('gm', new Set(), 'G').chat.at(-1)).toMatchObject({ kind: 'roll', secret: true })
   })
 })
+
+describe('applyOp clearObjects', () => {
+  const stroke = (id: string, layerId = 'drawings'): NewObject =>
+    ({ id, type: 'stroke', layerId, x: 0, y: 0, width: 10, height: 10, rotation: 0, zIndex: 1, segments: [[0, 0, 5, 5]], color: '#ffffff', strokeWidth: 2 }) as NewObject
+  const rect = (id: string, layerId = 'drawings'): NewObject =>
+    ({ id, type: 'shape', kind: 'rect', layerId, x: 0, y: 0, width: 10, height: 10, rotation: 0, zIndex: 1, stroke: '#ffffff', strokeWidth: 2, fill: null }) as NewObject
+  const clear = (layerId: string | null, scope: 'drawings' | 'all', authorId?: string): Op => ({
+    kind: 'clearObjects', layerId, scope, ...(authorId ? { authorId } : {}),
+  })
+  const left = () => store.listObjects().map((o) => o.id).sort()
+  const removedIds = (r: OpResult) =>
+    effects(r).flatMap((e) => (e.kind === 'objectsRemoved' ? e.objects.map((o) => o.id) : [])).sort()
+
+  beforeEach(() => {
+    engine.applyOp('A', 'player', 'a1', create(stroke('a-draw')))
+    engine.applyOp('A', 'player', 'a2', create(rect('a-rect', 'tokens')))
+    engine.applyOp('A', 'player', 'a3', create(token({ id: 'a-img', layerId: 'drawings' })))
+    engine.applyOp('B', 'player', 'b1', create(stroke('b-draw')))
+    engine.applyOp('G', 'gm', 'g1', create(stroke('g-secret', 'gm')))
+    engine.applyOp('G', 'gm', 'g2', create(token({ id: 'g-img' })))
+  })
+
+  it('jogador apaga só os próprios desenhos (camada atual e todas); imagens e desenhos dos outros ficam', () => {
+    const r1 = engine.applyOp('A', 'player', 'c1', clear('drawings', 'drawings', 'A'))
+    expect(r1).toMatchObject({ ok: true, version: 0 })
+    expect(removedIds(r1)).toEqual(['a-draw'])
+    const r2 = engine.applyOp('A', 'player', 'c2', clear(null, 'drawings', 'A'))
+    expect(removedIds(r2)).toEqual(['a-rect'])
+    expect(left()).toEqual(['a-img', 'b-draw', 'g-img', 'g-secret'])
+  })
+
+  it('jogador não apaga desenhos de outra pessoa, nem de todos, nem limpa camada', () => {
+    expect(engine.applyOp('A', 'player', 'c1', clear('drawings', 'drawings', 'B'))).toMatchObject({ ok: false, reason: 'forbidden' })
+    expect(engine.applyOp('A', 'player', 'c2', clear('drawings', 'drawings'))).toMatchObject({ ok: false, reason: 'forbidden' })
+    expect(engine.applyOp('A', 'player', 'c3', clear('drawings', 'all'))).toMatchObject({ ok: false, reason: 'forbidden' })
+    expect(left()).toHaveLength(6)
+  })
+
+  it('camada oculta ou travada: pedida diretamente é recusada; em "todas" é pulada', () => {
+    engine.applyOp('G', 'gm', 'l1', { kind: 'layerUpdate', id: 'tokens', patch: { locked: true } })
+    expect(engine.applyOp('A', 'player', 'c1', clear('tokens', 'drawings', 'A'))).toMatchObject({ ok: false, reason: 'forbidden' })
+    expect(engine.applyOp('A', 'player', 'c2', clear('gm', 'drawings', 'A'))).toMatchObject({ ok: false, reason: 'forbidden' })
+    expect(removedIds(engine.applyOp('A', 'player', 'c3', clear(null, 'drawings', 'A')))).toEqual(['a-draw'])
+    engine.applyOp('G', 'gm', 'l2', { kind: 'layerUpdate', id: 'tokens', patch: { locked: false, visibility: 'gm' } })
+    expect(engine.applyOp('A', 'player', 'c4', clear('tokens', 'drawings', 'A'))).toMatchObject({ ok: false, reason: 'forbidden' })
+    expect(left()).toContain('a-rect')
+  })
+
+  it('mestre: desenhos de alguém em todas as camadas, de todos numa camada, e a camada inteira', () => {
+    expect(removedIds(engine.applyOp('G', 'gm', 'c1', clear(null, 'drawings', 'A')))).toEqual(['a-draw', 'a-rect'])
+    expect(removedIds(engine.applyOp('G', 'gm', 'c2', clear('drawings', 'drawings')))).toEqual(['b-draw'])
+    expect(removedIds(engine.applyOp('G', 'gm', 'c3', clear('tokens', 'all')))).toEqual(['g-img'])
+    expect(left()).toEqual(['a-img', 'g-secret'])
+    expect(store.getLayers().some((l) => l.id === 'tokens')).toBe(true)
+  })
+
+  it('opId repetido não reaplica; anotações saem junto', () => {
+    engine.applyOp('G', 'gm', 'n1', { kind: 'noteSet', objectId: 'b-draw', text: 'nota' })
+    engine.applyOp('G', 'gm', 'c1', clear('drawings', 'drawings'))
+    expect(store.listNotes()).toEqual({})
+    engine.applyOp('B', 'player', 'b2', create(stroke('b-new')))
+    expect(engine.applyOp('G', 'gm', 'c1', clear('drawings', 'drawings'))).toEqual({ ok: true, duplicate: true, version: 0 })
+    expect(left()).toContain('b-new')
+  })
+
+  it('objeto travado por outra pessoa é apagado e a trava some', () => {
+    expect(engine.grab('B', 'player', 'b-draw')).toBe(true)
+    expect(removedIds(engine.applyOp('G', 'gm', 'c1', clear('drawings', 'drawings', 'B')))).toEqual(['b-draw'])
+    expect(engine.activeLocks()).toEqual([])
+  })
+})

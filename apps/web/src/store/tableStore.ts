@@ -19,7 +19,7 @@ import {
   type Viewport,
 } from './state'
 import { rulerBend as bendRuler, rulerMoveTo, rulerStart } from '../canvas/ruler'
-import { addToast, reduceServer, reduceStatus, reduceSubmitBatch } from './reducers'
+import { addToast, canUseLayer, reduceServer, reduceStatus, reduceSubmitBatch } from './reducers'
 import { channelOf, closeDmTab, openDmTab, selectChatTab, setChatOpen, type ChatTab } from './chat'
 
 export interface TableActions {
@@ -211,7 +211,16 @@ export function createTableStore(
       setEraseAll: (eraseAll) => set({ eraseAll }),
       setColor: (color) => set({ color }),
       setStrokeWidth: (strokeWidth) => set({ strokeWidth }),
-      setActiveLayer: (activeLayerId) => set({ activeLayerId, selectedId: null }),
+      setActiveLayer(activeLayerId) {
+        const s = get()
+        const layer = s.layers.find((l) => l.id === activeLayerId)
+        // Jogador não escolhe camada travada (não poderia desenhar nela).
+        if (layer && !canUseLayer(layer, s.self?.role)) {
+          set(addToast(s, 'Camada travada pelo mestre'))
+          return
+        }
+        set({ activeLayerId, selectedId: null })
+      },
       createLayer() {
         const id = nanoid()
         if (actions.submit({ kind: 'layerCreate', layer: { id, name: DEFAULT_LAYER_NAME } })) {

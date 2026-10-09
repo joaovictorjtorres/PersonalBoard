@@ -234,6 +234,14 @@ export class TableDO extends DurableObject<Env> {
       case 'memberUpdated':
         this.broadcast(null, () => ({ t: 'memberUpdated', member: effect.member }))
         return
+      case 'objectsRemoved': {
+        // O autor também recebe: a lista do servidor é a definitiva (o cliente só estimou).
+        this.broadcast(null, (other) => {
+          const ids = effect.objects.filter((o) => this.engine.canSeeObject(other.role, o)).map((o) => o.id)
+          return ids.length > 0 ? { t: 'objectsRemoved', ids, by: author.clientId } : null
+        })
+        return
+      }
     }
   }
 

@@ -648,3 +648,66 @@ describe('TableDO — M3: chat, dados e presença', () => {
     expect(b.messages.slice(seen).filter((m) => m.t === 'presence')).toEqual([])
   })
 })
+
+describe('TableDO — limpar desenhos (clearObjects)', () => {
+  const op = (opId: string, o: Op) => ({ t: 'op' as const, opId, op: o })
+  const stroke = (layerId = 'drawings'): NewObject =>
+    ({
+      id: `s_${crypto.randomUUID().slice(0, 8)}`, type: 'stroke', layerId, x: 0, y: 0, width: 10, height: 10, rotation: 0, zIndex: 1,
+      segments: [[0, 0, 5, 5]], color: '#ffffff', strokeWidth: 2,
+    }) as NewObject
+
+  it('jogador apaga os próprios desenhos: todos recebem objectsRemoved; o outro jogador e o mestre mantêm o resto', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    const a = await TestClient.connect(tableId)
+    const b = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    const { clientId: aId } = await a.hello('Ana')
+    await b.hello('Bia')
+    const mine = stroke()
+    const theirs = stroke()
+    const img = tokenObject({ layerId: 'drawings' })
+    a.send(op('a1', { kind: 'create', object: mine }))
+    a.send(op('a2', { kind: 'create', object: img }))
+    b.send(op('b1', { kind: 'create', object: theirs }))
+    await a.waitFor('ack', (m) => m.opId === 'a2')
+    await b.waitFor('ack')
+
+    a.send(op('c1', { kind: 'clearObjects', layerId: null, authorId: aId, scope: 'drawings' }))
+    expect(await a.waitFor('ack', (m) => m.opId === 'c1')).toEqual({ t: 'ack', opId: 'c1', version: 0 })
+    for (const c of [a, b, gm]) expect(await c.waitFor('objectsRemoved')).toEqual({ t: 'objectsRemoved', ids: [mine.id], by: aId })
+
+    // repetido: ack sem nova transmissão
+    a.send(op('c1', { kind: 'clearObjects', layerId: null, authorId: aId, scope: 'drawings' }))
+    await a.waitFor('ack', (m) => m.opId === 'c1')
+    await b.expectNone('objectsRemoved')
+
+    a.send(op('c2', { kind: 'clearObjects', layerId: 'drawings', scope: 'drawings' }))
+    expect(await a.waitFor('reject')).toMatchObject({ opId: 'c2', reason: 'forbidden' })
+  })
+
+  it('mestre limpa a camada oculta: jogador não recebe nada; limpa a pública inteira: a camada continua', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    const p = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    await p.hello('Ana')
+    gm.send(op('g1', { kind: 'create', object: stroke('gm') }))
+    await gm.waitFor('ack')
+    gm.send(op('g2', { kind: 'clearObjects', layerId: 'gm', scope: 'all' }))
+    expect((await gm.waitFor('objectsRemoved')).ids).toHaveLength(1)
+    await p.expectNone('objectsRemoved')
+
+    const tok = tokenObject()
+    p.send(op('p1', { kind: 'create', object: tok }))
+    await p.waitFor('ack')
+    gm.send(op('g3', { kind: 'clearObjects', layerId: 'tokens', scope: 'all' }))
+    expect((await p.waitFor('objectsRemoved')).ids).toEqual([tok.id])
+    await p.expectNone('layerRemoved')
+    const again = await TestClient.connect(tableId)
+    const { welcome } = await again.hello('Bia')
+    expect(welcome.snapshot.layers.map((l) => l.id)).toContain('tokens')
+    expect(welcome.snapshot.objects).toEqual([])
+  })
+})

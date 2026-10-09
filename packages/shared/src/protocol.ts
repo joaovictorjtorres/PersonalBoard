@@ -40,6 +40,20 @@ export const MemberPatchSchema = z
   .refine((p) => p.nickname !== undefined || p.color !== undefined, 'empty member patch')
 export type MemberPatch = z.infer<typeof MemberPatchSchema>
 
+/**
+ * Apagar em lote. `layerId: null` = todas as camadas; `authorId` = só os objetos dessa pessoa;
+ * `scope: 'all'` (inclui imagens) só numa camada específica e sem autor.
+ */
+export const ClearObjectsOpSchema = z
+  .object({
+    kind: z.literal('clearObjects'),
+    layerId: IdSchema.nullable(),
+    authorId: z.string().min(1).max(64).optional(),
+    scope: z.enum(['drawings', 'all']),
+  })
+  .refine((op) => op.scope === 'drawings' || (op.layerId !== null && op.authorId === undefined), 'clear all needs one layer')
+export type ClearObjectsOp = z.infer<typeof ClearObjectsOpSchema>
+
 export const OpSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('create'), object: NewObjectSchema }),
   z.object({ kind: z.literal('update'), id: IdSchema, patch: ObjectPatchSchema }),
@@ -52,6 +66,7 @@ export const OpSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('memberRemove'), clientId: z.string().min(1).max(64) }),
   z.object({ kind: z.literal('settingsUpdate'), patch: SettingsPatchSchema }),
   z.object({ kind: z.literal('memberUpdate'), clientId: z.string().min(1).max(64), patch: MemberPatchSchema }),
+  ClearObjectsOpSchema,
 ])
 export type Op = z.infer<typeof OpSchema>
 export type ObjectOp = Extract<Op, { kind: 'create' | 'update' | 'delete' }>
@@ -167,6 +182,8 @@ export type ServerMessage =
   | { t: 'ack'; opId: string; version: number }
   | { t: 'reject'; opId: string; reason: RejectReason; current?: TableObject | null }
   | { t: 'op'; op: AppliedOp; by: string }
+  /** Apagados em lote (clearObjects), já filtrados pelo que quem recebe enxerga; o autor também recebe. */
+  | { t: 'objectsRemoved'; ids: string[]; by: string }
   | { t: 'grabbed'; objectId: string; clientId: string }
   | { t: 'grabDenied'; objectId: string }
   | { t: 'released'; objectId: string; clientId: string }
