@@ -30,9 +30,9 @@ function compareBackupNames(a, b) {
 }
 
 /** Só pastas com o padrão automático contam; o resto (do usuário) nunca é apagado. */
-export function backupsToDelete(names, keep = KEEP_BACKUPS) {
+export function backupsToDelete(names, keep = KEEP_BACKUPS, protect = undefined) {
   const managed = names.filter((n) => BACKUP_NAME_RE.test(n)).sort(compareBackupNames)
-  return managed.slice(0, Math.max(0, managed.length - keep))
+  return managed.slice(0, Math.max(0, managed.length - keep)).filter((n) => n !== protect)
 }
 
 /** Copia state\ para backups\<nome>. Devolve o nome, ou null se não havia o que copiar. */
@@ -50,7 +50,7 @@ export function makeBackup(fs, { stateDir, backupsDir, date, keep = KEEP_BACKUPS
   const partial = path.join(backupsDir, `.${name}.partial`)
   fs.cpSync(stateDir, partial, { recursive: true })
   fs.renameSync(partial, path.join(backupsDir, name))
-  for (const old of backupsToDelete(fs.readdirSync(backupsDir), keep)) {
+  for (const old of backupsToDelete(fs.readdirSync(backupsDir), keep, name)) {
     fs.rmSync(path.join(backupsDir, old), { recursive: true, force: true })
   }
   return name

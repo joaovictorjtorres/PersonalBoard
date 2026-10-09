@@ -49,6 +49,14 @@ export function swapApp(fs, root, retryOptions = {}) {
   }
 }
 
+/** Atualização interrompida entre os dois renames: app\ sumiu mas app.old\ existe → volta. */
+export function restoreOldApp(fs, root, retryOptions = {}) {
+  const p = appPaths(root)
+  if (fs.existsSync(p.app) || !fs.existsSync(p.appOld)) return false
+  renameWithRetry(fs, p.appOld, p.app, retryOptions)
+  return true
+}
+
 /** Sobras de uma atualização interrompida. */
 export function removeLeftovers(fs, root) {
   const p = appPaths(root)

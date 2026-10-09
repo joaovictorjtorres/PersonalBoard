@@ -24,8 +24,14 @@ export function readConfig(fs, file) {
   let raw
   try {
     raw = fs.readFileSync(file, 'utf8')
-  } catch {
-    return { config: { ...DEFAULT_CONFIG }, warnings: [], writable: true }
+  } catch (err) {
+    if (err?.code === 'ENOENT') return { config: { ...DEFAULT_CONFIG }, warnings: [], writable: true }
+    const reason = err?.message ?? String(err)
+    return {
+      config: { ...DEFAULT_CONFIG },
+      warnings: [`não foi possível ler o arquivo (${reason}); usando o padrão (o arquivo não foi alterado)`],
+      writable: false,
+    }
   }
   let parsed
   try {

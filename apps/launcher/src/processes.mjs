@@ -29,7 +29,14 @@ export function pipeLines(stream, onLine) {
 
 /** @returns {import('./main.mjs').ManagedProcess} */
 export function launch(deps, command, args, options, onLine) {
-  const child = deps.spawn(command, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+  let child
+  try {
+    child = deps.spawn(command, args, { ...options, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
+  } catch (err) {
+    onLine(`falha ao iniciar ${path.win32.basename(command)}: ${err?.message ?? err}`)
+    const dead = { pid: undefined, kill: () => true, stdout: null, stderr: null }
+    return { child: dead, exited: Promise.resolve(null), isAlive: () => false }
+  }
   let alive = true
   const exited = new Promise((resolve) => {
     child.once('exit', (code) => {
@@ -81,8 +88,22 @@ export function killTree(deps, proc, timeoutMs = 5_000) {
     proc.exited.then(finish)
     cancel = deps.setTimer(finish, timeoutMs)
     if (deps.platform === 'win32') {
-      const killer = deps.spawn('taskkill', ['/PID', String(proc.child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
-      killer.on('error', () => proc.child.kill())
+      const systemRoot = deps.env.SystemRoot || deps.env.SYSTEMROOT || 'C:\\Windows'
+      const taskkill = path.win32.join(systemRoot, 'System32', 'taskkill.exe')
+      const fallback = () => {
+        try {
+          proc.child.kill()
+        } catch {
+          // já morreu
+        }
+      }
+      try {
+        const killer = deps.spawn(taskkill, ['/PID', String(proc.child.pid), '/T', '/F'], { stdio: 'ignore', windowsHide: true })
+        killer.once('error', fallback)
+        killer.once('exit', (code) => { if (code !== 0) fallback() })
+      } catch {
+        fallback()
+      }
     } else {
       proc.child.kill('SIGTERM')
     }
@@ -178,7 +199,7 @@ export async function extractZip(deps, zipFile, destDir) {
     if (first.code === 0) return
     const ps = await runCommand(deps, 'powershell.exe', [
       '-NoProfile', '-NonInteractive', '-Command',
-      `Expand-Archive -LiteralPath ${psQuote(zipFile)} -DestinationPath ${psQuote(destDir)} -Force`,
+      `$ProgressPreference='SilentlyContinue'; Expand-Archive -LiteralPath ${psQuote(zipFile)} -DestinationPath ${psQuote(destDir)} -Force`,
     ])
     if (ps.code === 0) return
     throw new Error(`não foi possível extrair o zip (${(ps.output || first.output).trim().slice(-200)})`)

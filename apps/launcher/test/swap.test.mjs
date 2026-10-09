@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { UPDATE_EXIT_CODE, appPaths, removeLeftovers, removeOldApp, renameWithRetry, swapApp } from '../src/swap.mjs'
+import { UPDATE_EXIT_CODE, appPaths, removeLeftovers, removeOldApp, restoreOldApp, renameWithRetry, swapApp } from '../src/swap.mjs'
 
 let base
 let root
@@ -102,5 +102,24 @@ describe('limpeza', () => {
     writeApp(p.appOld, '0.3.0')
     expect(removeOldApp(fs, root)).toBe(true)
     expect(fs.existsSync(p.appOld)).toBe(false)
+  })
+})
+
+describe('restoreOldApp', () => {
+  it('app\\ ausente e app.old\\ presente → renomeia de volta', () => {
+    fs.rmSync(path.join(root, 'app'), { recursive: true })
+    writeApp(path.join(root, 'app.old'), '0.3.0')
+    expect(restoreOldApp(fs, root, noSleep)).toBe(true)
+    expect(versionOf(path.join(root, 'app'))).toBe('0.3.0')
+    expect(fs.existsSync(path.join(root, 'app.old'))).toBe(false)
+  })
+
+  it('app\\ presente ou sem app.old\\ → não mexe', () => {
+    writeApp(path.join(root, 'app.old'), '0.3.0')
+    expect(restoreOldApp(fs, root, noSleep)).toBe(false)
+    expect(versionOf(path.join(root, 'app'))).toBe('0.4.0')
+    fs.rmSync(path.join(root, 'app'), { recursive: true })
+    fs.rmSync(path.join(root, 'app.old'), { recursive: true })
+    expect(restoreOldApp(fs, root, noSleep)).toBe(false)
   })
 })

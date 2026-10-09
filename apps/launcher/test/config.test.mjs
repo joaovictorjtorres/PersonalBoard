@@ -33,6 +33,18 @@ describe('readConfig / writeConfig', () => {
     expect(DEFAULT_CONFIG).toEqual({ autoUpdate: true, lastBackup: null })
   })
 
+  it('só ENOENT é "ausente": outro erro de leitura avisa e não deixa gravar', () => {
+    const err = Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' })
+    const broken = { ...fs, readFileSync: () => { throw err } }
+    const r = readConfig(broken, file())
+    expect(r.writable).toBe(false)
+    expect(r.config).toEqual({ ...DEFAULT_CONFIG })
+    expect(r.warnings).toHaveLength(1)
+    expect(r.warnings[0]).toContain('EACCES')
+    const enoent = { ...fs, readFileSync: () => { throw Object.assign(new Error('x'), { code: 'ENOENT' }) } }
+    expect(readConfig(enoent, file())).toEqual({ config: { ...DEFAULT_CONFIG }, warnings: [], writable: true })
+  })
+
   it('lê autoUpdate false e lastBackup, preservando chaves desconhecidas na gravação', () => {
     fs.writeFileSync(file(), JSON.stringify({ autoUpdate: false, lastBackup: '2026-10-08T12:00:00.000Z', tema: 'escuro' }))
     const { config, warnings } = readConfig(fs, file())

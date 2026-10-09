@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import { PassThrough } from 'node:stream'
@@ -52,8 +53,52 @@ describe('launch / killTree', () => {
     const h = createHarness({ base })
     const proc = launch(h.deps, 'C:\\app\\node\\node.exe', ['wrangler.js'], {}, () => {})
     await killTree(h.deps, proc)
-    expect(h.spawns.at(-1)).toMatchObject({ command: 'taskkill', args: ['/PID', String(proc.child.pid), '/T', '/F'] })
+    expect(h.spawns.at(-1)).toMatchObject({ command: 'C:\\Windows\\System32\\taskkill.exe', args: ['/PID', String(proc.child.pid), '/T', '/F'] })
     expect(proc.isAlive()).toBe(false)
+  })
+
+  it('taskkill com código diferente de zero → child.kill()', async () => {
+    const h = createHarness({ base })
+    const proc = launch(h.deps, 'C:\\app\\node\\node.exe', ['wrangler.js'], {}, () => {})
+    const spawn = h.deps.spawn
+    h.deps.spawn = (command, args, options) => {
+      if (String(command).endsWith('taskkill.exe')) {
+        const killer = spawn('x', [], options)
+        setImmediate(() => killer.emit('exit', 128))
+        return killer
+      }
+      return spawn(command, args, options)
+    }
+    await killTree(h.deps, proc)
+    expect(proc.child.killedWith).toBe('SIGTERM')
+    expect(proc.isAlive()).toBe(false)
+  })
+
+  it('taskkill com erro de spawn → child.kill()', async () => {
+    const h = createHarness({ base })
+    const proc = launch(h.deps, 'C:\\app\\node\\node.exe', ['wrangler.js'], {}, () => {})
+    const spawn = h.deps.spawn
+    h.deps.spawn = (command, args, options) => {
+      if (String(command).endsWith('taskkill.exe')) {
+        const killer = spawn('x', [], options)
+        setImmediate(() => killer.emit('error', new Error('ENOENT')))
+        return killer
+      }
+      return spawn(command, args, options)
+    }
+    await killTree(h.deps, proc)
+    expect(proc.child.killedWith).toBe('SIGTERM')
+  })
+
+  it('launch: spawn que lança vira processo já encerrado com linha "falha ao iniciar"', async () => {
+    const h = createHarness({ base })
+    h.deps.spawn = () => { throw new Error('EPERM: bloqueado') }
+    const lines = []
+    const proc = launch(h.deps, 'C:\\x\\cloudflared.exe', [], {}, (l) => lines.push(l))
+    expect(proc.isAlive()).toBe(false)
+    expect(await proc.exited).toBeNull()
+    expect(lines).toEqual(['falha ao iniciar cloudflared.exe: EPERM: bloqueado'])
+    await killTree(h.deps, proc)
   })
 
   it('linux: SIGTERM; processo já morto ou null → nada', async () => {
@@ -169,7 +214,7 @@ describe('extractZip / runCommand', () => {
     expect(h.spawns[1].command).toBe('powershell.exe')
     expect(h.spawns[1].args.slice(0, 3)).toEqual(['-NoProfile', '-NonInteractive', '-Command'])
     expect(h.spawns[1].args[3]).toBe(
-      `Expand-Archive -LiteralPath 'C:\\Users\\D''Ávila\\AppData\\Local\\Temp\\a b.zip' -DestinationPath '${path.join(base, 'dest').replaceAll("'", "''")}' -Force`,
+      `$ProgressPreference='SilentlyContinue'; Expand-Archive -LiteralPath 'C:\\Users\\D''Ávila\\AppData\\Local\\Temp\\a b.zip' -DestinationPath '${path.join(base, 'dest').replaceAll("'", "''")}' -Force`,
     )
   })
 
@@ -178,5 +223,51 @@ describe('extractZip / runCommand', () => {
     expect(await runCommand(h.deps, 'exit0.exe', [])).toEqual({ code: 0, output: 'feito\n' })
     h.deps.spawn = () => { throw new Error('ENOENT') }
     expect(await runCommand(h.deps, 'exit0.exe', [])).toEqual({ code: -1, output: 'ENOENT' })
+  })
+})
+
+describe.runIf(process.platform === 'win32')('Windows real', () => {
+  const realDeps = () => ({
+    fs, spawn: spawn, platform: 'win32', env: process.env, now: () => Date.now(),
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)), setTimer: (fn, ms) => { const t = setTimeout(fn, ms); return () => clearTimeout(t) },
+  })
+
+  async function makeZip(dir) {
+    const src = path.join(dir, 'src')
+    fs.mkdirSync(src, { recursive: true })
+    fs.writeFileSync(path.join(src, 'oi.txt'), 'olá')
+    const zip = path.join(dir, 'pacote.zip')
+    const r = await runCommand(realDeps(), 'powershell.exe', ['-NoProfile', '-Command',
+      `Compress-Archive -LiteralPath '${path.join(src, 'oi.txt')}' -DestinationPath '${zip}'`])
+    expect(r.code).toBe(0)
+    return zip
+  }
+
+  it('extractZip (tar.exe) em pasta "a b ção"', async () => {
+    const zip = await makeZip(base)
+    const dest = path.join(base, 'a b ção')
+    await extractZip(realDeps(), zip, dest)
+    expect(fs.readFileSync(path.join(dest, 'oi.txt'), 'utf8')).toBe('olá')
+  })
+
+  it('extractZip (Expand-Archive) em pasta "a b ção"', async () => {
+    const zip = await makeZip(base)
+    const dest = path.join(base, 'a b ção')
+    const env = { ...process.env, SystemRoot: path.join(base, 'sem-tar') }
+    await extractZip({ ...realDeps(), env }, zip, dest)
+    expect(fs.readFileSync(path.join(dest, 'oi.txt'), 'utf8')).toBe('olá')
+  })
+
+  it('killTree mata o neto (node → node)', async () => {
+    const deps = realDeps()
+    const pidFile = path.join(base, 'neto.pid')
+    const grandchild = `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(()=>{},1000)`
+    const child = `require('child_process').spawn(process.execPath, ['-e', ${JSON.stringify(grandchild)}], {stdio:'ignore'}); setInterval(()=>{},1000)`
+    const proc = launch(deps, process.execPath, ['-e', child], {}, () => {})
+    for (let i = 0; i < 100 && !fs.existsSync(pidFile); i++) await new Promise((r) => setTimeout(r, 100))
+    const pid = Number(fs.readFileSync(pidFile, 'utf8'))
+    await killTree(deps, proc)
+    await new Promise((r) => setTimeout(r, 500))
+    expect(() => process.kill(pid, 0)).toThrow()
   })
 })

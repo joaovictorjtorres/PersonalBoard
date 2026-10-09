@@ -103,7 +103,7 @@ export function createHarness(o) {
   let nextPid = 1000
   const byPid = new Map()
   const h = {
-    output: [], spawns: [], fetches: [], clipboard: [], browser: [], signalHandlers: [],
+    output: [], chdirs: [], spawns: [], fetches: [], clipboard: [], browser: [], signalHandlers: [],
     children: { server: [], tunnel: [] },
   }
   const pick = (mode, n) => (typeof mode === 'function' ? mode(n) : mode)
@@ -129,7 +129,7 @@ export function createHarness(o) {
       child.stderr.write('ERR failed to request quick Tunnel: Post "https://api.trycloudflare.com/tunnel": EOF\n')
       if (mode === 'url') child.stderr.write(`INF |  https://mesa-${n}.trycloudflare.com  |\n`)
       if (mode === 'exit') child.exit(1)
-    } else if (name === 'taskkill') {
+    } else if (name === 'taskkill.exe') {
       byPid.get(Number(args[1]))?.exit(1)
       child.exit(0)
     } else if (name === 'clip.exe') {
@@ -195,6 +195,7 @@ export function createHarness(o) {
       h.output.push(question)
       return answer
     },
+    chdir: (dir) => { h.chdirs.push(dir) },
     print: (line) => { h.output.push(line) },
     onExitSignal: (handler) => { h.signalHandlers.push(handler) },
   }

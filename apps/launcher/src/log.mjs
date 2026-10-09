@@ -31,11 +31,15 @@ export function createLogger(fs, file, { maxBytes = LOG_MAX_BYTES, maxFiles = LO
     write(text) {
       const line = `${new Date(now()).toISOString()} ${text}\n`
       const bytes = Buffer.byteLength(line)
-      try {
-        if (size > 0 && size + bytes > maxBytes) {
+      if (size > 0 && size + bytes > maxBytes) {
+        try {
           rotateLogs(fs, file, maxFiles)
-          size = 0
+        } catch {
+          // rotação falhou: segue anexando ao arquivo atual
         }
+        size = 0
+      }
+      try {
         fs.appendFileSync(file, line)
         size += bytes
       } catch {

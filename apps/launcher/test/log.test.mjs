@@ -35,6 +35,14 @@ describe('log rotativo', () => {
     expect(fs.readFileSync(rotatedName(file, 1), 'utf8')).toBe('x'.repeat(95))
   })
 
+  it('rotação que falha não impede o append', () => {
+    const file = path.join(dir, 'launcher.log')
+    fs.writeFileSync(file, 'x'.repeat(95))
+    const broken = { ...fs, renameSync: () => { throw new Error('EBUSY') }, rmSync: () => { throw new Error('EBUSY') } }
+    createLogger(broken, file, { maxBytes: 100 }).write('nova')
+    expect(fs.readFileSync(file, 'utf8')).toContain('nova')
+  })
+
   it('createTail guarda só as últimas N linhas', () => {
     const tail = createTail(3)
     for (const l of ['a', 'b', 'c', 'd']) tail.push(l)

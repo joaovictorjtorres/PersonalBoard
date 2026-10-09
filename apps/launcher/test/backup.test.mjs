@@ -108,3 +108,19 @@ describe('backupNow', () => {
     expect(fs.existsSync(configFile)).toBe(false)
   })
 })
+
+describe('poda nunca apaga o backup recém-criado', () => {
+  it('backupsToDelete respeita o protegido mesmo sendo o mais antigo', () => {
+    const names = Array.from({ length: 11 }, (_, i) => `2030-01-${String(i + 10).padStart(2, '0')}_000000`)
+    expect(backupsToDelete(names, 10)).toEqual([names[0]])
+    expect(backupsToDelete(names, 10, names[0])).toEqual([])
+  })
+
+  it('makeBackup com relógio atrasado mantém o novo backup', () => {
+    const stateDir = makeState()
+    const backupsDir = path.join(dir, 'backups')
+    for (let i = 10; i < 20; i++) fs.mkdirSync(path.join(backupsDir, `2030-01-${i}_000000`), { recursive: true })
+    const name = makeBackup(fs, { stateDir, backupsDir, date: new Date(2026, 9, 8, 12, 0, 0), keep: 10 })
+    expect(fs.existsSync(path.join(backupsDir, name))).toBe(true)
+  })
+})
