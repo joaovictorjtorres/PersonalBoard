@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type RefObject } from 'react'
 
-/** Atraso para abrir (passar o mouse de raspão não abre) e para fechar (atravessar o vão até o popover). */
-export const HOVER_OPEN_MS = 150
+/** Abre na hora; o atraso de fechar deixa atravessar o vão até o popover. */
 export const HOVER_CLOSE_MS = 250
 
 export interface HoverHandlers {
@@ -30,13 +29,9 @@ function typingInPopover(): boolean {
  */
 export function useHoverMenus<K extends string>() {
   const [open, setOpen] = useState<K | null>(null)
-  const openTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
-  const clearTimers = useCallback(() => {
-    clearTimeout(openTimer.current)
-    clearTimeout(closeTimer.current)
-  }, [])
+  const clearTimers = useCallback(() => clearTimeout(closeTimer.current), [])
   useEffect(() => clearTimers, [clearTimers])
 
   const show = useCallback(
@@ -50,11 +45,7 @@ export function useHoverMenus<K extends string>() {
     clearTimers()
     setOpen(null)
   }, [clearTimers])
-  /** Clique no botão escolhe a ferramenta; não abre por cima de onde o usuário vai desenhar. */
-  const cancelOpen = useCallback(() => clearTimeout(openTimer.current), [])
-
   const scheduleClose = useCallback(() => {
-    clearTimeout(openTimer.current)
     clearTimeout(closeTimer.current)
     closeTimer.current = setTimeout(() => {
       if (!typingInPopover()) setOpen(null)
@@ -66,8 +57,7 @@ export function useHoverMenus<K extends string>() {
       onPointerEnter(e) {
         if (isTouch(e)) return
         clearTimeout(closeTimer.current)
-        clearTimeout(openTimer.current)
-        openTimer.current = setTimeout(() => setOpen(id), HOVER_OPEN_MS)
+        setOpen(id)
       },
       onPointerLeave(e) {
         if (!isTouch(e)) scheduleClose()
@@ -88,5 +78,5 @@ export function useHoverMenus<K extends string>() {
     [scheduleClose],
   )
 
-  return { open, show, close, cancelOpen, trigger, surface }
+  return { open, show, close, trigger, surface }
 }

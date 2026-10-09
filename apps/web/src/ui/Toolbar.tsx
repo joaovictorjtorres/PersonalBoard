@@ -44,10 +44,7 @@ export function Toolbar() {
           aria-pressed={tool === 'pencil'}
           aria-haspopup="dialog"
           aria-expanded={menus.open === 'pen'}
-          onClick={() => {
-            menus.cancelOpen()
-            actions.setPen(penMode)
-          }}
+          onClick={() => actions.setPen(penMode)}
           onContextMenu={openOnContextMenu('pen')}
           {...menus.trigger('pen')}
         >
@@ -62,10 +59,7 @@ export function Toolbar() {
           aria-pressed={tool === 'shape'}
           aria-haspopup="dialog"
           aria-expanded={menus.open === 'shape'}
-          onClick={() => {
-            menus.cancelOpen()
-            actions.setTool('shape')
-          }}
+          onClick={() => actions.setTool('shape')}
           onContextMenu={openOnContextMenu('shape')}
           {...menus.trigger('shape')}
         >

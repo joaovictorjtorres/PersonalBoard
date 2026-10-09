@@ -26,7 +26,7 @@ describe('README', () => {
       'app\\cloudflared.exe',
       '%TEMP%\\MesaVirtual-update\\node.exe',
       'a extração do Explorer falha em caminhos muito longos',
-      'porta mostrada na janela (8787–8797)',
+      'porta mostrada na janela (8787 a 8797)',
       'trocar só\no domínio',
     ]) {
       expect(readme).toContain(text)

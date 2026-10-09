@@ -5,7 +5,7 @@ e camada do mestre em tempo real.
 
 ## Na mesa
 
-- **Grade** (só o mestre): botão "Grade" na barra — mostrar, tamanho do quadrado e encaixe de imagens.
+- **Grade** (só o mestre): botão "Grade" na barra: mostrar, tamanho do quadrado e encaixe de imagens.
 - **Régua** (`R`): o clique fixa o início no centro do quadrado; novo clique ou `Esc` remove.
 - **Ping**: Shift + clique. O mestre usa Ctrl + clique para centralizar a tela de todos.
 - **Formas** (`S`): arraste; Shift força quadrado/círculo/45°; botão direito escolhe retângulo, elipse ou linha e o preenchimento.
@@ -21,7 +21,7 @@ pnpm dev:worker   # API + Durable Object + R2 locais em :8787
 pnpm dev:web      # front com hot reload em :5173 (proxy para :8787)
 pnpm test         # unitários + Durable Object
 pnpm e2e          # ponta a ponta: sobe um wrangler dev próprio em :8788 (E2E_PORT muda a porta),
-                  # com build em apps/web/dist-e2e e estado em apps/worker/.wrangler/e2e-state —
+                  # com build em apps/web/dist-e2e e estado em apps/worker/.wrangler/e2e-state,
                   # não interfere num `pnpm host` rodando na 8787
 ```
 
@@ -69,8 +69,8 @@ Se o servidor não subir (a janela mostra o erro e as últimas linhas do log), i
 
 O link muda a cada vez que a mesa é aberta; o `/t/<id>` das mesas continua valendo (basta trocar só
 o domínio). Sem internet (ou se o túnel falhar), a mesa funciona só no seu PC, no endereço
-`http://localhost:<porta>` com a porta mostrada na janela (8787–8797). Se as portas
-8787–8797 estiverem todas ocupadas, feche o outro programa que as usa e abra de novo.
+`http://localhost:<porta>` com a porta mostrada na janela (8787 a 8797). Se as portas
+8787 a 8797 estiverem todas ocupadas, feche o outro programa que as usa e abra de novo.
 
 Para suporte, o `Iniciar Mesa.cmd` aceita `--no-update` (pula a verificação de atualização) e
 `--port N` (porta fixa); rode-o pelo prompt de comando, por exemplo `"Iniciar Mesa.cmd" --port 8790`.
@@ -98,10 +98,10 @@ substituindo o que houver, e abra a mesa.
 `state-antigo`. Copie a pasta do backup desejado (`backups\AAAA-MM-DD_HHMMSS`) para
 `%LOCALAPPDATA%\MesaVirtual\` e renomeie a cópia para `state`. Abra a mesa.
 
-## Opção A — rodar na sua máquina (sem conta Cloudflare)
+## Opção A: rodar na sua máquina (sem conta Cloudflare)
 
 O `wrangler dev` simula Worker, Durable Object (SQLite) e R2 localmente e salva tudo em
-`apps/worker/.wrangler/state/` — as mesas sobrevivem a reinícios. Faça backup copiando essa pasta.
+`apps/worker/.wrangler/state/`; as mesas sobrevivem a reinícios. Faça backup copiando essa pasta.
 
 Instale antes o `cloudflared` (binário oficial em https://github.com/cloudflare/cloudflared/releases).
 O Quick Tunnel não exige conta Cloudflare.
@@ -125,7 +125,7 @@ por exemplo, costuma limitar redes a 5).
 
 Acesso por `http://` em IP funciona; o app já trata a falta de `crypto.randomUUID` fora de HTTPS.
 
-## Opção B — publicar na Cloudflare (grátis, sempre no ar)
+## Opção B: publicar na Cloudflare (grátis, sempre no ar)
 
 ```bash
 pnpm --filter @mesa/worker exec wrangler login

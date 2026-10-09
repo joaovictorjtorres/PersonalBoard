@@ -51,6 +51,13 @@ const layersPanel = (page: Page) => page.getByRole('region', { name: 'Camadas' }
 const layerRow = (page: Page, name: string) =>
   layersPanel(page).locator('.layer-row').filter({ hasText: new RegExp(`^${name}$`) })
 
+/** Clica no lápis e afasta o mouse: o menu abre na hora ao passar o mouse e fecha quando ele sai. */
+async function pickPencil(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Lápis (P)' }).click()
+  await page.mouse.move(900, 600)
+  await expect(page.locator('.pen-popover')).toHaveCount(0)
+}
+
 async function selectLayer(page: Page, name: string): Promise<void> {
   await layerRow(page, name).click()
 }
@@ -117,7 +124,7 @@ test('desenho aparece para o outro, persiste após recarregar e Ctrl+Z desfaz', 
   const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
 
   await selectLayer(player, 'Desenhos')
-  await player.getByRole('button', { name: 'Lápis (P)' }).click()
+  await pickPencil(player)
   await player.mouse.move(300, 300)
   await player.mouse.down()
   await player.mouse.move(400, 350, { steps: 10 })
@@ -132,7 +139,7 @@ test('desenho aparece para o outro, persiste após recarregar e Ctrl+Z desfaz', 
 
   // a pilha de desfazer é por sessão: desenhar de novo e desfazer
   await selectLayer(player, 'Desenhos')
-  await player.getByRole('button', { name: 'Lápis (P)' }).click()
+  await pickPencil(player)
   await player.mouse.move(500, 400)
   await player.mouse.down()
   await player.mouse.move(600, 450, { steps: 5 })
@@ -350,7 +357,7 @@ test('passada de borracha no meio de uma linha deixa 2 pedaços na tela do outro
   const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
 
   await selectLayer(player, 'Desenhos')
-  await player.getByRole('button', { name: 'Lápis (P)' }).click()
+  await pickPencil(player)
   await player.mouse.move(300, 300)
   await player.mouse.down()
   await player.mouse.move(600, 300, { steps: 10 })
