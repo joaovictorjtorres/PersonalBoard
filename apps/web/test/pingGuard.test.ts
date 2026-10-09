@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { createPingDragGuard } from '../src/canvas/ping'
 
-const plain = { shiftKey: false, ctrlKey: false, metaKey: false }
+const plain = { shiftKey: false, ctrlKey: false, metaKey: false, pointerType: 'mouse', button: 0, buttons: 1 }
 
 // Mesma sequência dos nós. `stop` imita o Konva: stopDrag() dispara dragend de forma síncrona.
 function drag(guard: ReturnType<typeof createPingDragGuard>, evt: typeof plain) {
@@ -41,5 +41,15 @@ describe('createPingDragGuard', () => {
     expect(r.grab).toHaveBeenCalledOnce()
     expect(r.commit).toHaveBeenCalledOnce()
     expect(r.release).toHaveBeenCalledOnce()
+  })
+
+  it('ponta de borracha da caneta: nunca arrasta o objeto', () => {
+    const guard = createPingDragGuard()
+    for (const evt of [{ ...plain, pointerType: 'pen', button: 5, buttons: 32 }, { ...plain, pointerType: 'pen', button: 0, buttons: 32 }]) {
+      const r = drag(guard, evt)
+      expect(r.stop).toHaveBeenCalledOnce()
+      expect(r.grab).not.toHaveBeenCalled()
+      expect(r.commit).not.toHaveBeenCalled()
+    }
   })
 })

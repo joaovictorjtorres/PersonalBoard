@@ -61,6 +61,8 @@ export function TableCanvas() {
   const store = useTableStore()
   const stageRef = useRef<Konva.Stage>(null)
   const activePointer = useRef<number | null>(null)
+  // Gesto da ponta de borracha: apaga mesmo com a Mão ou o Espaço, sem arrastar a mesa.
+  const eraserGesture = useRef(false)
   // Último aperto da caneta foi o botão lateral (vale como botão direito).
   const penBarrel = useRef(false)
   const panning = tool === 'hand' || space
@@ -119,6 +121,7 @@ export function TableCanvas() {
   const endGesture = (pointerId: number) => {
     if (activePointer.current !== pointerId) return
     activePointer.current = null
+    eraserGesture.current = false
     select.onUp()
     drawing.onUp()
     shapes.onUp()
@@ -157,6 +160,10 @@ export function TableCanvas() {
       // Sem gestos do navegador (rolar, selecionar texto) sobre o canvas: a caneta desenha em vez de arrastar a página.
       style={{ position: 'absolute', inset: 0, cursor, touchAction: 'none', userSelect: 'none', WebkitUserSelect: 'none' }}
       onWheel={onWheel}
+      onDragStart={(e) => {
+        // O mousedown de compatibilidade da borracha não arrasta a mesa.
+        if (e.target === e.target.getStage() && eraserGesture.current) e.target.stopDrag()
+      }}
       onDragMove={onStageDrag}
       onDragEnd={onStageDrag}
       onContextMenu={onContextMenu}
@@ -185,6 +192,8 @@ export function TableCanvas() {
         }
         // Ponta de trás da caneta: apaga como a Borracha, seja qual for a ferramenta escolhida.
         if (action === 'eraser') {
+          eraserGesture.current = true
+          stageRef.current?.stopDrag()
           drawing.onDown(e, true)
           return
         }
@@ -218,7 +227,7 @@ export function TableCanvas() {
           endGesture(evt.pointerId)
           return
         }
-        if (!panning) {
+        if (!panning || eraserGesture.current) {
           select.onMove(e)
           drawing.onMove(e)
           shapes.onMove(e)

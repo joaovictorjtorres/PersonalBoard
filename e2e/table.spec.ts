@@ -1731,3 +1731,23 @@ test('caneta: o botão lateral dobra a régua, sem abrir menu', async ({ browser
   await expect.poll(line).toEqual([[400, 300, 700, 300, 740, 450]])
   await expect(ana.getByRole('dialog')).toHaveCount(0)
 })
+
+test('caneta: a ponta de borracha apaga ao longo da passada com a Mão escolhida, sem mover a mesa', async ({ browser, page }) => {
+  const { tableId, gmSecret, playerKey } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const player = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
+
+  await selectLayer(player, 'Desenhos')
+  await pickPencil(player)
+  await penStroke(player, [300, 300], [600, 300])
+  await expect.poll(async () => (await objects(gm)).filter((o) => o.type === 'stroke').length).toBe(1)
+
+  await player.getByRole('button', { name: 'Mão (H)' }).click()
+  // a passada começa longe do traço: só apaga se os movimentos com a Mão também contarem
+  await penStroke(player, [450, 200], [450, 400], 5, 32)
+
+  await expect.poll(async () => (await objects(gm)).find((o) => o.type === 'stroke')?.segments?.length).toBe(2)
+  const view = await player.evaluate(() => (window as any).__mesa.getState().viewport)
+  expect(view).toMatchObject({ x: 0, y: 0 })
+  expect(await player.evaluate(() => (window as any).__mesa.getState().tool)).toBe('hand')
+})
