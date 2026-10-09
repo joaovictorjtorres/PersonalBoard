@@ -1,6 +1,7 @@
 import { useRef } from 'react'
 import { Eraser, Pencil } from 'lucide-react'
 import { useTable, useTableActions } from '../store/context'
+import { ColorPicker } from './ColorPicker'
 import { useDismiss } from './useDismiss'
 import type { HoverMenuBinding } from './useHoverMenu'
 
@@ -42,19 +43,7 @@ export function PenPopover({ onClose, hover }: { onClose: () => void; hover?: Ho
 
       <div className="field">
         <span>Cor</span>
-        <div className="row">
-          <input type="color" aria-label="Cor do traço" value={color} onChange={(e) => actions.setColor(e.target.value)} />
-          {PEN_COLORS.map((c) => (
-            <button
-              key={c}
-              className="swatch"
-              aria-label={`Cor ${c}`}
-              aria-pressed={color === c}
-              style={{ background: c }}
-              onClick={() => actions.setColor(c)}
-            />
-          ))}
-        </div>
+        <ColorPicker label="Cor do traço" value={color} presets={PEN_COLORS} onChange={actions.setColor} />
       </div>
 
       <div className="field">

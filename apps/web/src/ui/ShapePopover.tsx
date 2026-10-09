@@ -2,6 +2,8 @@ import { useRef } from 'react'
 import { Circle, Minus, Square } from 'lucide-react'
 import type { ShapeKind } from '@mesa/shared'
 import { useTable, useTableActions } from '../store/context'
+import { ColorPicker } from './ColorPicker'
+import { PEN_COLORS } from './PenPopover'
 import { useDismiss } from './useDismiss'
 import type { HoverMenuBinding } from './useHoverMenu'
 
@@ -51,14 +53,14 @@ export function ShapePopover({ onClose, hover }: { onClose: () => void; hover?: 
           />
           Preencher
         </label>
+        <ColorPicker
+          label="Cor do preenchimento"
+          value={fill.color ?? strokeColor}
+          presets={PEN_COLORS}
+          disabled={fillDisabled || !fill.enabled}
+          onChange={(color) => actions.setShapeFill({ color })}
+        />
         <div className="row">
-          <input
-            type="color"
-            aria-label="Cor do preenchimento"
-            value={fill.color ?? strokeColor}
-            disabled={fillDisabled || !fill.enabled}
-            onChange={(e) => actions.setShapeFill({ color: e.target.value })}
-          />
           <input
             type="range"
             aria-label="Opacidade do preenchimento"

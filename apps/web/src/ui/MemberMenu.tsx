@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react'
 import { MessageCircle, UserPen } from 'lucide-react'
-import type { Member } from '@mesa/shared'
+import { MEMBER_COLORS, type Member } from '@mesa/shared'
 import { useTable, useTableActions } from '../store/context'
+import { ColorPicker } from './ColorPicker'
 import { memberMenuOptions, memberPatch } from './memberMenuOptions'
 import { OverlayPortal } from './OverlayPortal'
 import { floatingStyle, useDismiss } from './useDismiss'
@@ -55,10 +56,7 @@ export function MemberMenu({ member, x, y, onClose }: { member: Member; x: numbe
             Apelido
             <input autoFocus value={nickname} maxLength={32} onChange={(e) => setNickname(e.target.value)} />
           </label>
-          <label>
-            Cor
-            <input type="color" value={color} onChange={(e) => setColor(e.target.value)} />
-          </label>
+          <ColorPicker label="Cor do membro" value={color} presets={MEMBER_COLORS} onChange={setColor} />
           <button type="submit" disabled={!nickname.trim()}>
             Salvar
           </button>

@@ -163,6 +163,18 @@ test('botão direito na caneta abre opções; modo Apagar vira Borracha (E)', as
   await expect(pop).toBeVisible()
   await pop.getByLabel('Espessura do traço').fill('12')
   await pop.getByRole('button', { name: 'Cor #4363d8' }).click()
+  await expect(pop.getByLabel('Cor do traço (hex)')).toHaveValue('#4363d8')
+  // seletor próprio (o nativo não abre no Brave): quadrado de saturação/brilho e campo hex
+  await pop.getByRole('button', { name: 'Cor do traço: mais cores' }).click()
+  const sv = pop.getByRole('slider', { name: 'Cor do traço: saturação e brilho' })
+  const svBox = (await sv.boundingBox())!
+  await player.mouse.click(svBox.x + 2, svBox.y + 2) // perto do canto superior esquerdo (branco)
+  await expect.poll(() => player.evaluate(() => (window as any).__mesa.getState().color)).not.toBe('#4363d8')
+  await sv.press('Shift+ArrowLeft') // teclado: saturação 0, brilho 100%
+  await sv.press('Shift+ArrowUp')
+  await expect.poll(() => player.evaluate(() => (window as any).__mesa.getState().color)).toBe('#ffffff')
+  await pop.getByLabel('Cor do traço (hex)').fill('#12AB34')
+  await expect(pop.getByRole('button', { name: 'Cor do traço: mais cores' })).toHaveCSS('background-color', 'rgb(18, 171, 52)')
   await pop.getByRole('button', { name: 'Apagar' }).click()
   await expect(player.getByRole('button', { name: 'Borracha (E)' })).toHaveAttribute('aria-pressed', 'true')
   await expect(pop.getByText('Só os meus')).toHaveCount(0) // a chave é só do mestre
@@ -178,7 +190,7 @@ test('botão direito na caneta abre opções; modo Apagar vira Borracha (E)', as
     const st = (window as any).__mesa.getState()
     return { strokeWidth: st.strokeWidth, color: st.color }
   })
-  expect(s).toEqual({ strokeWidth: 12, color: '#4363d8' })
+  expect(s).toEqual({ strokeWidth: 12, color: '#12ab34' })
 })
 
 test('passar o mouse nas ferramentas abre o menu; atravessar o vão não fecha; um aberto por vez', async ({ browser, page }) => {
@@ -623,9 +635,15 @@ test('mestre renomeia o jogador: muda na tela dele e persiste ao recarregar', as
   const menu = await memberMenu(gm, 'Ana')
   await menu.getByRole('button', { name: 'Editar apelido e cor' }).click()
   await menu.getByLabel('Apelido').fill('Aninha')
+  await menu.getByLabel('Cor do membro (hex)').fill('#zzz')
+  await expect(menu.getByLabel('Cor do membro (hex)')).toHaveAttribute('aria-invalid', 'true')
+  await menu.getByLabel('Cor do membro (hex)').fill('#a1b2c3')
   await menu.getByRole('button', { name: 'Salvar' }).click()
   await expect(menu).toHaveCount(0)
   await expect(memberRow(player, 'Aninha')).toContainText('(você)')
+  await expect
+    .poll(() => player.evaluate(() => (window as any).__mesa.getState().self?.color))
+    .toBe('#a1b2c3')
 
   await player.reload()
   await waitOpen(player)
