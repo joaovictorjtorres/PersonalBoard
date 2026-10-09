@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { memberMenuOptions, memberPatch } from '../src/ui/memberMenu'
+import { memberMenuOptions, memberPatch } from '../src/ui/memberMenuOptions'
 
 describe('memberMenuOptions', () => {
   it('conversa privada com qualquer outro; edição só para o mestre (inclusive de si mesmo)', () => {

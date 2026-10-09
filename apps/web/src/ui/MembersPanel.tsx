@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react'
 import { X } from 'lucide-react'
 import { useTable, useTableActions } from '../store/context'
 import { MemberMenu } from './MemberMenu'
-import { memberMenuOptions } from './memberMenu'
+import { memberMenuOptions } from './memberMenuOptions'
 
 export function MembersPanel() {
   const members = useTable((s) => s.members)

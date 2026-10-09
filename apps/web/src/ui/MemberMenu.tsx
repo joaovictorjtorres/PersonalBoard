@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { MessageCircle, UserPen } from 'lucide-react'
 import type { Member } from '@mesa/shared'
 import { useTable, useTableActions } from '../store/context'
-import { memberMenuOptions, memberPatch } from './memberMenu'
+import { memberMenuOptions, memberPatch } from './memberMenuOptions'
 import { OverlayPortal } from './OverlayPortal'
 import { floatingStyle, useDismiss } from './useDismiss'
 
