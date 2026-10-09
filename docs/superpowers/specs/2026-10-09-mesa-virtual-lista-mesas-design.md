@@ -65,6 +65,26 @@ Status: aguardando revisão
 
 **Detalhe técnico:** o protocolo atual de identidade (`clientSecret` com hash salvo, `hello v:2`) ganha a operação de "assumir" um membro; o plano define o formato a partir do código real, mantendo a regra de que um segredo nunca é exposto a outros clientes.
 
+## 7a. Excluir jogador (mestre)
+
+- No menu do jogador (mestre, botão direito → "Editar apelido e cor"), botão vermelho **"Excluir jogador"**. O X de "tirar da lista" dos offline abre o mesmo modal.
+- Modal do app "Excluir <nome> da mesa?" com: **Excluir e apagar as coisas dele** (apaga desenhos e tokens criados por ele, em todas as camadas), **Excluir e manter as coisas**, **Cancelar**.
+- Funciona com o jogador online ou offline.
+- **Manter:** os itens perdem a autoria e o controle do jogador; tokens que ele controlava passam a ser controlados só pelo mestre. Só o mestre consegue mover, editar ou apagar esses itens (inclusive pelas funções globais: seleção em todas as camadas, borracha de qualquer um, "Limpar desenhos"). Nenhum jogador consegue, nem quem entrar depois com o mesmo apelido.
+- **Jogador excluído online:** recebe "Você foi removido da mesa" e é desconectado. Se entrar de novo (com um link válido), é uma pessoa nova; a recuperação por apelido não traz nada de volta. Não é banimento.
+- Substitui a op atual `memberRemove` (que só tirava offline da lista) por uma op com a escolha `{ clientId, deleteItems: boolean }`, só do mestre, nunca sobre o próprio mestre.
+
+## 7b. Gerar novos links (expirar os antigos)
+
+- **Link de jogador** passa a ter chave: `/t/<id>#j=<chave>` (chave aleatória, guardada como hash no TableDO e em texto no índice para montar o link). **Link de mestre** continua `/t/<id>#gm=<segredo>`.
+- Chave e segredo ficam depois do `#` (não vão para logs do servidor nem do túnel). O cliente tira o fragmento da barra de endereço após ler, como já faz com `#gm`.
+- No card de cada mesa (página local), dois botões, cada um com o modal de confirmação do app:
+  - **Gerar novo link de jogador:** chave nova; a antiga para de funcionar.
+  - **Gerar novo link de mestre:** segredo novo; o antigo para de funcionar. "Abrir como mestre" e "Copiar link de mestre" passam a usar o novo.
+- **Regra de entrada:** para entrar (inclusive recuperar por apelido ou voltar com o código guardado no navegador), o cliente precisa da chave de jogador atual **ou** do segredo de mestre atual. Quem já está conectado não é derrubado.
+- Com link expirado: "Este link expirou. Peça o link novo ao mestre".
+- O cliente guarda a chave de jogador no navegador (por mesa) junto com o código de identidade, para reconectar na mesma sessão sem precisar do link de novo; uma chave guardada que expirou leva à mesma mensagem.
+
 ## 8. Erros e bordas
 
 | Situação | Comportamento |
@@ -73,10 +93,12 @@ Status: aguardando revisão
 | Apagar mesa aberta por jogadores | jogadores conectados recebem "A mesa foi apagada" e voltam à página inicial |
 | Apelido de jogador online | recusado com mensagem |
 | Launcher sem túnel | links locais e aviso |
+| Link de jogador ou de mestre antigo | "Este link expirou. Peça o link novo ao mestre"; conectados continuam |
+| Excluir o próprio mestre | não é possível (botão não aparece; servidor rejeita) |
 
 ## 9. Testes
 
 - **worker:** regra de acesso local (com e sem cabeçalhos do túnel, `Host` diferente); criar/listar/renomear/apagar; atualização de atividade com limite de frequência; URL do túnel; recuperação por apelido (fora, online recusado, maiúsculas/espaços, mestre não recupera) e do mestre por segredo; apagar mesa derruba conexões.
 - **launcher:** abre `localhost`; informa a URL do túnel (inclusive ao reabrir).
 - **web:** página local (cards, links com a URL do túnel, modal de apagar); página remota sem lista; tela de entrada com "Já jogou aqui?".
-- **e2e:** criar duas mesas e vê-las na lista; renomear e apagar; jogador entra, desenha, sai; com navegador limpo, entra com o mesmo apelido e recupera o controle; mestre com navegador limpo pelo link de mestre recupera a autoria; pedido com cabeçalho do túnel não vê a lista.
+- **e2e:** criar duas mesas e vê-las na lista; renomear e apagar; jogador entra, desenha, sai; com navegador limpo, entra com o mesmo apelido e recupera o controle; mestre com navegador limpo pelo link de mestre recupera a autoria; pedido com cabeçalho do túnel não vê a lista; excluir jogador mantendo as coisas (o jogador não move mais nada; o mestre move) e apagando as coisas; jogador excluído online é desconectado; gerar novo link de jogador faz o antigo falhar com a mensagem e o novo funcionar, sem derrubar quem está conectado; o mesmo para o link de mestre.
