@@ -1,7 +1,7 @@
 import { env } from 'cloudflare:workers'
 import { runInDurableObject } from 'cloudflare:test'
 import { describe, expect, it } from 'vitest'
-import { TableObjectSchema } from '@mesa/shared'
+import { DEFAULT_TURNS, TableObjectSchema, type Turns } from '@mesa/shared'
 import { normalizeObject } from '../src/engine/migrate'
 import { SqlStore } from '../src/engine/sql-store'
 import { MemoryStore } from '../src/engine/memory-store'
@@ -90,6 +90,24 @@ describe('contrato do TableStore', () => {
   it('SqlStore', async () => {
     await runInDurableObject(freshStub(), (_instance, state) => {
       checkStoreContract(new SqlStore(state.storage.sql))
+    })
+  })
+
+  it('turnos sobrevivem ao reinício (novo SqlStore na mesma base); JSON inválido vira o padrão', async () => {
+    const stub = freshStub()
+    const turns: Turns = {
+      open: true, phase: 'combat', round: 2, currentId: 'a',
+      entries: [{ id: 'a', name: 'Ana', tokenId: null, initiative: 7 }],
+    }
+    await runInDurableObject(stub, (_instance, state) => {
+      new SqlStore(state.storage.sql).putTurns(turns)
+    })
+    await runInDurableObject(stub, (_instance, state) => {
+      expect(new SqlStore(state.storage.sql).getTurns()).toEqual(turns)
+    })
+    await runInDurableObject(stub, (_instance, state) => {
+      state.storage.sql.exec('INSERT OR REPLACE INTO turns (id, data) VALUES (1, ?)', JSON.stringify({ open: 'sim' }))
+      expect(new SqlStore(state.storage.sql).getTurns()).toEqual(DEFAULT_TURNS)
     })
   })
 })

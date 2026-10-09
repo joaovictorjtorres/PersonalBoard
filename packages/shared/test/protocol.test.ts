@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ClientMessageSchema, ObjectPatchSchema, OpSchema, RULER_MAX_POINTS, TableObjectSchema, isObjectOp, readChatReqId, readOpId } from '../src'
+import { ClientMessageSchema, ObjectPatchSchema, OpSchema, RULER_MAX_POINTS, TableObjectSchema, isObjectOp, isTurnOp, readChatReqId, readOpId } from '../src'
 
 const uuid = '3f1c2b9e-8a4d-4c1e-9b7a-2d5e6f708192'
 const image = {
@@ -195,5 +195,37 @@ describe('protocolo do M3', () => {
     expect(readChatReqId({ t: 'op', reqId: 'c1' })).toBeNull()
     expect(readChatReqId({ t: 'chatImage', reqId: 'x'.repeat(65) })).toBeNull()
     expect(readChatReqId(null)).toBeNull()
+  })
+})
+
+describe('ações de turno no protocolo', () => {
+  it('OpSchema aceita as ações de turno e isTurnOp as reconhece', () => {
+    const ops = [
+      { kind: 'turnsOpen', open: true },
+      { kind: 'turnAdd', entry: { id: 'a', name: 'Ana', tokenId: 'tok1' } },
+      { kind: 'turnDuplicate', id: 'a', newId: 'b' },
+      { kind: 'turnUpdate', id: 'a', patch: { initiative: 12 } },
+      { kind: 'turnRemove', id: 'a' },
+      { kind: 'turnMove', id: 'a', index: 0 },
+      { kind: 'turnsRoll', all: false },
+      { kind: 'turnsStart' },
+      { kind: 'turnNext' },
+      { kind: 'turnPrev' },
+      { kind: 'turnsEnd', keep: true },
+    ]
+    for (const op of ops) {
+      const parsed = OpSchema.parse(op)
+      expect(isTurnOp(parsed)).toBe(true)
+      expect(isObjectOp(parsed)).toBe(false)
+    }
+    expect(isTurnOp(OpSchema.parse({ kind: 'delete', id: 'x' }))).toBe(false)
+  })
+
+  it('op de turno inválida no envelope é recusada (iniciativa fora do limite, nome vazio)', () => {
+    const bad = [
+      { kind: 'turnUpdate', id: 'a', patch: { initiative: 1000 } },
+      { kind: 'turnAdd', entry: { id: 'a', name: '   ' } },
+    ]
+    for (const op of bad) expect(ClientMessageSchema.safeParse({ t: 'op', opId: 'op_1', op }).success).toBe(false)
   })
 })

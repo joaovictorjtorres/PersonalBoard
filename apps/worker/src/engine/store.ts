@@ -1,4 +1,4 @@
-import type { ChatEntry, Layer, Role, TableObject, TableSettings } from '@mesa/shared'
+import type { ChatEntry, Layer, Role, TableObject, TableSettings, Turns } from '@mesa/shared'
 
 export interface TableMeta {
   id: string
@@ -48,4 +48,7 @@ export interface TableStore {
   appendChat(entry: ChatEntry): void
   /** Da mais antiga para a mais nova. */
   listChat(): ChatEntry[]
+  /** Padrão (DEFAULT_TURNS) quando nunca foi gravado; sempre devolve uma cópia. */
+  getTurns(): Turns
+  putTurns(turns: Turns): void
 }

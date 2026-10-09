@@ -1,5 +1,5 @@
 import { expect } from 'vitest'
-import { CHAT_HISTORY_LIMIT, DEFAULT_LAYERS, DEFAULT_SETTINGS } from '@mesa/shared'
+import { CHAT_HISTORY_LIMIT, DEFAULT_LAYERS, DEFAULT_SETTINGS, DEFAULT_TURNS, type Turns } from '@mesa/shared'
 import type { TableStore } from '../src/engine/store'
 
 /** Verificações síncronas válidas para qualquer TableStore recém-criado. */
@@ -47,4 +47,18 @@ export function checkStoreContract(store: TableStore): void {
   // M3 — marcas do mestre no membro
   store.upsertMember({ clientId: 'B', nickname: 'Bia', color: '#3cb44b', role: 'player', lastSeenAt: 1, nicknameSetByGm: true, colorSetByGm: true })
   expect(store.getMember('B')).toMatchObject({ nicknameSetByGm: true, colorSetByGm: true })
+
+  // Turnos: padrão, gravação inteira e retorno em cópia
+  expect(store.getTurns()).toEqual(DEFAULT_TURNS)
+  const turns: Turns = {
+    open: true, phase: 'combat', round: 3, currentId: 'b',
+    entries: [
+      { id: 'a', name: 'Ana', tokenId: null, initiative: 12 },
+      { id: 'b', name: 'Goblin', tokenId: 'tok1', initiative: 7 },
+    ],
+  }
+  store.putTurns(turns)
+  expect(store.getTurns()).toEqual(turns)
+  store.getTurns().entries.pop()
+  expect(store.getTurns().entries).toHaveLength(2)
 }

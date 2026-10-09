@@ -2,10 +2,12 @@ import {
   APPLIED_OPS_KEEP,
   CHAT_HISTORY_LIMIT,
   parseSettings,
+  parseTurns,
   type ChatEntry,
   type Layer,
   type TableObject,
   type TableSettings,
+  type Turns,
 } from '@mesa/shared'
 import { normalizeObject } from './migrate'
 import type { StoredMember, TableMeta, TableStore } from './store'
@@ -20,6 +22,7 @@ export class SqlStore implements TableStore {
     sql.exec('CREATE TABLE IF NOT EXISTS gm_notes (object_id TEXT PRIMARY KEY, text TEXT NOT NULL)')
     sql.exec('CREATE TABLE IF NOT EXISTS settings (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)')
     sql.exec('CREATE TABLE IF NOT EXISTS chat (seq INTEGER PRIMARY KEY AUTOINCREMENT, data TEXT NOT NULL)')
+    sql.exec('CREATE TABLE IF NOT EXISTS turns (id INTEGER PRIMARY KEY CHECK (id = 1), data TEXT NOT NULL)')
   }
 
   getMeta(): TableMeta | null {
@@ -138,5 +141,14 @@ export class SqlStore implements TableStore {
       .exec<{ data: string }>('SELECT data FROM chat ORDER BY seq')
       .toArray()
       .map((r) => JSON.parse(r.data) as ChatEntry)
+  }
+
+  getTurns(): Turns {
+    const row = this.sql.exec<{ data: string }>('SELECT data FROM turns WHERE id = 1').toArray()[0]
+    return parseTurns(row ? JSON.parse(row.data) : null)
+  }
+
+  putTurns(turns: Turns): void {
+    this.sql.exec('INSERT OR REPLACE INTO turns (id, data) VALUES (1, ?)', JSON.stringify(turns))
   }
 }

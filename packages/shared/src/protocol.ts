@@ -20,6 +20,22 @@ import {
   type TableObject,
 } from './model'
 import { SettingsPatchSchema, type TableSettings } from './settings'
+import {
+  TURN_OP_KINDS,
+  TurnAddOpSchema,
+  TurnDuplicateOpSchema,
+  TurnMoveOpSchema,
+  TurnNextOpSchema,
+  TurnPrevOpSchema,
+  TurnRemoveOpSchema,
+  TurnUpdateOpSchema,
+  TurnsEndOpSchema,
+  TurnsOpenOpSchema,
+  TurnsRollOpSchema,
+  TurnsStartOpSchema,
+  type TurnOp,
+  type Turns,
+} from './turns'
 
 export const LayerNameSchema = z.string().trim().min(1).max(LAYER_NAME_MAX)
 
@@ -67,12 +83,28 @@ export const OpSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('settingsUpdate'), patch: SettingsPatchSchema }),
   z.object({ kind: z.literal('memberUpdate'), clientId: z.string().min(1).max(64), patch: MemberPatchSchema }),
   ClearObjectsOpSchema,
+  // Turnos (só o mestre): ver turns.ts
+  TurnsOpenOpSchema,
+  TurnAddOpSchema,
+  TurnDuplicateOpSchema,
+  TurnUpdateOpSchema,
+  TurnRemoveOpSchema,
+  TurnMoveOpSchema,
+  TurnsRollOpSchema,
+  TurnsStartOpSchema,
+  TurnNextOpSchema,
+  TurnPrevOpSchema,
+  TurnsEndOpSchema,
 ])
 export type Op = z.infer<typeof OpSchema>
 export type ObjectOp = Extract<Op, { kind: 'create' | 'update' | 'delete' }>
 
 export function isObjectOp(op: Op): op is ObjectOp {
   return op.kind === 'create' || op.kind === 'update' || op.kind === 'delete'
+}
+
+export function isTurnOp(op: Op): op is TurnOp {
+  return TURN_OP_KINDS.has(op.kind)
 }
 
 const PointSchema = z.object({ x: z.number(), y: z.number() })
@@ -175,6 +207,8 @@ export interface Snapshot {
   settings: TableSettings
   /** Só o canal da mesa, já filtrado para quem recebe (rolagem secreta: autor e mestres). */
   chat: ChatEntry[]
+  /** Ordem de turnos, igual para todos. O servidor sempre envia; ausente = padrão (fixtures antigas). */
+  turns?: Turns
 }
 
 export type ServerMessage =
@@ -198,6 +232,8 @@ export type ServerMessage =
   | { t: 'memberRemoved'; clientId: string }
   | { t: 'settingsUpdated'; settings: TableSettings }
   | { t: 'memberUpdated'; member: Member }
+  /** Estado completo dos turnos depois de cada ação; vai a todos, inclusive ao autor. */
+  | { t: 'turnsUpdated'; turns: Turns }
   /** Na conversa privada, `channel.dm` é sempre a OUTRA pessoa do ponto de vista de quem recebe. */
   | { t: 'chat'; channel: ChatChannel; entry: ChatEntry }
   | { t: 'chatAck'; reqId: string }

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { DEFAULT_LAYERS, LOCK_TTL_MS, MEMBER_RECENT_MS, type NewObject, type ObjectPatch, type Op } from '@mesa/shared'
+import { DEFAULT_LAYERS, DEFAULT_TURNS, LOCK_TTL_MS, MEMBER_RECENT_MS, TURNS_MAX, type NewObject, type ObjectPatch, type Op } from '@mesa/shared'
 import { MemoryStore } from '../src/engine/memory-store'
 import { TableEngine, type OpResult } from '../src/engine/engine'
 
@@ -587,5 +587,140 @@ describe('applyOp clearObjects', () => {
     expect(engine.grab('B', 'player', 'b-draw')).toBe(true)
     expect(removedIds(engine.applyOp('G', 'gm', 'c1', clear('drawings', 'drawings', 'B')))).toEqual(['b-draw'])
     expect(engine.activeLocks()).toEqual([])
+  })
+})
+
+describe('turnos', () => {
+  const add = (id: string, name = id, tokenId?: string): Op => ({ kind: 'turnAdd', entry: { id, name, ...(tokenId ? { tokenId } : {}) } })
+  const gmOp = (e: TableEngine, opId: string, op: Op) => e.applyOp('G', 'gm', opId, op)
+  const turns = () => store.getTurns()
+  const seq = (...values: number[]) => {
+    let i = 0
+    return () => values[i++]
+  }
+  const ALL_TURN_OPS: Op[] = [
+    { kind: 'turnsOpen', open: true },
+    add('x'),
+    { kind: 'turnDuplicate', id: 'a', newId: 'b' },
+    { kind: 'turnUpdate', id: 'a', patch: { name: 'X' } },
+    { kind: 'turnRemove', id: 'a' },
+    { kind: 'turnMove', id: 'a', index: 0 },
+    { kind: 'turnsRoll', all: true },
+    { kind: 'turnsStart' },
+    { kind: 'turnNext' },
+    { kind: 'turnPrev' },
+    { kind: 'turnsEnd', keep: true },
+  ]
+
+  it('jogador: todas as ações de turno recusadas com forbidden e nada muda', () => {
+    gmOp(engine, 'g0', add('a'))
+    const before = turns()
+    ALL_TURN_OPS.forEach((op, i) => {
+      expect(engine.applyOp('A', 'player', `p${i}`, op)).toMatchObject({ ok: false, reason: 'forbidden' })
+    })
+    expect(turns()).toEqual(before)
+  })
+
+  it('mestre: efeito com o estado completo, gravado e entregue no snapshot de todos', () => {
+    expect(engine.snapshot('player', new Set()).turns).toEqual(DEFAULT_TURNS)
+    const r = gmOp(engine, 'g1', add('a', 'Ana'))
+    const expected = { ...DEFAULT_TURNS, entries: [{ id: 'a', name: 'Ana', tokenId: null, initiative: null }] }
+    expect(r).toMatchObject({ ok: true, duplicate: false, version: 0 })
+    expect(effects(r)).toEqual([{ kind: 'turns', turns: expected }])
+    expect(turns()).toEqual(expected)
+    expect(engine.snapshot('player', new Set()).turns).toEqual(expected)
+  })
+
+  it('turnAdd ligado: só imagem existente; forma ou id inexistente → invalid', () => {
+    gmOp(engine, 'c1', create(token()))
+    gmOp(engine, 'c2', create(rect()))
+    expect(gmOp(engine, 'g1', add('a', 'Token', 'tok1'))).toMatchObject({ ok: true })
+    expect(gmOp(engine, 'g2', add('b', 'Forma', 'r1'))).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(gmOp(engine, 'g3', add('c', 'Sumiu', 'nope'))).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(turns().entries.map((e) => e.id)).toEqual(['a'])
+  })
+
+  it('rolagem com o d20 do gerador injetado: só sem valor, depois todos; empate mantém a ordem', () => {
+    // uniformInt(20, rng) = x % 20 para x pequeno; +1 → 11 vira 12, 4 vira 5
+    const e = new TableEngine(store, () => clock, seq(11, 4, 11, 0, 1, 2, 3))
+    for (const id of ['a', 'b', 'c', 'd']) gmOp(e, `add_${id}`, add(id))
+    gmOp(e, 'u1', { kind: 'turnUpdate', id: 'b', patch: { initiative: 12 } })
+    gmOp(e, 'r1', { kind: 'turnsRoll', all: false })
+    expect(turns().entries.map((x) => `${x.id}:${x.initiative}`)).toEqual(['a:12', 'b:12', 'd:12', 'c:5'])
+    gmOp(e, 'r2', { kind: 'turnsRoll', all: true })
+    // ordem antes da rolagem: a, b, d, c → 1, 2, 3, 4
+    expect(turns().entries.map((x) => `${x.id}:${x.initiative}`)).toEqual(['c:4', 'd:3', 'b:2', 'a:1'])
+  })
+
+  it('fase errada, id inexistente, id repetido ou lista cheia → invalid, sem mudar nada', () => {
+    expect(gmOp(engine, 'n1', { kind: 'turnNext' })).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(gmOp(engine, 's1', { kind: 'turnsStart' })).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(gmOp(engine, 'x1', { kind: 'turnRemove', id: 'zz' })).toMatchObject({ ok: false, reason: 'invalid' })
+    for (let i = 0; i < TURNS_MAX; i++) gmOp(engine, `a${i}`, add(`e${i}`))
+    expect(gmOp(engine, 'same', add('e0'))).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(gmOp(engine, 'full', add('extra'))).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(gmOp(engine, 'dup', { kind: 'turnDuplicate', id: 'e0', newId: 'extra' })).toMatchObject({ ok: false, reason: 'invalid' })
+    gmOp(engine, 'start', { kind: 'turnsStart' })
+    expect(gmOp(engine, 'roll', { kind: 'turnsRoll', all: true })).toMatchObject({ ok: false, reason: 'invalid' })
+    expect(turns().entries).toHaveLength(TURNS_MAX)
+  })
+
+  it('combate: rodada vira nos dois sentidos; remover a da vez; lista vazia volta à preparação', () => {
+    for (const id of ['a', 'b', 'c']) gmOp(engine, `add_${id}`, add(id))
+    gmOp(engine, 's', { kind: 'turnsStart' })
+    expect(turns()).toMatchObject({ open: true, phase: 'combat', round: 1, currentId: 'a' })
+    gmOp(engine, 'p1', { kind: 'turnPrev' })
+    expect(turns()).toMatchObject({ round: 1, currentId: 'c' })
+    gmOp(engine, 'n1', { kind: 'turnNext' })
+    expect(turns()).toMatchObject({ round: 2, currentId: 'a' })
+    gmOp(engine, 'p2', { kind: 'turnPrev' })
+    expect(turns()).toMatchObject({ round: 1, currentId: 'c' })
+    gmOp(engine, 'x1', { kind: 'turnRemove', id: 'c' }) // era a da vez e a última: vez passa à primeira, rodada igual
+    expect(turns()).toMatchObject({ round: 1, currentId: 'a' })
+    gmOp(engine, 'x2', { kind: 'turnRemove', id: 'a' })
+    expect(turns()).toMatchObject({ currentId: 'b' })
+    gmOp(engine, 'x3', { kind: 'turnRemove', id: 'b' })
+    expect(turns()).toEqual({ ...DEFAULT_TURNS, open: true })
+  })
+
+  // Review Focus #2
+  it('token apagado: a entrada continua com o tokenId', () => {
+    gmOp(engine, 'c1', create(token()))
+    gmOp(engine, 'g1', add('a', 'Token', 'tok1'))
+    gmOp(engine, 'g2', { kind: 'turnsStart' })
+    gmOp(engine, 'd1', { kind: 'delete', id: 'tok1' })
+    expect(turns()).toMatchObject({ phase: 'combat', currentId: 'a', entries: [{ id: 'a', name: 'Token', tokenId: 'tok1', initiative: null }] })
+  })
+
+  it('turnsEnd: keep zera as iniciativas; sem keep limpa; ambos voltam à preparação', () => {
+    for (const id of ['a', 'b']) gmOp(engine, `add_${id}`, add(id))
+    gmOp(engine, 'u', { kind: 'turnUpdate', id: 'a', patch: { initiative: 9 } })
+    gmOp(engine, 's1', { kind: 'turnsStart' })
+    gmOp(engine, 'n1', { kind: 'turnNext' })
+    gmOp(engine, 'e1', { kind: 'turnsEnd', keep: true })
+    expect(turns()).toEqual({
+      open: true, phase: 'prep', round: 1, currentId: null,
+      entries: [{ id: 'a', name: 'a', tokenId: null, initiative: null }, { id: 'b', name: 'b', tokenId: null, initiative: null }],
+    })
+    gmOp(engine, 's2', { kind: 'turnsStart' })
+    gmOp(engine, 'e2', { kind: 'turnsEnd', keep: false })
+    expect(turns()).toEqual({ ...DEFAULT_TURNS, open: true })
+  })
+
+  it('opId repetido não reaplica: turnNext repetido avança uma vez só', () => {
+    for (const id of ['a', 'b', 'c']) gmOp(engine, `add_${id}`, add(id))
+    gmOp(engine, 's', { kind: 'turnsStart' })
+    expect(gmOp(engine, 'n1', { kind: 'turnNext' })).toMatchObject({ ok: true, duplicate: false })
+    expect(gmOp(engine, 'n1', { kind: 'turnNext' })).toEqual({ ok: true, duplicate: true, version: 0 })
+    expect(turns().currentId).toBe('b')
+  })
+
+  it('snapshot do jogador: token na camada do mestre some, mas os turnos mantêm o tokenId', () => {
+    gmOp(engine, 'c1', create(token({ layerId: 'gm' })))
+    gmOp(engine, 'g1', add('a', 'Segredo', 'tok1'))
+    const snap = engine.snapshot('player', new Set())
+    expect(snap.objects.some((o) => o.id === 'tok1')).toBe(false)
+    expect(snap.turns?.entries).toEqual([{ id: 'a', name: 'Segredo', tokenId: 'tok1', initiative: null }])
+    expect(engine.turns()).toEqual(snap.turns)
   })
 })

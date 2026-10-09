@@ -6,6 +6,7 @@ import {
   clearTargets,
   insertLayer,
   isObjectOp,
+  isTurnOp,
   mergeSettings,
   moveLayer,
   sortLayers,
@@ -233,6 +234,7 @@ function applyOptimistic<S extends TableState>(
       layerOrders: null,
     }
   }
+  if (isTurnOp(op)) return { next: s, before: null, prev: null, layerOrders: null }
   switch (op.kind) {
     case 'layerCreate':
     case 'layerUpdate':
@@ -622,6 +624,9 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
 
     case 'memberUpdated':
       return withMember(s, msg.member)
+
+    case 'turnsUpdated':
+      return s
 
     case 'chat':
       return reduceChatEntry(s, msg.channel, msg.entry)

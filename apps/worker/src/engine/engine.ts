@@ -5,17 +5,20 @@ import {
   MEMBER_RECENT_MS,
   RollRequestSchema,
   TableObjectSchema,
+  applyTurnOp,
   canControl,
   changedLayers,
   clearAllowed,
   clearTargets,
   insertLayer,
+  isTurnOp,
   mergePatch,
   mergeSettings,
   moveLayer,
   rollDice,
   snapPatch,
   snapToGrid,
+  uniformInt,
   type ChatEntry,
   type ClearObjectsOp,
   type Layer,
@@ -33,6 +36,8 @@ import {
   type Snapshot,
   type TableObject,
   type TableSettings,
+  type TurnOp,
+  type Turns,
 } from '@mesa/shared'
 import { randomUint32 } from '../crypto'
 import type { StoredMember, TableStore } from './store'
@@ -52,6 +57,8 @@ export type OpEffect =
   | { kind: 'memberUpdated'; member: Member }
   /** Apagados em lote (clearObjects); cada pessoa recebe só os que enxerga. */
   | { kind: 'objectsRemoved'; objects: TableObject[] }
+  /** Estado completo dos turnos; todos recebem (não há filtro por destinatário). */
+  | { kind: 'turns'; turns: Turns }
 
 export type OpResult =
   | { ok: true; duplicate: true; version: number }
@@ -177,6 +184,7 @@ export class TableEngine {
       notes: role === 'gm' ? this.store.listNotes() : {},
       settings: this.store.getSettings(),
       chat: this.store.listChat().filter((e) => this.canSeeChat(viewerId, role, e)),
+      turns: this.store.getTurns(),
     }
   }
 
@@ -194,6 +202,7 @@ export class TableEngine {
     if (op.kind === 'clearObjects') return this.clearObjects(clientId, role, op)
     // Camadas, anotações, membros e configurações: só o mestre.
     if (role !== 'gm') return reject('forbidden', null)
+    if (isTurnOp(op)) return this.turnOp(op)
     switch (op.kind) {
       case 'layerCreate': return this.layerCreate(op.layer)
       case 'layerUpdate': return this.layerUpdate(op.id, op.patch)
@@ -340,6 +349,23 @@ export class TableEngine {
     const settings = mergeSettings(this.store.getSettings(), patch)
     this.store.putSettings(settings)
     return done(0, { kind: 'settings', settings })
+  }
+
+  /** Estado atual dos turnos (o gateway reenvia quando a ação chega repetida). */
+  turns(): Turns {
+    return this.store.getTurns()
+  }
+
+  /** Turnos: regras puras do shared; a rolagem usa o mesmo sorteio imparcial dos dados. */
+  private turnOp(op: TurnOp): OpResult {
+    if (op.kind === 'turnAdd' && op.entry.tokenId) {
+      const linked = this.store.getObject(op.entry.tokenId)
+      if (!linked || linked.type !== 'image') return rejectInvalid()
+    }
+    const after = applyTurnOp(this.store.getTurns(), op, () => uniformInt(20, this.rng) + 1)
+    if (!after) return rejectInvalid()
+    this.store.putTurns(after)
+    return done(0, { kind: 'turns', turns: after })
   }
 
   private memberUpdate(clientId: string, patch: MemberPatch, online: Set<string>): OpResult {
