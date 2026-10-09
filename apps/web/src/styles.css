@@ -39,7 +39,9 @@ button:disabled { opacity: 0.45; cursor: default; }
 .popover button { max-width: 100%; min-width: 0; justify-content: flex-start; text-align: left; }
 .popover small { overflow-wrap: anywhere; }
 .popover label { min-width: 0; overflow-wrap: anywhere; }
-.pen-popover { position: absolute; left: calc(100% + 12px); top: 0; width: 240px; }
+/* ponte transparente entre o botão e o menu: o mouse atravessa o vão sem "sair" do menu */
+.popover-bridge { position: absolute; left: 100%; top: 0; padding-left: 12px; z-index: 30; }
+.pen-popover { position: relative; width: 240px; }
 .popover.floating { width: 260px; }
 .floating { position: fixed; }
 .field { display: grid; gap: 4px; border: none; margin: 0; padding: 0; }

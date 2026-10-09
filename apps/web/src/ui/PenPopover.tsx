@@ -22,8 +22,6 @@ export function PenPopover({ onClose, hover }: { onClose: () => void; hover?: Ho
       ref={ref}
       className="panel popover pen-popover"
       role="dialog"
-      onPointerEnter={hover?.onPointerEnter}
-      onPointerLeave={hover?.onPointerLeave}
       aria-label="Opções da caneta"
     >
       <div className="field">

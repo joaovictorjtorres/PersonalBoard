@@ -28,8 +28,6 @@ export function ShapePopover({ onClose, hover }: { onClose: () => void; hover?: 
       ref={ref}
       className="panel popover pen-popover"
       role="dialog"
-      onPointerEnter={hover?.onPointerEnter}
-      onPointerLeave={hover?.onPointerLeave}
       aria-label="Opções das formas"
     >
       <div className="field">

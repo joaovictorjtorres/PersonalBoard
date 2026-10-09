@@ -19,10 +19,9 @@ export function Toolbar() {
   const penAnchor = useRef<HTMLDivElement>(null)
   const shapeAnchor = useRef<HTMLDivElement>(null)
   const gridAnchor = useRef<HTMLDivElement>(null)
-  const { surface } = menus
-  const penHover = useMemo<HoverMenuBinding>(() => ({ anchor: penAnchor, ...surface }), [surface])
-  const shapeHover = useMemo<HoverMenuBinding>(() => ({ anchor: shapeAnchor, ...surface }), [surface])
-  const gridHover = useMemo<HoverMenuBinding>(() => ({ anchor: gridAnchor, ...surface }), [surface])
+  const penHover = useMemo<HoverMenuBinding>(() => ({ anchor: penAnchor }), [])
+  const shapeHover = useMemo<HoverMenuBinding>(() => ({ anchor: shapeAnchor }), [])
+  const gridHover = useMemo<HoverMenuBinding>(() => ({ anchor: gridAnchor }), [])
   const openOnContextMenu = (id: 'pen' | 'shape' | 'grid') => (e: MouseEvent) => {
     e.preventDefault()
     menus.show(id)
@@ -37,7 +36,7 @@ export function Toolbar() {
       <button aria-label="Mão (H)" title="Mão (H)" aria-pressed={tool === 'hand'} onClick={() => actions.setTool('hand')}>
         <Hand size={ICON} aria-hidden />
       </button>
-      <div className="pen-anchor" ref={penAnchor}>
+      <div className="pen-anchor" ref={penAnchor} {...menus.trigger('pen')}>
         <button
           aria-label={penLabel}
           title={`${penLabel} (passe o mouse: opções)`}
@@ -46,13 +45,16 @@ export function Toolbar() {
           aria-expanded={menus.open === 'pen'}
           onClick={() => actions.setPen(penMode)}
           onContextMenu={openOnContextMenu('pen')}
-          {...menus.trigger('pen')}
         >
           {penMode === 'erase' ? <Eraser size={ICON} aria-hidden /> : <Pencil size={ICON} aria-hidden />}
         </button>
-        {menus.open === 'pen' && <PenPopover onClose={menus.close} hover={penHover} />}
+        {menus.open === 'pen' && (
+          <div className="popover-bridge">
+            <PenPopover onClose={menus.close} hover={penHover} />
+          </div>
+        )}
       </div>
-      <div className="pen-anchor" ref={shapeAnchor}>
+      <div className="pen-anchor" ref={shapeAnchor} {...menus.trigger('shape')}>
         <button
           aria-label="Formas (S)"
           title="Formas (S): passe o mouse para tipo e preenchimento"
@@ -61,11 +63,14 @@ export function Toolbar() {
           aria-expanded={menus.open === 'shape'}
           onClick={() => actions.setTool('shape')}
           onContextMenu={openOnContextMenu('shape')}
-          {...menus.trigger('shape')}
         >
           <Shapes size={ICON} aria-hidden />
         </button>
-        {menus.open === 'shape' && <ShapePopover onClose={menus.close} hover={shapeHover} />}
+        {menus.open === 'shape' && (
+          <div className="popover-bridge">
+            <ShapePopover onClose={menus.close} hover={shapeHover} />
+          </div>
+        )}
       </div>
       <button
         aria-label="Régua (R)"
@@ -91,7 +96,7 @@ export function Toolbar() {
         }}
       />
       {isGm && (
-        <div className="pen-anchor" ref={gridAnchor}>
+        <div className="pen-anchor" ref={gridAnchor} {...menus.trigger('grid')}>
           <button
             aria-label="Grade"
             title="Grade (só o mestre)"
@@ -99,11 +104,14 @@ export function Toolbar() {
             aria-expanded={menus.open === 'grid'}
             onClick={() => menus.show('grid')}
             onContextMenu={openOnContextMenu('grid')}
-            {...menus.trigger('grid')}
           >
             <Grid3x3 size={ICON} aria-hidden />
           </button>
-          {menus.open === 'grid' && <GridPopover onClose={menus.close} hover={gridHover} />}
+          {menus.open === 'grid' && (
+          <div className="popover-bridge">
+            <GridPopover onClose={menus.close} hover={gridHover} />
+          </div>
+        )}
         </div>
       )}
       <button aria-label="Desfazer (Ctrl+Z)" title="Desfazer (Ctrl+Z)" onClick={() => actions.undo()}>

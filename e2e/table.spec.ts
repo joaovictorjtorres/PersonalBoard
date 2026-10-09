@@ -200,7 +200,7 @@ test('botão direito na caneta abre opções; modo Apagar vira Borracha (E)', as
   expect(s).toEqual({ strokeWidth: 12, color: '#12ab34' })
 })
 
-test('passar o mouse nas ferramentas abre o menu; atravessar o vão não fecha; um aberto por vez', async ({ browser, page }) => {
+test('passar o mouse nas ferramentas abre o menu; atravessar o vão não fecha; sair fecha na hora; um aberto por vez', async ({ browser, page }) => {
   const { tableId, gmSecret } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
   const player = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
@@ -221,8 +221,9 @@ test('passar o mouse nas ferramentas abre o menu; atravessar o vão não fecha; 
   await expect(shape).toBeVisible()
   await expect(pen).toHaveCount(0)
 
+  // sair do menu fecha na hora (sem atraso)
   await gm.mouse.move(800, 600)
-  await expect(shape).toHaveCount(0)
+  await expect(shape).toHaveCount(0, { timeout: 100 })
 
   await gm.getByRole('button', { name: 'Grade', exact: true }).hover()
   await expect(gm.getByRole('dialog', { name: 'Grade' })).toBeVisible()

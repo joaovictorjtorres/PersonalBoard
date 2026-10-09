@@ -1,15 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent, type RefObject } from 'react'
-
-/** Abre na hora; o atraso de fechar deixa atravessar o vão até o popover. */
-export const HOVER_CLOSE_MS = 250
+import { useCallback, useState, type PointerEvent, type RefObject } from 'react'
 
 export interface HoverHandlers {
   onPointerEnter: (e: PointerEvent) => void
   onPointerLeave: (e: PointerEvent) => void
 }
 
-/** O que o popover recebe: o mesmo par de handlers do botão e o elemento que não conta como "clique fora". */
-export interface HoverMenuBinding extends HoverHandlers {
+/** O que o popover recebe: o elemento que não conta como "clique fora". */
+export interface HoverMenuBinding {
   anchor: RefObject<HTMLElement | null>
 }
 
@@ -23,60 +20,27 @@ function typingInPopover(): boolean {
 }
 
 /**
- * Menus de hover com um só aberto por vez. Botão e popover compartilham o mesmo timer de fechar:
- * o menu fica aberto enquanto o ponteiro estiver em qualquer um dos dois (funciona mesmo com o
- * popover em portal, porque os eventos são ligados em cada elemento).
+ * Menus de hover com um só aberto por vez, sem atraso: abre ao entrar e fecha ao sair.
+ * Os handlers vão no contêiner que envolve o botão E o popover (o popover é filho dele, e a
+ * ponte transparente .popover-bridge cobre o vão), então ir do botão ao menu não conta como saída.
  */
 export function useHoverMenus<K extends string>() {
   const [open, setOpen] = useState<K | null>(null)
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-
-  const clearTimers = useCallback(() => clearTimeout(closeTimer.current), [])
-  useEffect(() => clearTimers, [clearTimers])
-
-  const show = useCallback(
-    (id: K) => {
-      clearTimers()
-      setOpen(id)
-    },
-    [clearTimers],
-  )
-  const close = useCallback(() => {
-    clearTimers()
-    setOpen(null)
-  }, [clearTimers])
-  const scheduleClose = useCallback(() => {
-    clearTimeout(closeTimer.current)
-    closeTimer.current = setTimeout(() => {
-      if (!typingInPopover()) setOpen(null)
-    }, HOVER_CLOSE_MS)
-  }, [])
+  const show = useCallback((id: K) => setOpen(id), [])
+  const close = useCallback(() => setOpen(null), [])
 
   const trigger = useCallback(
     (id: K): HoverHandlers => ({
       onPointerEnter(e) {
-        if (isTouch(e)) return
-        clearTimeout(closeTimer.current)
-        setOpen(id)
+        if (!isTouch(e)) setOpen(id)
       },
       onPointerLeave(e) {
-        if (!isTouch(e)) scheduleClose()
+        if (isTouch(e) || typingInPopover()) return
+        setOpen((cur) => (cur === id ? null : cur))
       },
     }),
-    [scheduleClose],
+    [],
   )
 
-  const surface = useMemo<HoverHandlers>(
-    () => ({
-      onPointerEnter(e) {
-        if (!isTouch(e)) clearTimeout(closeTimer.current)
-      },
-      onPointerLeave(e) {
-        if (!isTouch(e)) scheduleClose()
-      },
-    }),
-    [scheduleClose],
-  )
-
-  return { open, show, close, trigger, surface }
+  return { open, show, close, trigger }
 }

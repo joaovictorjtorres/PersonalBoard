@@ -24,8 +24,6 @@ export function GridPopover({ onClose, hover }: { onClose: () => void; hover?: H
       ref={ref}
       className="panel popover pen-popover"
       role="dialog"
-      onPointerEnter={hover?.onPointerEnter}
-      onPointerLeave={hover?.onPointerLeave}
       aria-label="Grade"
     >
       <label>
