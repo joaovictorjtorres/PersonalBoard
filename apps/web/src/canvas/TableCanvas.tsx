@@ -14,6 +14,7 @@ import { isPingClick } from './ping'
 import { SelectionTransformer } from './SelectionTransformer'
 import { ShapeNode } from './ShapeNode'
 import { StrokeNode } from './StrokeNode'
+import { TurnHighlights } from './TurnHighlights'
 import { useDrawingTools } from './useDrawingTools'
 import { useShapeTool } from './useShapeTool'
 
@@ -194,6 +195,7 @@ export function TableCanvas() {
           </Fragment>
         )
       })}
+      <TurnHighlights />
       <Overlay />
     </Stage>
   )

@@ -1,8 +1,8 @@
 import { Group, Line, Rect, Text } from 'react-konva'
 import type { TableObject } from '@mesa/shared'
 import { useTable } from '../store/context'
-import { isLockedByOther } from '../store/reducers'
 import { rotatedBounds } from './bounds'
+import { useLiveGeometry } from './hooks'
 
 const TITLE_FONT_PX = 13
 const TITLE_BOX_PX = 320
@@ -12,13 +12,9 @@ const NOTE_ICON_PX = 14
 export function ObjectDecorations({ object }: { object: TableObject }) {
   const scale = useTable((s) => s.viewport.scale)
   const showNote = useTable((s) => s.self?.role === 'gm' && !!s.notes[object.id])
-  const lockedByOther = useTable((s) => isLockedByOther(s, object.id, Date.now()))
-  const preview = useTable((s) => s.dragPreviews[object.id])
-  // Arrastando/redimensionando eu mesmo: segue o nó a cada movimento, não só ao soltar.
-  const own = useTable((s) => s.ownDragPreviews[object.id])
+  const g = useLiveGeometry(object)
   if (!object.title && !showNote) return null
 
-  const g = own ?? (lockedByOther && preview ? preview : object)
   const box = rotatedBounds(g)
   const k = 1 / scale
 

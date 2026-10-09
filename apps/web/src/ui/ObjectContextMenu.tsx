@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronRight, Layers, StickyNote, Trash2 } from 'lucide-react'
+import { ChevronRight, Layers, StickyNote, Swords, Trash2 } from 'lucide-react'
 import {
   MAX_CONTROL_IDS,
   NOTE_MAX,
   TITLE_MAX,
+  TURNS_MAX,
   canControl,
   type Control,
   type ObjectPatch,
@@ -56,6 +57,7 @@ function ObjectMenuBody({ object, x, y, onClose }: { object: TableObject; x: num
       {isGm && <PermissionsField objectId={object.id} control={object.control} onChange={(control) => update({ control })} />}
       {isGm && <NoteField objectId={object.id} />}
       {isGm && <MoveToLayer object={object} onMoved={onClose} />}
+      {isGm && object.type === 'image' && <AddToTurns objectId={object.id} onDone={onClose} />}
       {layerEditable && (
         <button
           className="danger"
@@ -192,5 +194,22 @@ function MoveToLayer({ object, onMoved }: { object: TableObject; onMoved: () => 
         </div>
       )}
     </div>
+  )
+}
+
+function AddToTurns({ objectId, onDone }: { objectId: string; onDone: () => void }) {
+  const full = useTable((s) => s.turns.entries.length >= TURNS_MAX)
+  const actions = useTableActions()
+  return (
+    <button
+      disabled={full}
+      title={full ? 'A ordem de turnos está cheia (máximo 50)' : undefined}
+      onClick={() => {
+        actions.addTokenToTurns(objectId)
+        onDone()
+      }}
+    >
+      <Swords size={16} aria-hidden /> Adicionar à ordem de turnos
+    </button>
   )
 }

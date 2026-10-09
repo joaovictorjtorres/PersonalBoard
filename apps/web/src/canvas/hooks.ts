@@ -1,4 +1,7 @@
 import { useEffect, useState } from 'react'
+import type { TableObject } from '@mesa/shared'
+import { useTable } from '../store/context'
+import { isLockedByOther } from '../store/reducers'
 import { isTypingTarget } from '../ui/useKeyboard'
 
 export function useModifierKeys(): { space: boolean; shift: boolean } {
@@ -63,4 +66,15 @@ export function useFrameClock(active: boolean): number {
     return () => cancelAnimationFrame(frame)
   }, [active])
   return now
+}
+
+/**
+ * Geometria ao vivo do objeto: acompanha o meu arrasto/redimensionamento a cada movimento
+ * e o de quem trava o objeto; fora disso, o próprio objeto.
+ */
+export function useLiveGeometry<T extends TableObject>(object: T): T {
+  const lockedByOther = useTable((s) => isLockedByOther(s, object.id, Date.now()))
+  const preview = useTable((s) => s.dragPreviews[object.id])
+  const own = useTable((s) => s.ownDragPreviews[object.id])
+  return (own ?? (lockedByOther && preview ? preview : object)) as T
 }
