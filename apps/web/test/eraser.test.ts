@@ -46,6 +46,14 @@ describe('erasableBy', () => {
     expect(erasableBy(stroke({ ownerId: 'gm1' }), 'gm1', 'gm', false)).toBe(true)
     expect(erasableBy(others, 'gm1', 'gm', true)).toBe(true)
   })
+
+  it('traço órfão (jogador excluído mantendo as coisas): só o mestre com "de todos"', () => {
+    const orphan = stroke({ ownerId: 'orphan', control: { mode: 'gm', clientIds: [] } })
+    expect(erasableBy(orphan, 'me', 'player', false)).toBe(false)
+    expect(erasableBy(orphan, 'orphan', 'player', false)).toBe(false)
+    expect(erasableBy(orphan, 'gm1', 'gm', false)).toBe(false)
+    expect(erasableBy(orphan, 'gm1', 'gm', true)).toBe(true)
+  })
 })
 
 describe('rebaseSegments', () => {

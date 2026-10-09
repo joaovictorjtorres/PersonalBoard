@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { DEFAULT_LAYERS, DEFAULT_TURNS, LOCK_TTL_MS, MEMBER_RECENT_MS, TURNS_MAX, type NewObject, type ObjectOp, type ObjectPatch, type Op } from '@mesa/shared'
+import { DEFAULT_LAYERS, DEFAULT_TURNS, LOCK_TTL_MS, MEMBER_RECENT_MS, ORPHAN_OWNER_ID, TURNS_MAX, type NewObject, type ObjectOp, type ObjectPatch, type Op } from '@mesa/shared'
 import { MemoryStore } from '../src/engine/memory-store'
 import { TableEngine, type OpEffect, type OpResult } from '../src/engine/engine'
 
@@ -350,18 +350,85 @@ describe('membros e snapshot', () => {
     expect(engine.snapshot('gm', new Set(['A'])).members[0]).not.toHaveProperty('secretHash')
   })
 
-  it('memberRemove: recusa online, remove offline, e quem volta reaparece', () => {
+  it('memberRemove: só o mestre; nunca sobre mestre; online ou offline; quem volta é pessoa nova', () => {
+    engine.join({ clientId: 'G', nickname: 'Mestre', role: 'gm' }, new Set())
     engine.join({ clientId: 'A', nickname: 'Ana', role: 'player' }, new Set())
-    const remove: Op = { kind: 'memberRemove', clientId: 'A' }
-    expect(engine.applyOp('G', 'gm', 'g1', remove, new Set(['A', 'G']))).toMatchObject({ ok: false, reason: 'forbidden' })
-    expect(engine.applyOp('B', 'player', 'p1', remove, new Set())).toMatchObject({ ok: false, reason: 'forbidden' })
-    const r = engine.applyOp('G', 'gm', 'g2', remove, new Set(['G']))
-    expect(effects(r)).toEqual([{ kind: 'memberRemoved', clientId: 'A' }])
-    expect(engine.snapshot('gm', new Set()).members).toEqual([])
-    expect(engine.applyOp('G', 'gm', 'g3', remove, new Set())).toMatchObject({ ok: false, reason: 'not_found' })
-    const back = engine.join({ clientId: 'A', nickname: 'Ana', role: 'player' }, new Set())
-    expect(back.online).toBe(true)
-    expect(engine.snapshot('gm', new Set(['A'])).members.map((m) => m.clientId)).toEqual(['A'])
+    engine.applyOp('A', 'player', 'a1', create(token({ id: 'mine' })))
+    const remove = (clientId: string): Op => ({ kind: 'memberRemove', clientId, deleteItems: false })
+    expect(engine.applyOp('B', 'player', 'p1', remove('A'), new Set())).toMatchObject({ ok: false, reason: 'forbidden' })
+    expect(engine.applyOp('G', 'gm', 'g0', remove('G'), new Set(['G']))).toMatchObject({ ok: false, reason: 'forbidden' })
+    const r = engine.applyOp('G', 'gm', 'g1', remove('A'), new Set(['A', 'G']))
+    expect(effects(r)[0]).toEqual({ kind: 'memberRemoved', clientId: 'A' })
+    expect(engine.snapshot('gm', new Set()).members.map((m) => m.clientId)).toEqual(['G'])
+    expect(engine.applyOp('G', 'gm', 'g2', remove('A'), new Set())).toMatchObject({ ok: false, reason: 'not_found' })
+
+    // Mesmo apelido de novo: a recuperação por apelido não acha ninguém, então entra com um id novo e não é dono de nada.
+    expect(engine.matchNickname('Ana', new Set())).toEqual({ kind: 'none' })
+    const back = engine.join({ clientId: 'A2', nickname: 'Ana', role: 'player' }, new Set())
+    expect(back.clientId).toBe('A2')
+    expect(store.listObjects().filter((o) => o.ownerId === 'A2' || o.control.clientIds.includes('A2'))).toEqual([])
+    expect(engine.applyOp('A2', 'player', 'b1', update('mine', { x: 5 }))).toMatchObject({ ok: false, reason: 'forbidden' })
+    // Nem o navegador antigo (mesmo id guardado) recupera o que era dele.
+    engine.join({ clientId: 'A', nickname: 'Ana', role: 'player' }, new Set())
+    expect(engine.applyOp('A', 'player', 'b2', update('mine', { x: 5 }))).toMatchObject({ ok: false, reason: 'forbidden' })
+    expect(engine.grab('A', 'player', 'mine')).toBe(false)
+  })
+
+  it('memberRemove mantendo: itens dele sem autor e só do mestre; ele sai da lista de controle dos outros; trava solta', () => {
+    engine.join({ clientId: 'A', nickname: 'Ana', role: 'player' }, new Set())
+    engine.applyOp('A', 'player', 'a1', create(token({ id: 'mine' })))
+    engine.applyOp('G', 'gm', 'g1', create(token({ id: 'shared' })))
+    engine.applyOp('G', 'gm', 'g2', update('shared', { control: { mode: 'list', clientIds: ['A', 'B'] } }))
+    engine.applyOp('G', 'gm', 'g3', create(token({ id: 'onlyA' })))
+    engine.applyOp('G', 'gm', 'g4', update('onlyA', { control: { mode: 'list', clientIds: ['A'] } }))
+    expect(engine.grab('A', 'player', 'mine')).toBe(true)
+
+    const r = engine.applyOp('G', 'gm', 'g5', { kind: 'memberRemove', clientId: 'A', deleteItems: false }, new Set(['G']))
+    expect(store.getObject('mine')).toMatchObject({ ownerId: ORPHAN_OWNER_ID, control: { mode: 'gm', clientIds: [] } })
+    expect(store.getObject('shared')?.control).toEqual({ mode: 'list', clientIds: ['B'] })
+    expect(store.getObject('onlyA')?.control).toEqual({ mode: 'gm', clientIds: [] })
+    expect(effects(r)).toContainEqual({ kind: 'released', objectId: 'mine', clientId: 'A' })
+    // Uma mensagem só com todas as mudanças, que o mestre também recebe.
+    const batches = effects(r).filter((e) => e.kind === 'objects')
+    expect(batches).toHaveLength(1)
+    const changed = batches[0].kind === 'objects' ? batches[0].changes : []
+    expect(changed.map((c) => c.after?.id).sort()).toEqual(['mine', 'onlyA', 'shared'])
+    expect(changed.every((c) => c.echo)).toBe(true)
+    expect(effects(r).some((e) => e.kind === 'object')).toBe(false)
+    // ninguém além do mestre mexe no que ficou órfão
+    expect(engine.applyOp('A', 'player', 'a2', update('mine', { x: 5 }))).toMatchObject({ ok: false })
+    expect(engine.applyOp('G', 'gm', 'g6', update('mine', { x: 5 }))).toMatchObject({ ok: true })
+  })
+
+  it('memberRemove mantendo: outro jogador que segurava um item que deixou de controlar perde a trava', () => {
+    engine.join({ clientId: 'A', nickname: 'Ana', role: 'player' }, new Set())
+    engine.applyOp('A', 'player', 'a1', create(token({ id: 'mine' })))
+    engine.applyOp('G', 'gm', 'g1', update('mine', { control: { mode: 'list', clientIds: ['A', 'B'] } }))
+    engine.applyOp('G', 'gm', 'g2', create(token({ id: 'shared' })))
+    engine.applyOp('G', 'gm', 'g3', update('shared', { control: { mode: 'list', clientIds: ['A', 'B'] } }))
+    expect(engine.grab('B', 'player', 'mine')).toBe(true)
+    expect(engine.grab('B', 'player', 'shared')).toBe(true)
+    const r = engine.applyOp('G', 'gm', 'g4', { kind: 'memberRemove', clientId: 'A', deleteItems: false }, new Set(['G']))
+    expect(effects(r)).toContainEqual({ kind: 'released', objectId: 'mine', clientId: 'B' })
+    // B continua controlando "shared": a trava dele fica
+    expect(effects(r)).not.toContainEqual({ kind: 'released', objectId: 'shared', clientId: 'B' })
+    expect(engine.activeLocks()).toEqual([{ objectId: 'shared', clientId: 'B' }])
+    expect(engine.grab('B', 'player', 'mine')).toBe(false)
+  })
+
+  it('memberRemove apagando: objetos criados por ele saem de todas as camadas, com anotações', () => {
+    engine.join({ clientId: 'A', nickname: 'Ana', role: 'player' }, new Set())
+    engine.applyOp('A', 'player', 'a1', create(token({ id: 't1' })))
+    engine.applyOp('A', 'player', 'a2', create(token({ id: 't2', layerId: 'drawings' })))
+    engine.applyOp('G', 'gm', 'g1', create(token({ id: 'gmTok' })))
+    engine.applyOp('G', 'gm', 'g2', { kind: 'noteSet', objectId: 't1', text: 'nota' })
+    const r = engine.applyOp('G', 'gm', 'g3', { kind: 'memberRemove', clientId: 'A', deleteItems: true }, new Set(['G']))
+    expect(store.getObject('t1')).toBeNull()
+    expect(store.getObject('t2')).toBeNull()
+    expect(store.getObject('gmTok')).not.toBeNull()
+    expect(store.listNotes()).toEqual({})
+    const removed = effects(r).find((e) => e.kind === 'objectsRemoved')
+    expect(removed && removed.kind === 'objectsRemoved' && removed.objects.map((o) => o.id).sort()).toEqual(['t1', 't2'])
   })
 })
 
@@ -830,7 +897,7 @@ describe('applyOp batch', () => {
       { kind: 'turnsOpen', open: true },
       { kind: 'turnNext' },
       { kind: 'noteSet', objectId: 'tok1', text: 'x' },
-      { kind: 'memberRemove', clientId: 'B' },
+      { kind: 'memberRemove', clientId: 'B', deleteItems: false },
       { kind: 'memberUpdate', clientId: 'A', patch: { nickname: 'Z' } },
       { kind: 'clearObjects', layerId: null, scope: 'drawings' },
       { kind: 'layerCreate', layer: { id: 'l1', name: 'Nova' } },
@@ -962,5 +1029,51 @@ describe('vínculo entre sessões', () => {
     const list = engine.knownPlayers(new Set(['C']))
     expect(list.map((p) => p.nickname)).toEqual(['Bia', 'Ana'])
     expect(Object.keys(list[0]).sort()).toEqual(['color', 'nickname'])
+  })
+})
+
+describe('itens órfãos (jogador excluído mantendo as coisas): só o mestre', () => {
+  const strokeObj = (id: string): NewObject =>
+    ({ id, type: 'stroke', layerId: 'drawings', x: 0, y: 0, width: 10, height: 10, rotation: 0, zIndex: 1, segments: [[0, 0, 10, 10]], color: '#ffffff', strokeWidth: 2 }) as NewObject
+  const batch = (...ops: ObjectOp[]): Op => ({ kind: 'batch', ops })
+
+  beforeEach(() => {
+    engine.join({ clientId: 'A', nickname: 'Ana', role: 'player' }, new Set())
+    engine.join({ clientId: 'B', nickname: 'Bia', role: 'player' }, new Set())
+    engine.applyOp('A', 'player', 'a1', create(token({ id: 'tok' })))
+    engine.applyOp('A', 'player', 'a2', create(strokeObj('s1')))
+    engine.applyOp('G', 'gm', 'g0', { kind: 'memberRemove', clientId: 'A', deleteItems: false }, new Set())
+    // Quem volta com o mesmo id também não pode nada.
+    engine.join({ clientId: 'A', nickname: 'Ana', role: 'player' }, new Set())
+  })
+
+  it('lote: jogador não move, não apaga nem corta (from); nada muda; o mestre pode', () => {
+    for (const who of ['A', 'B']) {
+      expect(engine.applyOp(who, 'player', `${who}1`, batch({ kind: 'update', id: 'tok', patch: { x: 50 } }))).toEqual({ ok: false, reason: 'forbidden' })
+      expect(engine.applyOp(who, 'player', `${who}2`, batch({ kind: 'delete', id: 's1' }))).toEqual({ ok: false, reason: 'forbidden' })
+      const cut = batch({ kind: 'create', object: strokeObj('p1'), from: 's1' }, { kind: 'delete', id: 's1' })
+      expect(engine.applyOp(who, 'player', `${who}3`, cut)).toEqual({ ok: false, reason: 'forbidden' })
+    }
+    expect(store.getObject('tok')?.x).toBe(10)
+    expect(store.getObject('s1')).not.toBeNull()
+    expect(store.getObject('p1')).toBeNull()
+    const cut = batch({ kind: 'create', object: strokeObj('p1'), from: 's1' }, { kind: 'delete', id: 's1' })
+    expect(engine.applyOp('G', 'gm', 'g1', cut)).toMatchObject({ ok: true })
+    // o pedaço continua órfão e só do mestre
+    expect(store.getObject('p1')).toMatchObject({ ownerId: ORPHAN_OWNER_ID, control: { mode: 'gm', clientIds: [] } })
+  })
+
+  it('limpar: jogador não apaga órfãos (nem pedindo pelo autor "orphan"); o mestre limpa a camada', () => {
+    const clear = (authorId?: string): Op => ({ kind: 'clearObjects', layerId: null, scope: 'drawings', ...(authorId ? { authorId } : {}) })
+    expect(engine.applyOp('A', 'player', 'c1', clear('A'))).toMatchObject({ ok: true })
+    expect(engine.applyOp('B', 'player', 'c2', clear(ORPHAN_OWNER_ID))).toMatchObject({ ok: false, reason: 'forbidden' })
+    expect(store.getObject('s1')).not.toBeNull()
+    expect(engine.applyOp('G', 'gm', 'c3', { kind: 'clearObjects', layerId: 'drawings', scope: 'drawings' })).toMatchObject({ ok: true })
+    expect(store.getObject('s1')).toBeNull()
+  })
+
+  it('travas: jogador não segura órfãos; o mestre segura', () => {
+    expect(engine.grab('B', 'player', 'tok')).toBe(false)
+    expect(engine.grab('G', 'gm', 'tok')).toBe(true)
   })
 })

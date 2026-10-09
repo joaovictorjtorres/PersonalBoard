@@ -51,7 +51,7 @@ export function rejectText(op: Op, reason: RejectReason, layerGone = false): str
   // a camada sumiu no meio da ação: o servidor responde not_found, mas o que vale para o usuário é a permissão
   if (reason === 'not_found' && layerGone) return REJECT_TEXT.forbidden
   if (reason === 'forbidden') {
-    if (op.kind === 'memberRemove') return 'Não dá para remover quem está online'
+    if (op.kind === 'memberRemove') return 'O mestre não pode ser excluído'
     if (op.kind === 'layerDelete') return 'Essa camada não pode ser removida'
     if (op.kind === 'layerMove') return 'A camada não pode ir para lá'
   }

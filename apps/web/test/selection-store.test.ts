@@ -202,6 +202,15 @@ describe('seleção na store', () => {
     expect(store.getState().selection?.whole).toEqual(['l'])
   })
 
+  it('item que a pessoa deixou de controlar (ficou só do mestre) sai da seleção', () => {
+    const store = connected()
+    store.getState().actions.selectArea(rect(-10, 0, 300, 100), false)
+    expect(store.getState().selection?.whole.sort()).toEqual(['l', 't1'])
+    const orphan = { ...t1, ownerId: 'orphan', control: { mode: 'gm' as const, clientIds: [] } }
+    sock().receive({ t: 'batch', by: 'gm', ops: [{ kind: 'upsert', object: orphan }] })
+    expect(store.getState().selection?.whole).toEqual(['l'])
+  })
+
   it('opções do Selecionar ficam no localStorage', () => {
     const store = connected()
     store.getState().actions.setSelectShape('lasso')

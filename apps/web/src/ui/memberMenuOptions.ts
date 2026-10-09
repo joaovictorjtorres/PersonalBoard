@@ -1,18 +1,19 @@
-import type { Member, MemberPatch } from '@mesa/shared'
+import type { Member, MemberPatch, Role } from '@mesa/shared'
 
 const NICKNAME_MAX = 32
 const COLOR_RE = /^#[0-9a-fA-F]{6}$/
 
 /**
  * "Conversa privada" não aparece para si mesmo; "Editar apelido e cor" e "Apagar desenhos de…" são só
- * do mestre (inclusive sobre si mesmo).
+ * do mestre (inclusive sobre si mesmo); "Excluir jogador" é só do mestre e nunca sobre um mestre.
  */
 export function memberMenuOptions(
   targetId: string,
   selfId: string | undefined,
   isGm: boolean,
-): { dm: boolean; edit: boolean; clear: boolean } {
-  return { dm: targetId !== selfId, edit: isGm, clear: isGm }
+  targetRole: Role,
+): { dm: boolean; edit: boolean; clear: boolean; remove: boolean } {
+  return { dm: targetId !== selfId, edit: isGm, clear: isGm, remove: isGm && targetRole !== 'gm' }
 }
 
 /** Patch só com o que mudou; null quando não há nada válido a enviar. */

@@ -16,6 +16,7 @@ interface Obj {
   title?: string
   segments?: number[][]
   control: { mode: string; clientIds: string[] }
+  ownerId: string
 }
 
 async function newTable(page: Page): Promise<{ tableId: string; gmSecret: string; playerKey?: string }> {
@@ -399,6 +400,9 @@ test('mestre remove da lista um membro offline', async ({ browser, page }) => {
   const remove = gm.getByRole('button', { name: 'Remover Ana da lista' })
   await expect(remove).toBeVisible()
   await remove.click()
+  const dialog = confirmDialog(gm)
+  await expect(dialog).toContainText('Excluir Ana da mesa?')
+  await dialog.getByRole('button', { name: 'Excluir e manter as coisas' }).click()
   await expect(anaRow).toHaveCount(0)
   await expect(anaRowSeenByBia).toHaveCount(0) // propagou sem recarregar
 
@@ -803,7 +807,13 @@ test('modais e menus cabem na janela 1280x720 sem rolagem', async ({ browser, pa
 
   const member = await memberMenu(gm, 'Ana')
   await member.getByRole('button', { name: 'Editar apelido e cor' }).click()
+  await expect(member.getByRole('button', { name: 'Excluir jogador' })).toBeVisible() // estado mais alto
   await noScroll(member, 'membro')
+  const memberBox = await member.boundingBox()
+  expect(
+    memberBox && memberBox.x >= 0 && memberBox.y >= 0 && memberBox.x + memberBox.width <= 1280 && memberBox.y + memberBox.height <= 720,
+    'membro na janela',
+  ).toBe(true)
   await gm.keyboard.press('Escape')
 
   const objMenu = await openObjectMenu(gm, token)
@@ -1482,4 +1492,51 @@ test('pedido pelo túnel (cabeçalhos da Cloudflare) não vê a lista nem cria m
   await remote.getByLabel('Seu apelido').fill('Remota')
   await remote.getByRole('button', { name: 'Entrar' }).click()
   await waitOpen(remote)
+})
+
+// ---------------------------------------------------------------- excluir jogador
+
+async function removeFromMenu(gm: Page, name: string, choice: 'Excluir e manter as coisas' | 'Excluir e apagar as coisas dele') {
+  const menu = await memberMenu(gm, name)
+  await menu.getByRole('button', { name: 'Editar apelido e cor' }).click()
+  await menu.getByRole('button', { name: 'Excluir jogador' }).click()
+  const dialog = confirmDialog(gm)
+  await expect(dialog).toContainText(`Excluir ${name} da mesa?`)
+  await dialog.getByRole('button', { name: choice }).click()
+}
+
+test('excluir jogador online mantendo as coisas: ele é desconectado; o token fica só do mestre', async ({ browser, page }) => {
+  const t = await newTable(page)
+  const gm = await open(browser, `/t/${t.tableId}?debug=1#gm=${t.gmSecret}`, 'Mestre')
+  const player = await open(browser, playerPath(t), 'Ana')
+  await uploadToken(player)
+  await expect.poll(async () => (await objects(gm)).length).toBe(1)
+  await removeFromMenu(gm, 'Ana', 'Excluir e manter as coisas')
+  await expect(player.getByText('Você foi removido da mesa')).toBeVisible()
+  await expect(memberRow(gm, 'Ana')).toHaveCount(0)
+  await expect.poll(async () => (await objects(gm))[0].control).toEqual({ mode: 'gm', clientIds: [] })
+
+  // quem volta com o mesmo apelido é pessoa nova e não move o token; o mestre move
+  const back = await open(browser, playerPath(t), 'Ana')
+  const [token] = await objects(back)
+  expect(token.ownerId).not.toBe(await selfId(back))
+  await dragObject(back, token, 100, 50)
+  await back.waitForTimeout(500)
+  expect(Math.round((await objects(gm))[0].x)).toBe(Math.round(token.x))
+  await dragObject(gm, token, 100, 50)
+  await expect.poll(async () => Math.round((await objects(back))[0].x)).toBe(Math.round(token.x + 100))
+})
+
+test('excluir jogador apagando as coisas: o token dele some para todos', async ({ browser, page }) => {
+  const t = await newTable(page)
+  const gm = await open(browser, `/t/${t.tableId}?debug=1#gm=${t.gmSecret}`, 'Mestre')
+  const player = await open(browser, playerPath(t), 'Ana')
+  const observer = await open(browser, playerPath(t), 'Bia')
+  await uploadToken(player)
+  await expect.poll(async () => (await objects(gm)).length).toBe(1)
+  await expect.poll(async () => (await objects(observer)).length).toBe(1)
+  await removeFromMenu(gm, 'Ana', 'Excluir e apagar as coisas dele')
+  await expect(player.getByText('Você foi removido da mesa')).toBeVisible()
+  await expect.poll(async () => (await objects(gm)).length).toBe(0)
+  await expect.poll(async () => (await objects(observer)).length).toBe(0)
 })

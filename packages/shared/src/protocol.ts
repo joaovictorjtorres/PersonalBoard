@@ -111,7 +111,8 @@ export const OpSchema = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('layerDelete'), id: IdSchema }),
   z.object({ kind: z.literal('layerMove'), id: IdSchema, direction: z.enum(['up', 'down']) }),
   z.object({ kind: z.literal('noteSet'), objectId: IdSchema, text: z.string().max(NOTE_MAX) }),
-  z.object({ kind: z.literal('memberRemove'), clientId: z.string().min(1).max(64) }),
+  /** Excluir jogador (só o mestre, nunca sobre um mestre): apaga ou mantém (órfãos, só do mestre) os itens dele. */
+  z.object({ kind: z.literal('memberRemove'), clientId: z.string().min(1).max(64), deleteItems: z.boolean() }),
   z.object({ kind: z.literal('settingsUpdate'), patch: SettingsPatchSchema }),
   z.object({ kind: z.literal('memberUpdate'), clientId: z.string().min(1).max(64), patch: MemberPatchSchema }),
   ClearObjectsOpSchema,
@@ -254,7 +255,7 @@ export interface Snapshot {
 }
 
 /** Motivos de `error` (o servidor fecha a conexão logo depois). */
-export type ServerErrorReason = 'table_not_found' | 'auth' | 'table_deleted' | 'nickname_taken'
+export type ServerErrorReason = 'table_not_found' | 'auth' | 'table_deleted' | 'nickname_taken' | 'removed'
 
 export type ServerMessage =
   | { t: 'welcome'; self: Member; snapshot: Snapshot; clientSecret?: string }

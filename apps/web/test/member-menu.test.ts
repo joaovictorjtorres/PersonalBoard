@@ -2,11 +2,12 @@ import { describe, expect, it } from 'vitest'
 import { memberMenuOptions, memberPatch } from '../src/ui/memberMenuOptions'
 
 describe('memberMenuOptions', () => {
-  it('conversa privada com qualquer outro; edição e apagar desenhos só para o mestre (inclusive de si mesmo)', () => {
-    expect(memberMenuOptions('b', 'a', false)).toEqual({ dm: true, edit: false, clear: false })
-    expect(memberMenuOptions('a', 'a', false)).toEqual({ dm: false, edit: false, clear: false })
-    expect(memberMenuOptions('b', 'g', true)).toEqual({ dm: true, edit: true, clear: true })
-    expect(memberMenuOptions('g', 'g', true)).toEqual({ dm: false, edit: true, clear: true })
+  it('conversa privada com qualquer outro; edição e apagar desenhos só para o mestre (inclusive de si mesmo); excluir só jogador', () => {
+    expect(memberMenuOptions('b', 'a', false, 'player')).toEqual({ dm: true, edit: false, clear: false, remove: false })
+    expect(memberMenuOptions('a', 'a', false, 'player')).toEqual({ dm: false, edit: false, clear: false, remove: false })
+    expect(memberMenuOptions('b', 'g', true, 'player')).toEqual({ dm: true, edit: true, clear: true, remove: true })
+    expect(memberMenuOptions('g', 'g', true, 'gm')).toEqual({ dm: false, edit: true, clear: true, remove: false })
+    expect(memberMenuOptions('g2', 'g', true, 'gm')).toEqual({ dm: true, edit: true, clear: true, remove: false })
   })
 })
 

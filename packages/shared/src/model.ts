@@ -141,6 +141,9 @@ export function mergePatch(before: TableObject, patch: ObjectPatch): TableObject
   return merged as TableObject
 }
 
+/** Autor dos itens de um jogador excluído com "manter as coisas" (nunca é um clientId válido de hello). */
+export const ORPHAN_OWNER_ID = 'orphan'
+
 export function canControl(object: Pick<TableObject, 'control'>, clientId: string, role: Role): boolean {
   if (role === 'gm') return true
   const { mode, clientIds } = object.control

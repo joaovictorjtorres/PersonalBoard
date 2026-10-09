@@ -123,6 +123,15 @@ function TableView() {
 function FatalMessage({ reason }: { reason: ServerErrorReason }) {
   if (reason === 'nickname_taken') return null
   if (reason === 'table_deleted') return <DeletedNotice />
+  if (reason === 'removed') {
+    return (
+      <div className="fullscreen-msg">
+        <div>
+          <p>Você foi removido da mesa</p>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="fullscreen-msg">
       <div>

@@ -312,6 +312,7 @@ export class TableDO extends DurableObject<Env> {
         )
         return
       case 'memberRemoved':
+        this.kick(effect.clientId)
         this.broadcast(author.sessionId, () => ({ t: 'memberRemoved', clientId: effect.clientId }))
         return
       case 'released':
@@ -510,6 +511,13 @@ export class TableDO extends DurableObject<Env> {
       if (!att || att.sessionId === excludeSessionId) continue
       const msg = build(att)
       if (msg) this.send(ws, msg)
+    }
+  }
+
+  /** Jogador excluído: avisa e fecha todas as conexões dele (o close não mexe em mais nada). */
+  private kick(clientId: string): void {
+    for (const ws of this.ctx.getWebSockets()) {
+      if (this.attachment(ws)?.clientId === clientId) this.closeWithError(ws, 'removed', 4403)
     }
   }
 

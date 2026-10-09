@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { useTable, useTableActions } from '../store/context'
 import { MemberMenu } from './MemberMenu'
 import { memberMenuOptions } from './memberMenuOptions'
+import { confirmRemoveMember } from './removeMember'
 
 export function MembersPanel() {
   const members = useTable((s) => s.members)
@@ -22,7 +23,7 @@ export function MembersPanel() {
       <strong>Na mesa</strong>
       <ul>
         {list.map((m) => {
-          const options = memberMenuOptions(m.clientId, selfId, isGm)
+          const options = memberMenuOptions(m.clientId, selfId, isGm, m.role)
           const hasMenu = options.dm || options.edit || options.clear
           return (
           <li
@@ -39,12 +40,12 @@ export function MembersPanel() {
             {m.nickname}
             {m.clientId === selfId ? ' (você)' : ''}
             {m.role === 'gm' ? ' · mestre' : ''}
-            {isGm && !m.online && m.clientId !== selfId && (
+            {options.remove && !m.online && (
               <button
                 className="icon-button"
                 aria-label={`Remover ${m.nickname} da lista`}
                 title="Remover da lista"
-                onClick={() => actions.submit({ kind: 'memberRemove', clientId: m.clientId })}
+                onClick={() => void confirmRemoveMember(m, actions.submit)}
               >
                 <X size={14} aria-hidden />
               </button>

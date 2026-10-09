@@ -133,11 +133,11 @@ describe('operações otimistas do mestre', () => {
   })
 
   it('memberRemove recusado devolve o membro e explica', () => {
-    let s = reduceSubmit(joined(gm, DEFAULT_LAYERS), 'op_1', { kind: 'memberRemove', clientId: 'p1' }, { isUndo: false })
+    let s = reduceSubmit(joined(gm, DEFAULT_LAYERS), 'op_1', { kind: 'memberRemove', clientId: 'p1', deleteItems: false }, { isUndo: false })
     expect(s.members.p1).toBeUndefined()
     s = reduceServer(s, { t: 'reject', opId: 'op_1', reason: 'forbidden', current: null }, 0)
     expect(s.members.p1).toEqual(player)
-    expect(s.toasts.at(-1)?.text).toBe('Não dá para remover quem está online')
+    expect(s.toasts.at(-1)?.text).toBe('O mestre não pode ser excluído')
   })
 
   it('ops de camada não entram na pilha de desfazer', () => {
@@ -160,7 +160,7 @@ describe('rulings do controlador', () => {
     let s = joined(gm, DEFAULT_LAYERS, [token('t1')])
     s = reduceSubmit(s, 'op_1', { kind: 'layerCreate', layer: { id: 'nova', name: 'Nova camada' } }, { isUndo: false })
     s = reduceSubmit(s, 'op_2', { kind: 'noteSet', objectId: 't1', text: 'oi' }, { isUndo: false })
-    s = reduceSubmit(s, 'op_3', { kind: 'memberRemove', clientId: 'p1' }, { isUndo: false })
+    s = reduceSubmit(s, 'op_3', { kind: 'memberRemove', clientId: 'p1', deleteItems: false }, { isUndo: false })
     s = reduceServer(
       s,
       { t: 'welcome', self: gm, snapshot: { meta: { id: 'T', name: 'M' }, members: [gm, player], layers: DEFAULT_LAYERS, objects: [token('t1')], locks: [], notes: {}, settings: DEFAULT_SETTINGS, chat: [] } },

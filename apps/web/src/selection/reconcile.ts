@@ -1,4 +1,4 @@
-import type { TableObject } from '@mesa/shared'
+import { canControl, type TableObject } from '@mesa/shared'
 import { NO_SELECTION, type TableState } from '../store/state'
 import { dropFromSelection } from './model'
 
@@ -11,7 +11,10 @@ function sameShape(a: TableObject, b: TableObject): boolean {
   return a.type !== 'stroke' || b.type !== 'stroke' || JSON.stringify(a.segments) === JSON.stringify(b.segments)
 }
 
-/** Item selecionado que outra pessoa apagou, moveu ou mudou de camada sai da seleção na hora. */
+/**
+ * Item selecionado que outra pessoa apagou, moveu ou mudou de camada sai da seleção na hora; também o que
+ * a pessoa deixou de controlar (ex.: dono excluído da mesa, item agora só do mestre).
+ */
 export function reconcileSelection<S extends TableState>(prev: S, next: S): S {
   const sel = next.selection
   if (!sel || next.objects === prev.objects) return next
@@ -20,6 +23,7 @@ export function reconcileSelection<S extends TableState>(prev: S, next: S): S {
     const before = prev.objects[id]
     const after = next.objects[id]
     if (!before || !after || !sameShape(before, after)) gone.add(id)
+    else if (next.self && !canControl(after, next.self.clientId, next.self.role)) gone.add(id)
   }
   if (gone.size === 0) return next
   const selection = dropFromSelection(sel, gone, next.objects)

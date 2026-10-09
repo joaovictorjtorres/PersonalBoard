@@ -78,9 +78,14 @@ describe('operações do M2', () => {
       { kind: 'layerDelete', id: 'map' },
       { kind: 'layerMove', id: 'map', direction: 'up' },
       { kind: 'noteSet', objectId: 'tok1', text: 'tem 3 PV' },
-      { kind: 'memberRemove', clientId: '3f1c2b9e-8a4d-4c1e-9b7a-2d5e6f708192' },
+      { kind: 'memberRemove', clientId: '3f1c2b9e-8a4d-4c1e-9b7a-2d5e6f708192', deleteItems: false },
     ]
     for (const op of ops) expect(OpSchema.safeParse(op).success, op.kind).toBe(true)
+  })
+
+  it('memberRemove exige a escolha deleteItems', () => {
+    expect(OpSchema.safeParse({ kind: 'memberRemove', clientId: 'a' }).success).toBe(false)
+    expect(OpSchema.safeParse({ kind: 'memberRemove', clientId: 'a', deleteItems: true }).success).toBe(true)
   })
 
   // Review Focus #2
@@ -252,7 +257,7 @@ describe('OpSchema batch', () => {
     expect(parse([{ kind: 'turnNext' }])).toBe(false)
     expect(parse([{ kind: 'turnsOpen', open: true }])).toBe(false)
     expect(parse([{ kind: 'noteSet', objectId: 'a', text: 'x' }])).toBe(false)
-    expect(parse([{ kind: 'memberRemove', clientId: 'c1' }])).toBe(false)
+    expect(parse([{ kind: 'memberRemove', clientId: 'c1', deleteItems: false }])).toBe(false)
     expect(parse([{ kind: 'memberUpdate', clientId: 'c1', patch: { nickname: 'Bia' } }])).toBe(false)
     expect(parse([{ kind: 'clearObjects', layerId: null, scope: 'drawings' }])).toBe(false)
   })

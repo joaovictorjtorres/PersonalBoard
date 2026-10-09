@@ -3,6 +3,7 @@ import {
   LOCK_TTL_MS,
   MEMBER_COLORS,
   MEMBER_RECENT_MS,
+  ORPHAN_OWNER_ID,
   RollRequestSchema,
   TableObjectSchema,
   applyTurnOp,
@@ -25,6 +26,7 @@ import {
   type BatchOp,
   type ChatEntry,
   type ClearObjectsOp,
+  type Control,
   type KnownPlayer,
   type Layer,
   type LayerPatch,
@@ -267,7 +269,7 @@ export class TableEngine {
       case 'layerDelete': return this.layerDelete(op.id)
       case 'layerMove': return this.layerMove(op.id, op.direction)
       case 'noteSet': return this.noteSet(op.objectId, op.text)
-      case 'memberRemove': return this.memberRemove(op.clientId, online)
+      case 'memberRemove': return this.memberRemove(op.clientId, op.deleteItems)
       case 'settingsUpdate': return this.settingsUpdate(op.patch)
       case 'memberUpdate': return this.memberUpdate(op.clientId, op.patch, online)
     }
@@ -440,11 +442,44 @@ export class TableEngine {
     return done(0, { kind: 'note', objectId, text: value })
   }
 
-  private memberRemove(clientId: string, online: Set<string>): OpResult {
-    if (online.has(clientId)) return reject('forbidden', null)
-    if (!this.store.getMember(clientId)) return reject('not_found', null)
+  /**
+   * Excluir jogador (online ou offline). Apagar: some tudo o que ele criou, em todas as camadas.
+   * Manter: o que ele criou fica sem autor e só do mestre; nos itens de outros, ele sai da lista de controle.
+   * Travas de outros jogadores em itens que eles deixaram de controlar são soltas na hora.
+   */
+  private memberRemove(clientId: string, deleteItems: boolean): OpResult {
+    const member = this.store.getMember(clientId)
+    if (!member) return reject('not_found', null)
+    if (member.role === 'gm') return reject('forbidden', null)
     this.store.deleteMember(clientId)
-    return done(0, { kind: 'memberRemoved', clientId })
+    const effects: OpEffect[] = [{ kind: 'memberRemoved', clientId }]
+    for (const objectId of this.releaseAll(clientId)) effects.push({ kind: 'released', objectId, clientId })
+    const removed: TableObject[] = []
+    const changes: ObjectChange[] = []
+    for (const o of this.store.listObjects()) {
+      const owned = o.ownerId === clientId
+      if (owned && deleteItems) {
+        this.direct.remove(o.id)
+        removed.push(o)
+        continue
+      }
+      if (!owned && !o.control.clientIds.includes(clientId)) continue
+      const clientIds = o.control.clientIds.filter((id) => id !== clientId)
+      const control: Control =
+        owned || (o.control.mode === 'list' && clientIds.length === 0) ? { mode: 'gm', clientIds: [] } : { ...o.control, clientIds }
+      const after = { ...o, ...(owned ? { ownerId: ORPHAN_OWNER_ID } : {}), control, version: o.version + 1 } as TableObject
+      this.store.putObject(after)
+      const lock = this.locks.get(o.id)
+      if (lock && !canControl(after, lock.clientId, lock.role)) {
+        this.locks.delete(o.id)
+        effects.push({ kind: 'released', objectId: o.id, clientId: lock.clientId })
+      }
+      // `echo`: o mestre que pediu também recebe (ele não aplicou isto de forma otimista).
+      changes.push({ kind: 'object', before: o, after, echo: true })
+    }
+    if (changes.length > 0) effects.push({ kind: 'objects', changes })
+    if (removed.length > 0) effects.push({ kind: 'objectsRemoved', objects: removed })
+    return done(0, ...effects)
   }
 
   // Mudar o tamanho ou ligar o encaixe não move objetos existentes.

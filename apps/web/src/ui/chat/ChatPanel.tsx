@@ -128,7 +128,7 @@ export function ChatPanel() {
             className="chat-list" aria-label={`Mensagens: ${tabName(active)}`}>
             {entries.map((entry) => {
               const author = members[entry.authorId]
-              const options = memberMenuOptions(entry.authorId, selfId, isGm)
+              const options = memberMenuOptions(entry.authorId, selfId, isGm, author?.role ?? 'gm')
               const hasMenu = author !== undefined && (options.dm || options.edit || options.clear)
               return (
                 <ChatEntryView

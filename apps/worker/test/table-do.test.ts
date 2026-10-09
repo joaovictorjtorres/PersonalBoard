@@ -417,20 +417,58 @@ describe('TableDO — M2', () => {
     expect(welcome.snapshot.notes).toEqual({})
   })
 
-  it('memberRemove: online recusado; offline removido e avisado', async () => {
+  // Review Focus #5
+  it('memberRemove: jogador online segurando um token é desconectado com "removed"; trava solta; token só do mestre para todos', async () => {
     const { tableId, gm, p, playerId } = await table()
     const other = await TestClient.connect(tableId)
     await other.hello('Bia')
-    gm.send(op('op_1', { kind: 'memberRemove', clientId: playerId }))
-    expect(await gm.waitFor('reject')).toMatchObject({ opId: 'op_1', reason: 'forbidden' })
-    p.close()
-    await gm.waitFor('memberLeft')
-    gm.send(op('op_2', { kind: 'memberRemove', clientId: playerId }))
-    await gm.waitFor('ack', (m) => m.opId === 'op_2')
+    const tok = tokenObject()
+    p.send(op('p1', { kind: 'create', object: tok }))
+    await p.waitFor('ack')
+    p.send({ t: 'grab', objectId: tok.id })
+    await gm.waitFor('grabbed')
+    gm.send(op('g1', { kind: 'memberRemove', clientId: playerId, deleteItems: false }))
+    await gm.waitFor('ack', (m) => m.opId === 'g1')
+    expect(await p.waitFor('error')).toEqual({ t: 'error', reason: 'removed' })
     expect(await other.waitFor('memberRemoved')).toEqual({ t: 'memberRemoved', clientId: playerId })
+    expect(await other.waitFor('released')).toEqual({ t: 'released', objectId: tok.id, clientId: playerId })
+    // Uma mensagem só com as mudanças; o mestre também recebe (não aplicou nada de forma otimista).
+    for (const c of [gm, other]) {
+      const batch = await c.waitFor('batch')
+      expect(batch.ops).toHaveLength(1)
+      const [change] = batch.ops
+      expect(change.kind === 'upsert' && change.object).toMatchObject({ id: tok.id, ownerId: 'orphan', control: { mode: 'gm', clientIds: [] } })
+    }
+    // o excluído não recebe mais nada nem aparece como "saiu"
+    await other.expectNone('memberLeft')
+    expect(p.messages.some((m) => m.t === 'batch')).toBe(false)
     const late = await TestClient.connect(tableId)
     const { welcome } = await late.hello('Caio')
     expect(welcome.snapshot.members.map((m) => m.clientId)).not.toContain(playerId)
+  })
+
+  it('memberRemove offline apagando: os itens dele somem para todos', async () => {
+    const { tableId, gm, p, playerId } = await table()
+    const other = await TestClient.connect(tableId)
+    await other.hello('Bia')
+    const tok = tokenObject()
+    p.send(op('p1', { kind: 'create', object: tok }))
+    await p.waitFor('ack')
+    p.close()
+    await gm.waitFor('memberLeft')
+    gm.send(op('g1', { kind: 'memberRemove', clientId: playerId, deleteItems: true }))
+    await gm.waitFor('ack', (m) => m.opId === 'g1')
+    expect(await other.waitFor('memberRemoved')).toEqual({ t: 'memberRemoved', clientId: playerId })
+    expect(await other.waitFor('objectsRemoved')).toMatchObject({ ids: [tok.id] })
+    expect(await gm.waitFor('objectsRemoved')).toMatchObject({ ids: [tok.id] })
+  })
+
+  it('memberRemove sobre o mestre é recusado', async () => {
+    const { tableId, gmSecret, gm } = await table()
+    const gm2 = await TestClient.connect(tableId)
+    const { welcome } = await gm2.hello('Mestre', { gmSecret })
+    gm.send(op('g1', { kind: 'memberRemove', clientId: welcome.self.clientId, deleteItems: true }))
+    expect(await gm.waitFor('reject', (m) => m.opId === 'g1')).toMatchObject({ reason: 'forbidden' })
   })
 
   it('jogador que controla o token não muda layerId nem control', async () => {

@@ -1,11 +1,12 @@
 import { useRef, useState, type ReactNode } from 'react'
-import { Eraser, Layers, MessageCircle, UserPen } from 'lucide-react'
+import { Eraser, Layers, MessageCircle, UserPen, UserX } from 'lucide-react'
 import { MEMBER_COLORS, type Member } from '@mesa/shared'
 import { useTable, useTableActions } from '../store/context'
 import { confirmClear, planMember, type ClearPlan } from './clearPlans'
 import { ColorPicker } from './ColorPicker'
 import { memberMenuOptions, memberPatch } from './memberMenuOptions'
 import { OverlayPortal } from './OverlayPortal'
+import { confirmRemoveMember } from './removeMember'
 import { floatingStyle, useDismiss } from './useDismiss'
 
 export function MemberMenu({ member, x, y, onClose }: { member: Member; x: number; y: number; onClose: () => void }) {
@@ -17,7 +18,7 @@ export function MemberMenu({ member, x, y, onClose }: { member: Member; x: numbe
   const [editing, setEditing] = useState(false)
   const [nickname, setNickname] = useState(member.nickname)
   const [color, setColor] = useState(member.color)
-  const options = memberMenuOptions(member.clientId, selfId, isGm)
+  const options = memberMenuOptions(member.clientId, selfId, isGm, member.role)
   const self = useTable((s) => s.self)
   const objects = useTable((s) => s.objects)
   const layers = useTable((s) => s.layers)
@@ -81,6 +82,19 @@ export function MemberMenu({ member, x, y, onClose }: { member: Member; x: numbe
           <button type="submit" disabled={!nickname.trim()}>
             Salvar
           </button>
+          {options.remove && (
+            <button
+              type="button"
+              className="danger-solid"
+              onClick={() => {
+                // Fecha o menu antes do aviso (o clique no aviso não pode contar como "fora" do menu).
+                onClose()
+                void confirmRemoveMember(member, actions.submit)
+              }}
+            >
+              <UserX size={16} aria-hidden /> Excluir jogador
+            </button>
+          )}
         </form>
       )}
       {options.clear && !editing && view && (
