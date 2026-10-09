@@ -108,3 +108,14 @@ textarea { font: inherit; background: #2a2c33; color: #eee; border: 1px solid #4
 .dice-modal input[type='number'] { width: 72px; flex: 0 0 auto; }
 .dice-modal .field[role='radiogroup'] { display: flex; flex-wrap: wrap; gap: 4px 10px; }
 .lightbox img { max-width: 92vw; max-height: 92vh; object-fit: contain; }
+
+/* Aviso de confirmação (substitui os diálogos do navegador) */
+.confirm-backdrop { z-index: 50; }
+.confirm-modal { width: min(380px, calc(100vw - 32px)); }
+.confirm-modal h2 { font-size: 17px; }
+.confirm-modal p { margin: 0; line-height: 1.45; color: #cfd2da; overflow-wrap: anywhere; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.modal-actions button:focus-visible { outline: 2px solid #9db4ff; outline-offset: 2px; }
+button.primary { background: #4363d8; border-color: #4363d8; color: #fff; }
+button.danger-solid { background: #b3262e; border-color: #b3262e; color: #fff; }
+button.danger-solid:hover { background: #c9303a; border-color: #c9303a; }

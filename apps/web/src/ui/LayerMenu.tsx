@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { ArrowDown, ArrowUp, Eye, EyeOff, Lock, LockOpen, Trash2 } from 'lucide-react'
 import { GM_LAYER_ID, LAYER_NAME_MAX, sortLayers, type LayerPatch } from '@mesa/shared'
 import { useTable, useTableActions } from '../store/context'
+import { askConfirm, plural } from './confirm'
 import { OverlayPortal } from './OverlayPortal'
 import { floatingStyle, useDismiss } from './useDismiss'
 
@@ -93,10 +94,15 @@ export function LayerMenu({ layerId, x, y, onClose }: Props) {
           <button
             className="danger"
             disabled={common.length <= 1}
-            onClick={() => {
-              if (!window.confirm(`Remover a camada ${layer.name} e ${count} objetos?`)) return
-              actions.submit({ kind: 'layerDelete', id: layerId })
+            onClick={async () => {
               onClose()
+              const ok = await askConfirm({
+                title: 'Remover camada',
+                message: `Remover a camada ${layer.name} e ${plural(count, 'objeto', 'objetos')} dela? Isso não pode ser desfeito.`,
+                confirmLabel: 'Remover',
+                danger: true,
+              })
+              if (ok) actions.submit({ kind: 'layerDelete', id: layerId })
             }}
           >
             <Trash2 size={16} aria-hidden /> Remover camada
