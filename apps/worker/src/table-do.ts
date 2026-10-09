@@ -1,5 +1,6 @@
 import { DurableObject } from 'cloudflare:workers'
 import {
+  ACTIVITY_REPORT_MS,
   CHAT_RATE_PER_SEC,
   ClientMessageSchema,
   DEFAULT_LAYERS,
@@ -21,6 +22,8 @@ import { TableEngine, type ChatBody, type LayerChange, type OpEffect } from './e
 import { SqlStore } from './engine/sql-store'
 import { randomSecret, safeEqual, sha256Hex } from './crypto'
 import { RateLimiter } from './rate-limit'
+import { ActivityReporter } from './activity'
+import { registryStub } from './registry-do'
 
 interface Attachment {
   sessionId: string
@@ -50,6 +53,7 @@ export class TableDO extends DurableObject<Env> {
   private pingLimiter = new RateLimiter(PING_RATE_PER_SEC, 1000)
   private rulerLimiter = new RateLimiter(RULER_RATE_PER_SEC, 1000)
   private groupDragLimiter = new RateLimiter(RULER_RATE_PER_SEC, 1000)
+  private activity = new ActivityReporter(ACTIVITY_REPORT_MS)
 
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env)
@@ -116,6 +120,7 @@ export class TableDO extends DurableObject<Env> {
     this.store = new SqlStore(this.ctx.storage.sql)
     this.engine = new TableEngine(this.store)
     this.strokeLayers.clear()
+    this.activity = new ActivityReporter(ACTIVITY_REPORT_MS)
     return keys
   }
 
@@ -213,6 +218,7 @@ export class TableDO extends DurableObject<Env> {
       ...(issued ? { clientSecret: issued } : {}),
     })
     this.broadcast(att.sessionId, () => ({ t: 'memberJoined', member }))
+    this.reportActivity()
   }
 
   private onOp(ws: WebSocket, att: Attachment, msg: Msg<'op'>): void {
@@ -228,6 +234,7 @@ export class TableDO extends DurableObject<Env> {
       return
     }
     for (const effect of res.effects) this.broadcastEffect(att, effect)
+    this.reportActivity()
   }
 
   private broadcastEffect(author: Attachment, effect: OpEffect): void {
@@ -339,6 +346,7 @@ export class TableDO extends DurableObject<Env> {
 
     const entry = this.engine.chatEntry(att.clientId, chatBody(msg))
     this.send(ws, { t: 'chatAck', reqId: msg.reqId })
+    this.reportActivity()
     if (dm === null) {
       this.engine.appendTableChat(entry)
       this.broadcast(null, (other) =>
@@ -404,6 +412,20 @@ export class TableDO extends DurableObject<Env> {
         this.broadcast(null, () => ping)
         return
       }
+    }
+  }
+
+  /** Avisa o índice (última atividade e jogadores); mesas fora do índice são ignoradas por ele. Nunca atrapalha a mesa. */
+  private reportActivity(): void {
+    try {
+      const meta = this.store.getMeta()
+      if (!meta) return
+      const now = Date.now()
+      const players = this.store.listMembers().filter((m) => m.role === 'player').length
+      if (!this.activity.shouldReport(now, players)) return
+      this.ctx.waitUntil(Promise.resolve(registryStub(this.env).touchTable(meta.id, { at: now, players })).catch(() => {}))
+    } catch {
+      // aviso de atividade é opcional: falha aqui não pode afetar a operação da mesa
     }
   }
 

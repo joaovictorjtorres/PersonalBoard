@@ -184,3 +184,37 @@ describe('renomear e apagar mesa', () => {
     expect((await deleteTable(a.tableId)).status).toBe(404)
   })
 })
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+async function waitEntry(id: string, pred: (t: RegistryView['tables'][number]) => boolean) {
+  for (let i = 0; i < 100; i++) {
+    const entry = (await registryView()).tables.find((t) => t.id === id)
+    if (entry && pred(entry)) return entry
+    await sleep(20)
+  }
+  throw new Error('o índice não foi atualizado')
+}
+
+describe('atividade no índice', () => {
+  it('jogador entrando atualiza jogadores e última atividade; o mestre não conta como jogador', async () => {
+    const { tableId, gmSecret } = await createTable('Atividade')
+    const created = (await registryView()).tables.find((t) => t.id === tableId)!
+    const gm = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    const p = await TestClient.connect(tableId)
+    await p.hello('Ana')
+    const entry = await waitEntry(tableId, (t) => t.players === 1)
+    expect(entry.lastActivityAt).toBeGreaterThanOrEqual(created.lastActivityAt)
+  })
+
+  it('mesa fora do índice (antiga) continua fora da lista mesmo com atividade', async () => {
+    const id = crypto.randomUUID().replace(/-/g, '').slice(0, 10)
+    const stub = env.TABLES.get(env.TABLES.idFromName(id))
+    expect((await stub.fetch('https://table/init', { method: 'POST', body: JSON.stringify({ id, name: 'Antiga', gmSecretHash: 'h' }) })).status).toBe(201)
+    const c = await TestClient.connect(id)
+    await c.hello('Ana')
+    await sleep(100)
+    expect((await registryView()).tables.some((t) => t.id === id)).toBe(false)
+  })
+})
