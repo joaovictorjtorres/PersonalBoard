@@ -2,13 +2,14 @@ import fs from 'node:fs'
 import net from 'node:net'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
+import { removeTree } from '../src/rm.mjs'
 import { run } from '../src/main.mjs'
 import { MSG } from '../src/messages.mjs'
 import { T0, createHarness, makePackage, makeTmp, releaseFixture, until, writeFakeApp } from './harness.mjs'
 
 let base
 afterEach(() => {
-  if (base) fs.rmSync(base, { recursive: true, force: true })
+  if (base) removeTree(fs, base)
   base = undefined
 })
 
@@ -341,7 +342,7 @@ describe('run: endurecimento (T5)', () => {
 
   it('app\\ ausente e app.old\\ presente → restaura antes de qualquer limpeza', async () => {
     const { h, root } = setup()
-    fs.rmSync(path.join(root, 'app'), { recursive: true })
+    removeTree(fs, path.join(root, 'app'))
     writeFakeApp(path.join(root, 'app.old'), '0.3.0')
     writeFakeApp(path.join(root, 'app.new'), '0.5.0')
     const result = (await startServing(h, root)).result

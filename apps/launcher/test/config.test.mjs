@@ -2,11 +2,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { removeTree } from '../src/rm.mjs'
 import { DEFAULT_CONFIG, dataPaths, readConfig, writeConfig } from '../src/config.mjs'
 
 let dir
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesa config ç ')) })
-afterEach(() => fs.rmSync(dir, { recursive: true, force: true }))
+afterEach(() => removeTree(fs, dir))
 
 describe('dataPaths', () => {
   it('usa %LOCALAPPDATA%\\MesaVirtual', () => {

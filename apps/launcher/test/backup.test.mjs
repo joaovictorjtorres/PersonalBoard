@@ -2,6 +2,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { removeTree } from '../src/rm.mjs'
+import { winFs } from './harness.mjs'
 import { KEEP_BACKUPS, backupDue, backupName, backupNow, backupsToDelete, makeBackup } from '../src/backup.mjs'
 
 const HOUR = 60 * 60 * 1000
@@ -9,7 +11,7 @@ const NOW = Date.parse('2026-10-08T12:00:00Z')
 
 let dir
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesa backup João ')) })
-afterEach(() => fs.rmSync(dir, { recursive: true, force: true }))
+afterEach(() => removeTree(fs, dir))
 
 function makeState() {
   const stateDir = path.join(dir, 'state')
@@ -47,7 +49,7 @@ describe('makeBackup', () => {
   it('copia state\\ para backups\\<nome> (conteúdo aninhado)', () => {
     const stateDir = makeState()
     const backupsDir = path.join(dir, 'backups')
-    const name = makeBackup(fs, { stateDir, backupsDir, date: new Date(2026, 9, 8, 12, 0, 0) })
+    const name = makeBackup(winFs, { stateDir, backupsDir, date: new Date(2026, 9, 8, 12, 0, 0) })
     expect(name).toBe('2026-10-08_120000')
     expect(fs.readFileSync(path.join(backupsDir, name, 'v3', 'do', 'mesa.sqlite'), 'utf8')).toBe('dados')
     expect(fs.readdirSync(backupsDir)).toEqual([name])
@@ -102,7 +104,7 @@ describe('backupNow', () => {
     expect(ctx.config.lastBackup).toBe(new Date(NOW).toISOString())
     expect(JSON.parse(fs.readFileSync(configFile, 'utf8')).lastBackup).toBe(new Date(NOW).toISOString())
 
-    fs.rmSync(configFile)
+    fs.unlinkSync(configFile)
     ctx.configWritable = false
     expect(backupNow(deps, ctx)).not.toBeNull()
     expect(fs.existsSync(configFile)).toBe(false)

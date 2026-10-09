@@ -2,11 +2,12 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { removeTree } from '../src/rm.mjs'
 import { LOG_FILES, LOG_MAX_BYTES, createLogger, createTail, rotatedName } from '../src/log.mjs'
 
 let dir
 beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mesa-log-')) })
-afterEach(() => fs.rmSync(dir, { recursive: true, force: true }))
+afterEach(() => removeTree(fs, dir))
 
 describe('log rotativo', () => {
   it('limites do spec', () => {

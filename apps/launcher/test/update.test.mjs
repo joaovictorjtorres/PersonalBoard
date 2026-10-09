@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { removeTree } from '../src/rm.mjs'
 import { dataPaths } from '../src/config.mjs'
 import { MSG } from '../src/messages.mjs'
 import { appPaths } from '../src/swap.mjs'
@@ -16,7 +17,7 @@ beforeEach(() => {
   base = makeTmp()
   root = makePackage(base, '0.4.0')
 })
-afterEach(() => fs.rmSync(base, { recursive: true, force: true }))
+afterEach(() => removeTree(fs, base))
 
 function setup(options = {}) {
   const h = createHarness({ base, ...options })

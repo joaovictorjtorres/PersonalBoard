@@ -7,7 +7,7 @@ import { MSG } from './messages.mjs'
 import { extractZip } from './processes.mjs'
 import { DOWNLOAD_PREFIX, LATEST_URL, pickUpdate } from './release.mjs'
 import { readVersion } from './semver.mjs'
-import { removeTree } from './rm.mjs'
+import { copyTree, removeTree } from './rm.mjs'
 import { appPaths, renameWithRetry, swapApp } from './swap.mjs'
 
 /** Pasta em %TEMP% de onde o "Iniciar Mesa.cmd" roda a troca. Contrato congelado. */
@@ -93,7 +93,7 @@ export function stageSwapper(deps) {
   rmWithRetry(deps, dir)
   fs.mkdirSync(dir, { recursive: true })
   fs.copyFileSync(deps.execPath, path.join(dir, 'node.exe'))
-  fs.cpSync(deps.launcherDir, path.join(dir, 'launcher'), { recursive: true })
+  copyTree(fs, deps.launcherDir, path.join(dir, 'launcher'))
   return dir
 }
 

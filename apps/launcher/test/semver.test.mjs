@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { removeTree } from '../src/rm.mjs'
 import { compareVersions, isNewer, normalizeVersion, parseVersion, readVersion } from '../src/semver.mjs'
 
 describe('semver', () => {
@@ -38,6 +39,6 @@ describe('semver', () => {
     expect(readVersion(fs, file)).toBe('0.4.0')
     fs.writeFileSync(file, 'lixo')
     expect(readVersion(fs, file)).toBe('0.0.0')
-    fs.rmSync(dir, { recursive: true, force: true })
+    removeTree(fs, dir)
   })
 })

@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { removeTree } from '../src/rm.mjs'
 import {
   copyToClipboard, extractZip, killTree, launch, openBrowser, pipeLines, runCommand,
   serverCommand, serverEnv, tunnelCommand, waitForServer,
@@ -11,7 +12,7 @@ import { createHarness, makeTmp } from './harness.mjs'
 
 let base
 beforeEach(() => { base = makeTmp() })
-afterEach(() => fs.rmSync(base, { recursive: true, force: true }))
+afterEach(() => removeTree(fs, base))
 
 describe('pipeLines', () => {
   it('junta pedaços, aceita CRLF, tira ANSI e emite a sobra no fim', async () => {
@@ -226,6 +227,9 @@ describe('extractZip / runCommand', () => {
   })
 })
 
+/** PowerShell/tar/taskkill frios no runner do Windows passam fácil de 5 s. */
+const WIN_REAL_TIMEOUT_MS = 30_000
+
 describe.runIf(process.platform === 'win32')('Windows real', () => {
   const realDeps = () => ({
     fs, spawn: spawn, platform: 'win32', env: process.env, now: () => Date.now(),
@@ -248,7 +252,7 @@ describe.runIf(process.platform === 'win32')('Windows real', () => {
     const dest = path.join(base, 'a b ção')
     await extractZip(realDeps(), zip, dest)
     expect(fs.readFileSync(path.join(dest, 'oi.txt'), 'utf8')).toBe('olá')
-  })
+  }, WIN_REAL_TIMEOUT_MS)
 
   it('extractZip (Expand-Archive) em pasta "a b ção"', async () => {
     const zip = await makeZip(base)
@@ -256,7 +260,7 @@ describe.runIf(process.platform === 'win32')('Windows real', () => {
     const env = { ...process.env, SystemRoot: path.join(base, 'sem-tar') }
     await extractZip({ ...realDeps(), env }, zip, dest)
     expect(fs.readFileSync(path.join(dest, 'oi.txt'), 'utf8')).toBe('olá')
-  })
+  }, WIN_REAL_TIMEOUT_MS)
 
   it('killTree mata o neto (node → node)', async () => {
     const deps = realDeps()
@@ -269,5 +273,5 @@ describe.runIf(process.platform === 'win32')('Windows real', () => {
     await killTree(deps, proc)
     await new Promise((r) => setTimeout(r, 500))
     expect(() => process.kill(pid, 0)).toThrow()
-  })
+  }, WIN_REAL_TIMEOUT_MS)
 })

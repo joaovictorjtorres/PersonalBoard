@@ -3,12 +3,13 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
+import { removeTree } from '../src/rm.mjs'
 import { makePackage, makeTmp, writeFakeApp } from './harness.mjs'
 
 const launcher = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'src', 'launcher.mjs')
 let base
 afterEach(() => {
-  if (base) fs.rmSync(base, { recursive: true, force: true })
+  if (base) removeTree(fs, base)
   base = undefined
 })
 

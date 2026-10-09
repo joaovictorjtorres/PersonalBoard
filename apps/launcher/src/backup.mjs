@@ -1,5 +1,5 @@
 import path from 'node:path'
-import { removeTree } from './rm.mjs'
+import { copyTree, removeTree } from './rm.mjs'
 import { writeConfig } from './config.mjs'
 
 export const KEEP_BACKUPS = 10
@@ -49,7 +49,7 @@ export function makeBackup(fs, { stateDir, backupsDir, date, keep = KEEP_BACKUPS
   let name = base
   for (let i = 2; fs.existsSync(path.join(backupsDir, name)); i++) name = `${base}-${i}`
   const partial = path.join(backupsDir, `.${name}.partial`)
-  fs.cpSync(stateDir, partial, { recursive: true })
+  copyTree(fs, stateDir, partial)
   fs.renameSync(partial, path.join(backupsDir, name))
   for (const old of backupsToDelete(fs.readdirSync(backupsDir), keep, name)) {
     removeTree(fs, path.join(backupsDir, old))

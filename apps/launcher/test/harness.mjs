@@ -7,6 +7,17 @@ import { PassThrough } from 'node:stream'
 
 export const T0 = Date.parse('2026-10-08T12:00:00.000Z')
 
+/**
+ * fs do Windows real (Node 24.12): rmSync/cpSync montam o caminho na code page ANSI — com acento,
+ * rmSync não apaga nada e cpSync de pasta derruba o processo (0xC0000409). O código do launcher
+ * não pode usá-los; aqui eles lançam para pegar qualquer uso no Linux.
+ */
+export const winFs = {
+  ...fs,
+  rmSync() { throw new Error('fs.rmSync não pode ser usado (code page ANSI no Windows)') },
+  cpSync() { throw new Error('fs.cpSync não pode ser usado (code page ANSI no Windows)') },
+}
+
 /** Pasta temporária com espaço e acento no nome (Review Focus 3). */
 export function makeTmp() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'mesa launcher ção '))
@@ -170,7 +181,7 @@ export function createHarness(o) {
   }
 
   h.deps = {
-    fs,
+    fs: winFs,
     spawn,
     fetch,
     now: () => now,
