@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef } from 'react'
 import type Konva from 'konva'
 import type { KonvaEventObject } from 'konva/lib/Node'
-import { Layer, Line, Stage } from 'react-konva'
+import { Group, Layer, Line, Stage } from 'react-konva'
 import { CAMERA_GLIDE_MS, type TableObject } from '@mesa/shared'
 import { pointInBox } from '../selection/model'
 import { useTable, useTableActions, useTableStore } from '../store/context'
@@ -11,6 +11,7 @@ import { useModifierKeys, useWindowSize } from './hooks'
 import { ImageNode } from './ImageNode'
 import { ObjectDecorations } from './ObjectDecorations'
 import { Overlay } from './Overlay'
+import { LIFT_GROUP_NAME, liftedIds, useLiftManager } from './lift'
 import { isPingClick } from './ping'
 import { isHover, pointerAction } from './pointer'
 import { SelectionLayer } from './SelectionLayer'
@@ -52,6 +53,8 @@ export function TableCanvas() {
   const viewport = useTable((s) => s.viewport)
   const activeLayerId = useTable((s) => s.activeLayerId)
   const isGm = useTable((s) => s.self?.role === 'gm')
+  // Ids levantados acima de todas as camadas (string estável para a store não re-renderizar à toa).
+  const liftedKey = useTable((s) => liftedIds(s).join(','))
   const actions = useTableActions()
   const { space } = useModifierKeys()
   const size = useWindowSize()
@@ -69,6 +72,9 @@ export function TableCanvas() {
   // A grade fica logo acima da camada "map"; sem ela (removida pelo mestre), abaixo de tudo.
   const hasMapLayer = layers.some((l) => l.id === 'map')
   useCameraGlide()
+  useLiftManager(stageRef, store)
+  const lifted = useMemo(() => new Set(liftedKey ? liftedKey.split(',') : []), [liftedKey])
+  const layerOpacity = (layerId: string) => (isGm && layers.find((l) => l.id === layerId)?.visibility === 'gm' ? 0.5 : 1)
 
   useEffect(() => {
     if (debug) (window as unknown as { __stage?: Konva.Stage | null }).__stage = stageRef.current
@@ -243,7 +249,7 @@ export function TableCanvas() {
         const list = byLayer[layer.id] ?? []
         return (
           <Fragment key={layer.id}>
-            <Layer listening={active && !panning} opacity={isGm && layer.visibility === 'gm' ? 0.5 : 1}>
+            <Layer listening={active && !panning} opacity={layerOpacity(layer.id)}>
               {list.map((o) =>
                 o.type === 'image' ? (
                   <ImageNode key={o.id} object={o} />
@@ -253,9 +259,7 @@ export function TableCanvas() {
                   <ShapeNode key={o.id} object={o} />
                 ),
               )}
-              {list.map((o) => (
-                <ObjectDecorations key={`deco_${o.id}`} object={o} />
-              ))}
+              {list.map((o) => !lifted.has(o.id) && <ObjectDecorations key={`deco_${o.id}`} object={o} />)}
               {drawing.ownPreview?.layerId === layer.id && (
                 <Line
                   points={drawing.ownPreview.points}
@@ -273,6 +277,17 @@ export function TableCanvas() {
           </Fragment>
         )
       })}
+      {/* O que eu arrasto, por cima de todas as camadas (o anel da vez continua acima). */}
+      <Layer listening={false}>
+        <Group name={LIFT_GROUP_NAME} />
+        {[...lifted].map((id) =>
+          objects[id] ? (
+            <Group key={`deco_${id}`} opacity={layerOpacity(objects[id].layerId)}>
+              <ObjectDecorations object={objects[id]} />
+            </Group>
+          ) : null,
+        )}
+      </Layer>
       <TurnHighlights />
       <SelectionLayer area={select.area} />
       <Overlay />

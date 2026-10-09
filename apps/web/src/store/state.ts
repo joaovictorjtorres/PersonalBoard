@@ -116,6 +116,8 @@ export interface TableState {
    * sozinho, e título/ícones seguem por aqui até soltar.
    */
   ownDragPreviews: Record<string, Geometry>
+  /** Objeto que eu arrasto sozinho (só local): fica por cima de todas as camadas até soltar ou cancelar. */
+  draggingId: string | null
   strokePreviews: Record<string, StrokePreview>
   pending: Record<string, PendingOp>
   undoStack: Op[][]
@@ -190,6 +192,7 @@ export function makeInitialState(): TableState {
     cursors: {},
     dragPreviews: {},
     ownDragPreviews: {},
+    draggingId: null,
     strokePreviews: {},
     pending: {},
     undoStack: [],

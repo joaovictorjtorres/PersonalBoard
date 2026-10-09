@@ -15,6 +15,8 @@ interface Obj {
   height: number
   title?: string
   segments?: number[][]
+  zIndex: number
+  assetKey?: string
   control: { mode: string; clientIds: string[] }
   ownerId: string
 }
@@ -1750,4 +1752,132 @@ test('caneta: a ponta de borracha apaga ao longo da passada com a Mão escolhida
   const view = await player.evaluate(() => (window as any).__mesa.getState().viewport)
   expect(view).toMatchObject({ x: 0, y: 0 })
   expect(await player.evaluate(() => (window as any).__mesa.getState().tool)).toBe('hand')
+})
+
+/** Imagem criada pela store (no topo da camada), com a mesma imagem de um token já enviado. */
+async function addImageAt(page: Page, id: string, layerId: string, x: number, y: number, assetKey: string): Promise<void> {
+  await page.evaluate(
+    ({ id, layerId, x, y, assetKey }) => {
+      const { actions } = (window as any).__mesa.getState()
+      const object = { id, type: 'image', layerId, assetKey, x, y, width: 70, height: 70, rotation: 0, zIndex: actions.nextZ(layerId) }
+      actions.submit({ kind: 'create', object })
+    },
+    { id, layerId, x, y, assetKey },
+  )
+  await page.waitForFunction(() => Object.keys((window as any).__mesa.getState().pending).length === 0)
+}
+
+/** Ids na ordem em que o Konva desenha (camada, depois posição dentro dela): o último fica por cima. */
+const drawOrder = (page: Page, ids: string[]): Promise<string[]> =>
+  page.evaluate((ids) => {
+    const stage = (window as any).__stage
+    const key = (id: string) => {
+      const node = stage.findOne(`#${id}`)
+      return [node.getLayer().zIndex(), node.getParent().zIndex(), node.zIndex()]
+    }
+    const cmp = (a: number[], b: number[]) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]
+    return [...ids].sort((a, b) => cmp(key(a), key(b)))
+  }, ids)
+
+test('arrastar: o item fica por cima de tudo enquanto arrasta; ao soltar vira o topo da camada para todos; Esc cancela; Ctrl+Z volta a ordem', async ({ browser, page }) => {
+  const { tableId, gmSecret, playerKey } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, playerPath({ tableId, playerKey }), 'Ana')
+
+  await uploadToken(gm) // camada Tokens: x 605..675, y 325..395
+  const [a] = await objects(gm)
+  await addImageAt(gm, 'b', 'tokens', 645, 325, a.assetKey!) // por cima da metade direita de "a"
+  await addStrokeAt(gm, 'risco', 'drawings', [560, 360, 760, 360]) // camada de cima
+  await expect.poll(async () => (await objects(ana)).length).toBe(3)
+  const ids = [a.id, 'b', 'risco']
+  for (const p of [gm, ana]) await expect.poll(() => drawOrder(p, ids)).toEqual([a.id, 'b', 'risco'])
+
+  // Esc no meio do arrasto: volta para o lugar e para a ordem de antes; nada é enviado.
+  const undoSteps = () => gm.evaluate(() => (window as any).__mesa.getState().undoStack.length)
+  const before = await undoSteps()
+  await gm.mouse.move(615, 360)
+  await gm.mouse.down()
+  await gm.mouse.move(655, 380, { steps: 5 })
+  await expect.poll(() => drawOrder(gm, ids)).toEqual(['b', 'risco', a.id])
+  await gm.keyboard.press('Escape')
+  await gm.mouse.up()
+  await expect.poll(() => drawOrder(gm, ids)).toEqual([a.id, 'b', 'risco'])
+  expect((await objects(gm)).find((o) => o.id === a.id)).toMatchObject({ x: 605, y: 325, zIndex: a.zIndex })
+  expect(await undoSteps()).toBe(before)
+
+  // Arrasto de verdade: por cima de todas as camadas enquanto arrasta (só na minha tela)…
+  await gm.mouse.move(615, 360)
+  await gm.mouse.down()
+  await gm.mouse.move(655, 380, { steps: 10 })
+  await expect.poll(() => drawOrder(gm, ids)).toEqual(['b', 'risco', a.id])
+  await gm.mouse.up()
+  // …e, ao soltar, o topo da própria camada para todos (abaixo do traço da camada de cima).
+  for (const p of [gm, ana]) {
+    await expect.poll(() => drawOrder(p, ids)).toEqual(['b', a.id, 'risco'])
+    await expect.poll(async () => (await objects(p)).find((o) => o.id === a.id)).toMatchObject({ x: 645, y: 345 })
+    const z = Object.fromEntries((await objects(p)).map((o) => [o.id, o.zIndex]))
+    expect(z[a.id]).toBeGreaterThan(z.b)
+  }
+
+  // Ctrl+Z desfaz posição e ordem num passo só.
+  await settled(gm)
+  await gm.keyboard.press('Control+z')
+  for (const p of [gm, ana]) {
+    await expect.poll(() => drawOrder(p, ids)).toEqual([a.id, 'b', 'risco'])
+    await expect.poll(async () => (await objects(p)).find((o) => o.id === a.id)).toMatchObject({ x: 605, y: 325, zIndex: a.zIndex })
+  }
+})
+
+test('arrastar: item de uma camada de baixo passa por cima enquanto arrasta, mas ao soltar fica abaixo da camada de cima', async ({ browser, page }) => {
+  const { tableId, gmSecret, playerKey } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, playerPath({ tableId, playerKey }), 'Ana')
+
+  await uploadToken(gm) // camada Tokens: x 605..675, y 325..395
+  const [token] = await objects(gm)
+  await addImageAt(gm, 'chao', 'map', 405, 325, token.assetKey!)
+  await expect.poll(async () => (await objects(ana)).length).toBe(2)
+  await selectLayer(gm, 'Mapa')
+
+  await gm.mouse.move(440, 360)
+  await gm.mouse.down()
+  await gm.mouse.move(640, 360, { steps: 10 })
+  await expect.poll(() => drawOrder(gm, ['chao', token.id])).toEqual([token.id, 'chao'])
+  await gm.mouse.up()
+
+  for (const p of [gm, ana]) {
+    await expect.poll(async () => (await objects(p)).find((o) => o.id === 'chao')).toMatchObject({ x: 605, layerId: 'map' })
+    await expect.poll(() => drawOrder(p, ['chao', token.id])).toEqual(['chao', token.id])
+  }
+})
+
+test('arrastar o grupo da seleção: os itens passam por cima enquanto arrasta e, ao soltar, vão ao topo da camada na mesma ordem', async ({ browser, page }) => {
+  const { tableId, gmSecret, playerKey } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, playerPath({ tableId, playerKey }), 'Ana')
+
+  await uploadToken(gm) // camada Tokens: x 605..675, y 325..395
+  const [a] = await objects(gm)
+  await addImageAt(gm, 'b', 'tokens', 645, 325, a.assetKey!)
+  await addImageAt(gm, 'c', 'tokens', 685, 325, a.assetKey!)
+  await expect.poll(async () => (await objects(ana)).length).toBe(3)
+  const ids = [a.id, 'b', 'c']
+
+  await pickSelect(gm)
+  await dragPath(gm, [[595, 315], [725, 405]]) // pega "a" e "b" inteiros; "c" fica de fora
+  expect(await selectionOf(gm)).toEqual({ whole: [a.id, 'b'].sort(), parts: [] })
+
+  await gm.mouse.move(620, 360)
+  await gm.mouse.down()
+  await gm.mouse.move(620, 380, { steps: 5 })
+  await expect.poll(() => drawOrder(gm, ids)).toEqual(['c', a.id, 'b'])
+  await gm.mouse.up()
+  for (const p of [gm, ana]) {
+    await expect.poll(async () => (await objects(p)).find((o) => o.id === 'b')?.y).toBe(345)
+    await expect.poll(() => drawOrder(p, ids)).toEqual(['c', a.id, 'b'])
+  }
+
+  await settled(gm)
+  await gm.keyboard.press('Control+z')
+  for (const p of [gm, ana]) await expect.poll(() => drawOrder(p, ids)).toEqual([a.id, 'b', 'c'])
 })

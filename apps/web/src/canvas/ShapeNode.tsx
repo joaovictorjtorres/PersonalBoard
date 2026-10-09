@@ -8,8 +8,7 @@ import { isLockedByOther } from '../store/reducers'
 import { isInSelection } from '../selection/model'
 import { useGroupOffset } from './hooks'
 import { commitNodeChange, geometryFromNode } from './nodeChange'
-import { isPingClick, usePingDragGuard } from './ping'
-import { pointerAction } from './pointer'
+import { useObjectDrag } from './useObjectDrag'
 import { hexToRgba } from './shapes'
 
 function drawEllipse(ctx: Context, shape: KonvaShape): void {
@@ -25,7 +24,6 @@ function drawEllipse(ctx: Context, shape: KonvaShape): void {
 export function ShapeNode({ object, preview = false }: { object: ShapeObject; preview?: boolean }) {
   const store = useTableStore()
   const actions = useTableActions()
-  const pingGuard = usePingDragGuard()
   const tool = useTable((s) => s.tool)
   const lockedByOther = useTable((s) => isLockedByOther(s, object.id, Date.now()))
   const dragPreview = useTable((s) => s.dragPreviews[object.id])
@@ -36,6 +34,10 @@ export function ShapeNode({ object, preview = false }: { object: ShapeObject; pr
   const grouped = useTable((s) => isInSelection(s.selection, object.id))
   const groupOffset = useGroupOffset(object.id)
   const interactive = !preview && tool === 'select' && !lockedByOther && mayControl && layerEditable && !grouped
+  // A linha só se move: a prévia guarda o tamanho do objeto.
+  const drag = useObjectDrag(object.id, interactive, (node) =>
+    object.kind === 'line' ? { x: node.x(), y: node.y(), width: object.width, height: object.height, rotation: 0 } : geometryFromNode(node),
+  )
 
   const common = {
     id: preview ? undefined : object.id,
@@ -47,17 +49,7 @@ export function ShapeNode({ object, preview = false }: { object: ShapeObject; pr
     hitStrokeWidth: Math.max(object.strokeWidth, 12),
     listening: !preview,
     draggable: interactive,
-    onPointerDown: (e: KonvaEventObject<PointerEvent>) => {
-      pingGuard.pointerDown(e.evt)
-      if (interactive && !isPingClick(e.evt) && pointerAction(e.evt) !== 'eraser') actions.select(object.id)
-    },
-    onDragStart: (e: KonvaEventObject<DragEvent>) => {
-      if (pingGuard.dragStart(() => e.target.stopDrag())) return
-      actions.grab(object.id)
-    },
-    onDragEnd: (e: KonvaEventObject<DragEvent>) => {
-      if (!pingGuard.dragEnd()) commitNodeChange(store, object.id, e.target, 'drag')
-    },
+    ...drag,
   }
 
   if (object.kind === 'line') {
@@ -66,9 +58,6 @@ export function ShapeNode({ object, preview = false }: { object: ShapeObject; pr
         {...common}
         points={object.points ?? [0, 0, object.width, object.height]}
         lineCap="round"
-        onDragMove={(e) =>
-          actions.dragPreview(object.id, { x: e.target.x(), y: e.target.y(), width: object.width, height: object.height, rotation: 0 })
-        }
       />
     )
   }
@@ -79,7 +68,6 @@ export function ShapeNode({ object, preview = false }: { object: ShapeObject; pr
     height: g.height,
     rotation: g.rotation,
     fill: object.fill ? hexToRgba(object.fill.color, object.fill.opacity) : undefined,
-    onDragMove: (e: KonvaEventObject<DragEvent>) => actions.dragPreview(object.id, geometryFromNode(e.target)),
     onTransformStart: () => actions.grab(object.id),
     onTransform: (e: KonvaEventObject<Event>) => actions.dragPreview(object.id, geometryFromNode(e.target)),
     onTransformEnd: (e: KonvaEventObject<Event>) => commitNodeChange(store, object.id, e.target, 'transform'),

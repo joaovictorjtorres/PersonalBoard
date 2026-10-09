@@ -9,6 +9,7 @@ import {
   type TableObject,
 } from '@mesa/shared'
 import { fitSegmentLimits, rebaseSegments } from '../canvas/eraser'
+import { liftToTop } from '../store/zorder'
 import type { Selection } from './model'
 
 export interface PlanInput {
@@ -101,19 +102,23 @@ function wholeObjects(input: PlanInput): TableObject[] {
 const outsideSpec = (o: StrokeObject, outside: number[][]): PieceSpec[] =>
   outside.length > 0 ? [{ world: outside, layerId: o.layerId, zIndex: o.zIndex, title: true }] : []
 
+/** O que se move (inteiros e a parte de dentro dos cortados) vai para o topo da própria camada; o pedaço de fora fica onde estava. */
 export function planMove(input: PlanInput, dx: number, dy: number): BatchPlan {
   const b = new Builder(input)
   const keep: string[] = []
-  for (const o of wholeObjects(input)) {
+  const whole = wholeObjects(input)
+  const cut = strokesCut(input)
+  const z = liftToTop(input.objects, [...whole, ...cut.map(({ o }) => o)])
+  for (const o of whole) {
     let patch = { x: o.x + dx, y: o.y + dy }
     if (o.type === 'image' && input.grid.snap) patch = snapPatch(patch, input.grid.size)
-    b.ops.push({ kind: 'update', id: o.id, patch })
+    b.ops.push({ kind: 'update', id: o.id, patch: { ...patch, zIndex: z[o.id] } })
     keep.push(o.id)
   }
-  for (const { o, inside, outside } of strokesCut(input)) {
+  for (const { o, inside, outside } of cut) {
     const ids = b.cut(o, [
       ...outsideSpec(o, outside),
-      { world: shifted(inside, dx, dy), layerId: o.layerId, zIndex: o.zIndex, title: false },
+      { world: shifted(inside, dx, dy), layerId: o.layerId, zIndex: z[o.id], title: false },
     ])
     keep.push(ids[ids.length - 1])
   }

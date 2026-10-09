@@ -126,6 +126,13 @@ describe('controle', () => {
     expect(engine.applyOp('B', 'player', 'op1', update('tok1', { x: 1 }))).toMatchObject({ ok: true })
   })
 
+  it('soltar um arrasto: quem pode mover também leva ao topo da camada (posição e zIndex na mesma ação); quem não controla, não', () => {
+    expect(engine.applyOp('A', 'player', 'op1', update('tok1', { x: 1, y: 2, zIndex: 9 }))).toMatchObject({ ok: true })
+    expect(store.getObject('tok1')).toMatchObject({ x: 1, y: 2, zIndex: 9, layerId: 'tokens' })
+    expect(engine.applyOp('B', 'player', 'op2', update('tok1', { x: 5, zIndex: 10 }))).toMatchObject({ ok: false, reason: 'forbidden' })
+    expect(store.getObject('tok1')?.zIndex).toBe(9)
+  })
+
   it('só o mestre muda control', () => {
     expect(engine.applyOp('A', 'player', 'op1', update('tok1', { control: ALL }))).toMatchObject({ ok: false, reason: 'forbidden' })
   })

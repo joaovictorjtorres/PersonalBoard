@@ -29,6 +29,10 @@ export function createPingDragGuard() {
       if (was) stop()
       return was
     },
+    /** Esc no meio do arrasto: o dragend que vem a seguir não confirma nada. */
+    cancel(): void {
+      state = 'cancelled'
+    },
     /** true = pular commit/release (ping ou arrasto já cancelado); idempotente. */
     dragEnd(): boolean {
       if (state === 'none') return false

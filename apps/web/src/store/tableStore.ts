@@ -30,6 +30,7 @@ import { addArea, collectSelection, selectionLayerIds, selectionOfIds, type Sele
 import { planControl, planDelete, planMove, planToLayer, type PlanInput } from '../selection/plan'
 import { reconcileSelection } from '../selection/reconcile'
 import { loadSelectPrefs, saveSelectPrefs } from '../lib/selectPrefs'
+import { topZ } from './zorder'
 
 export interface TableActions {
   connect(nickname: string): void
@@ -43,6 +44,10 @@ export interface TableActions {
   submitBatches(batches: ObjectOp[][], failText: string): boolean
   undo(): void
   grab(id: string): void
+  /** Começou o meu arrasto do objeto: pega a trava e o objeto sobe acima de todas as camadas (só na minha tela). */
+  startDrag(id: string): void
+  /** Fim do meu arrasto (soltou, cancelou ou foi recusado). */
+  endDrag(id: string): void
   release(id: string): void
   dragPreview(id: string, g: Geometry): void
   cursor(x: number, y: number): void
@@ -263,6 +268,13 @@ export function createTableStore(
         set((s) => ({ deniedGrabs: Object.fromEntries(Object.entries(s.deniedGrabs).filter(([k]) => k !== id)) }))
         sync?.send({ t: 'grab', objectId: id })
       },
+      startDrag(id) {
+        set({ draggingId: id })
+        actions.grab(id)
+      },
+      endDrag(id) {
+        if (get().draggingId === id) set({ draggingId: null })
+      },
       release(id) {
         dragThrottles.get(id)?.cancel()
         dragThrottles.delete(id)
@@ -337,11 +349,7 @@ export function createTableStore(
         dropOwnPreview(id)
         set((s) => ({ deniedGrabs: Object.fromEntries(Object.entries(s.deniedGrabs).filter(([k]) => k !== id)) }))
       },
-      nextZ(layerId) {
-        let max = 0
-        for (const o of Object.values(get().objects)) if (o.layerId === layerId) max = Math.max(max, o.zIndex)
-        return max + 1
-      },
+      nextZ: (layerId) => topZ(get().objects, layerId),
       canEditLayer(layerId) {
         const s = get()
         const layer = s.layers.find((l) => l.id === layerId)

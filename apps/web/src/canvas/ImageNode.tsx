@@ -6,14 +6,12 @@ import { isLockedByOther } from '../store/reducers'
 import { isInSelection } from '../selection/model'
 import { useGroupOffset } from './hooks'
 import { commitNodeChange, geometryFromNode } from './nodeChange'
-import { isPingClick, usePingDragGuard } from './ping'
-import { pointerAction } from './pointer'
+import { useObjectDrag } from './useObjectDrag'
 
 export function ImageNode({ object }: { object: ImageObject }) {
   const [image] = useImage(`/files/${object.assetKey}`)
   const store = useTableStore()
   const actions = useTableActions()
-  const pingGuard = usePingDragGuard()
   const tool = useTable((s) => s.tool)
   const lockedByOther = useTable((s) => isLockedByOther(s, object.id, Date.now()))
   const preview = useTable((s) => s.dragPreviews[object.id])
@@ -24,6 +22,7 @@ export function ImageNode({ object }: { object: ImageObject }) {
   const grouped = useTable((s) => isInSelection(s.selection, object.id))
   const groupOffset = useGroupOffset(object.id)
   const interactive = tool === 'select' && !lockedByOther && mayControl && layerEditable && !grouped
+  const drag = useObjectDrag(object.id, interactive, geometryFromNode)
 
   return (
     <KonvaImage
@@ -36,18 +35,7 @@ export function ImageNode({ object }: { object: ImageObject }) {
       height={g.height}
       rotation={g.rotation}
       draggable={interactive}
-      onPointerDown={(e) => {
-        pingGuard.pointerDown(e.evt)
-        if (interactive && !isPingClick(e.evt) && pointerAction(e.evt) !== 'eraser') actions.select(object.id)
-      }}
-      onDragStart={(e) => {
-        if (pingGuard.dragStart(() => e.target.stopDrag())) return
-        actions.grab(object.id)
-      }}
-      onDragMove={(e) => actions.dragPreview(object.id, geometryFromNode(e.target))}
-      onDragEnd={(e) => {
-        if (!pingGuard.dragEnd()) commitNodeChange(store, object.id, e.target, 'drag')
-      }}
+      {...drag}
       onTransformStart={() => actions.grab(object.id)}
       onTransform={(e) => actions.dragPreview(object.id, geometryFromNode(e.target))}
       onTransformEnd={(e) => commitNodeChange(store, object.id, e.target, 'transform')}

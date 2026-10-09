@@ -36,9 +36,9 @@ describe('planMove', () => {
   it('itens inteiros: update de posição; traço cortado: cria os pedaços (o de dentro já no lugar novo) e depois apaga o original', () => {
     const plan = planMove(input([line, t1], area), 10, 100)
     expect(plan.batches).toEqual([[
-      { kind: 'update', id: 't1', patch: { x: 70, y: 140 } },
+      { kind: 'update', id: 't1', patch: { x: 70, y: 140, zIndex: 4 } },
       piece('l', { id: 'n1', layerId: 'drawings', x: 0, y: 50, width: 200, height: 0, zIndex: 1, segments: [[0, 0, 50, 0], [150, 0, 200, 0]], title: 'Rio' }),
-      piece('l', { id: 'n2', layerId: 'drawings', x: 60, y: 150, width: 100, height: 0, zIndex: 1, segments: [[0, 0, 100, 0]] }),
+      piece('l', { id: 'n2', layerId: 'drawings', x: 60, y: 150, width: 100, height: 0, zIndex: 3, segments: [[0, 0, 100, 0]] }),
       { kind: 'delete', id: 'l' },
     ]])
     expect(plan.selectAfter).toEqual(['t1', 'n2'])
@@ -46,7 +46,19 @@ describe('planMove', () => {
 
   it('com encaixe ligado, imagens caem na grade', () => {
     const plan = planMove(input([t1], area, { grid: { enabled: true, size: 50, snap: true } }), 10, 100)
-    expect(plan.batches[0]).toEqual([{ kind: 'update', id: 't1', patch: { x: 50, y: 150 } }])
+    expect(plan.batches[0]).toEqual([{ kind: 'update', id: 't1', patch: { x: 50, y: 150, zIndex: 3 } }])
+  })
+
+  it('o que se move vai para o topo da própria camada, na ordem relativa de antes; o resto da camada não muda', () => {
+    const a = tokenAt('a', 60, 10, { zIndex: 7 })
+    const b = tokenAt('b', 100, 10, { zIndex: 2 })
+    const top = tokenAt('top', 400, 400, { zIndex: 9 })
+    const map = tokenAt('m', 60, 60, { layerId: 'map', zIndex: 50 })
+    const plan = planMove(input([a, b, top, map], area), 5, 0)
+    expect(plan.batches[0]).toEqual([
+      { kind: 'update', id: 'a', patch: { x: 65, y: 10, zIndex: 11 } },
+      { kind: 'update', id: 'b', patch: { x: 105, y: 10, zIndex: 10 } },
+    ])
   })
 
   it('mestre cortando o traço de outra pessoa: um lote só; os pedaços vêm do original (herdam dono e controle)', () => {
