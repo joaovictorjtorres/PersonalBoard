@@ -29,7 +29,12 @@ export function MembersPanel() {
           <li
             key={m.clientId}
             className={m.online ? '' : 'offline'}
-            title={options.dm ? 'Botão direito: conversa privada' : undefined}
+            title={options.dm ? 'Dois cliques: conversa privada. Botão direito: mais opções' : undefined}
+            onDoubleClick={(e) => {
+              if (!options.dm || (e.target as HTMLElement).closest('button')) return
+              window.getSelection()?.removeAllRanges()
+              actions.openDm(m.clientId)
+            }}
             onContextMenu={(e) => {
               if (!hasMenu) return
               e.preventDefault()

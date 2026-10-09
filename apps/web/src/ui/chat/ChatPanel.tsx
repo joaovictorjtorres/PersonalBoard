@@ -137,6 +137,7 @@ export function ChatPanel() {
                   author={author ?? null}
                   onOpenImage={setLightbox}
                   onAuthorMenu={hasMenu ? (e) => setMemberMenu({ clientId: entry.authorId, x: e.clientX, y: e.clientY }) : undefined}
+                  onAuthorOpenDm={author !== undefined && options.dm ? () => actions.openDm(entry.authorId) : undefined}
                 />
               )
             })}

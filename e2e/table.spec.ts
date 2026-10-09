@@ -515,6 +515,30 @@ test('conversa privada chega só ao destinatário; o mestre não recebe; fechar 
   await expect(chatEntries(bia)).toHaveCount(0)
 })
 
+test('dois cliques no nome (chat ou lista) abrem a conversa privada; no próprio nome não', async ({ browser, page }) => {
+  const { tableId, gmSecret, playerKey } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Ana')
+  const bia = await open(browser, `/t/${tableId}?debug=1#j=${playerKey}`, 'Bia')
+  void gm
+
+  await ana.getByLabel('Mensagem', { exact: true }).fill('oi')
+  await ana.getByLabel('Mensagem', { exact: true }).press('Enter')
+  await expect(chatEntries(bia).last()).toContainText('oi')
+
+  // Chat: dois cliques no nome da Ana abrem a aba privada.
+  await chatEntries(bia).last().locator('.chat-author', { hasText: 'Ana' }).dblclick()
+  await expect(bia.getByRole('tab', { name: /^Ana/ })).toHaveAttribute('aria-selected', 'true')
+
+  // Própria mensagem: nada acontece.
+  await chatEntries(ana).last().locator('strong', { hasText: 'Ana' }).dblclick()
+  await expect(ana.getByRole('tab')).toHaveCount(1)
+
+  // Lista "Na mesa": dois cliques na Bia abrem a aba privada.
+  await memberRow(ana, 'Bia').dblclick()
+  await expect(ana.getByRole('tab', { name: /^Bia/ })).toHaveAttribute('aria-selected', 'true')
+})
+
 test('botão direito no nome do chat: conversa privada; o mestre também edita apelido e cor', async ({ browser, page }) => {
   const { tableId, gmSecret, playerKey } = await newTable(page)
   const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')

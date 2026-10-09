@@ -15,21 +15,31 @@ export function ChatEntryView({
   author,
   onOpenImage,
   onAuthorMenu,
+  onAuthorOpenDm,
 }: {
   entry: ChatEntry
   author: ChatAuthor | null
   onOpenImage: (assetKey: string) => void
   /** Botão direito no nome do autor (conversa privada / editar). Ausente = sem menu. */
   onAuthorMenu?: (e: MouseEvent) => void
+  /** Dois cliques no nome do autor: abre a conversa privada. Ausente = nada. */
+  onAuthorOpenDm?: () => void
 }) {
   const { nickname, color } = author ?? UNKNOWN
-  const name = onAuthorMenu ? (
+  const name = onAuthorMenu || onAuthorOpenDm ? (
     <strong
       className="chat-author has-menu"
       style={{ color }}
+      title={onAuthorOpenDm ? 'Dois cliques: conversa privada' : undefined}
       onContextMenu={(e) => {
+        if (!onAuthorMenu) return
         e.preventDefault()
         onAuthorMenu(e)
+      }}
+      onDoubleClick={() => {
+        if (!onAuthorOpenDm) return
+        window.getSelection()?.removeAllRanges()
+        onAuthorOpenDm()
       }}
     >
       {nickname}
