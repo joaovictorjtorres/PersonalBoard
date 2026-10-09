@@ -30,8 +30,11 @@ async function startServing(h, root, opts = { noUpdate: true }) {
 
 const taskkills = (h) => h.spawns.filter((s) => path.win32.basename(s.command) === 'taskkill.exe').map((s) => s.args[1])
 
+const tunnelReports = (h) =>
+  h.fetches.filter((f) => f.url === 'http://127.0.0.1:8787/api/registry/tunnel' && f.method === 'POST').map((f) => JSON.parse(f.body).url)
+
 describe('run: caminho feliz', () => {
-  it('sobe servidor e túnel, copia e abre o link e desliga no Ctrl+C', async () => {
+  it('sobe servidor e túnel, copia o link, informa o túnel, abre a lista local e desliga no Ctrl+C', async () => {
     const { h, root, dataDir } = setup()
     const result = (await startServing(h, root)).result
     expect(h.output[0]).toBe('Mesa Virtual v0.4.0')
@@ -52,8 +55,10 @@ describe('run: caminho feliz', () => {
 
     // Review Focus 2: a linha de erro com api.trycloudflare.com veio antes e foi ignorada
     expect(h.clipboard).toEqual(['https://mesa-1.trycloudflare.com'])
+    // o navegador abre a lista local de mesas, não o túnel
     expect(h.browser).toHaveLength(1)
-    expect(h.browser[0]).toContain('https://mesa-1.trycloudflare.com')
+    expect(h.browser[0]).toContain('"http://localhost:8787/"')
+    expect(tunnelReports(h)).toEqual(['https://mesa-1.trycloudflare.com'])
     const at = h.output.indexOf('    https://mesa-1.trycloudflare.com')
     expect(h.output.slice(at - 2, at + 2)).toEqual(['', MSG.linkTitle, '    https://mesa-1.trycloudflare.com', ''])
     expect(h.output).toContain(MSG.copied)
@@ -108,6 +113,7 @@ describe('run: erros', () => {
     expect(h.output).toContain(MSG.tunnelFailed)
     expect(h.clipboard).toEqual(['http://localhost:8787'])
     expect(h.browser[0]).toContain('http://localhost:8787')
+    expect(tunnelReports(h)).toEqual([])
     expect(taskkills(h)).toContain(String(h.children.tunnel[0].pid))
     h.signal()
     expect(await result).toBe(0)
@@ -152,6 +158,19 @@ describe('run: quedas e encerramento', () => {
     expect(h.clipboard[2]).toBe('http://localhost:8787')
     expect(h.browser).toHaveLength(1)
     expect(h.children.tunnel).toHaveLength(2)
+    expect(tunnelReports(h)).toEqual(['https://mesa-1.trycloudflare.com', null, 'https://mesa-2.trycloudflare.com', null])
+    h.signal()
+    expect(await result).toBe(0)
+  })
+
+  // Review Focus #4
+  it('servidor cai e volta: informa de novo o túnel atual (o índice guarda o endereço só em memória)', async () => {
+    const { h, root } = setup()
+    const result = (await startServing(h, root)).result
+    expect(tunnelReports(h)).toEqual(['https://mesa-1.trycloudflare.com'])
+    h.children.server[0].exit(1)
+    await until(() => tunnelReports(h).length === 2, 'novo aviso do túnel')
+    expect(tunnelReports(h)).toEqual(['https://mesa-1.trycloudflare.com', 'https://mesa-1.trycloudflare.com'])
     h.signal()
     expect(await result).toBe(0)
   })
@@ -462,7 +481,9 @@ describe('run: ajustes da revisão final', () => {
     await until(() => h.clipboard.length > 0, 'link novo copiado')
     expect(h.clipboard).toEqual(['https://mesa-2.trycloudflare.com'])
     expect(h.text()).not.toContain('mesa-1.trycloudflare.com')
-    expect(h.browser).toHaveLength(0)
+    expect(h.browser).toHaveLength(1)
+    expect(h.browser[0]).toContain('"http://localhost:8787/"')
+    expect(tunnelReports(h)).toEqual(['https://mesa-1.trycloudflare.com', null, 'https://mesa-2.trycloudflare.com'])
     h.signal()
     await result
   })

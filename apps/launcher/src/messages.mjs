@@ -33,7 +33,7 @@ export const MSG = {
   tunnelFailed: '✗ Não foi possível abrir o túnel. A mesa funciona só neste computador.',
   tunnelCrashed: '✗ O túnel caiu. Reabrindo… (o link vai mudar)',
   tunnelGaveUp: '✗ O túnel caiu de novo. A mesa continua só neste computador.',
-  linkTitle: 'LINK DA MESA (mande para o grupo):',
+  linkTitle: 'ENDEREÇO DO TÚNEL (os links de cada mesa estão na página que abriu no navegador):',
   linkMayDelay: '    (o link pode levar alguns segundos para funcionar)',
   linkWaiting: '… Esperando o link ficar pronto…',
   copied: '✓ Link copiado para a área de transferência.',

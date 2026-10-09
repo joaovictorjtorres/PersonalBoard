@@ -9,6 +9,7 @@ import { INSPECTOR_FIRST, INSPECTOR_LAST, pickPort } from './ports.mjs'
 import {
   copyToClipboard, killTree, launch, openBrowser, serverCommand, serverEnv, tunnelCommand, waitForServer,
 } from './processes.mjs'
+import { TUNNEL_REPORT_INTERVAL_MS, repeatEvery, reportTunnel } from './registry.mjs'
 import { readVersion } from './semver.mjs'
 import { UPDATE_EXIT_CODE, appPaths, removeLeftovers, removeOldApp, restoreOldApp } from './swap.mjs'
 import { findTunnelUrl } from './tunnel-url.mjs'
@@ -164,8 +165,22 @@ function createSession(deps, ctx, { app, port, inspectorPort }) {
   let shuttingDown = false
   let serverRestarted = false
   let tunnelRestarted = false
+  /** @type {string | null} */
+  let tunnelLink = null
+  let stopReporting = () => {}
   let finish = (_code) => {}
   const done = new Promise((resolve) => { finish = resolve })
+
+  /** O servidor guarda o endereço do túnel só em memória: avisa na hora e repete a cada 30 s enquanto houver túnel. */
+  function setTunnelLink(link) {
+    tunnelLink = link
+    log.write(`túnel informado ao servidor: ${link ?? 'nenhum'}`)
+    void reportTunnel(deps, port, link)
+    stopReporting()
+    stopReporting = link
+      ? repeatEvery(deps, TUNNEL_REPORT_INTERVAL_MS, () => { void reportTunnel(deps, port, tunnelLink) })
+      : () => {}
+  }
 
   async function bootServer() {
     deps.print(MSG.serverStarting(port))
@@ -215,7 +230,7 @@ function createSession(deps, ctx, { app, port, inspectorPort }) {
 
   const isCurrent = (proc) => !shuttingDown && (proc === null || (proc === tunnel && proc.isAlive()))
 
-  async function announce(link, { browser, remote = false, proc = null }) {
+  async function announce(link, { remote = false, proc = null }) {
     let answered = true
     if (remote) {
       deps.print(MSG.linkWaiting)
@@ -232,12 +247,12 @@ function createSession(deps, ctx, { app, port, inspectorPort }) {
     deps.print('')
     log.write(`link: ${link}`)
     if (await copyToClipboard(deps, link)) deps.print(MSG.copied)
-    if (browser) openBrowser(deps, link)
   }
 
   async function shutdown(code) {
     if (shuttingDown) return
     shuttingDown = true
+    stopReporting()
     deps.print(MSG.shuttingDown)
     await killTree(deps, tunnel)
     await killTree(deps, server)
@@ -260,6 +275,8 @@ function createSession(deps, ctx, { app, port, inspectorPort }) {
       serverRestarted = true
       deps.print(MSG.serverCrashed)
       if (await bootServer()) {
+        // servidor novo = índice novo, sem o endereço do túnel
+        if (tunnelLink) void reportTunnel(deps, port, tunnelLink)
         watchServer(server)
       } else if (!shuttingDown) {
         deps.print(MSG.serverGaveUp)
@@ -272,11 +289,12 @@ function createSession(deps, ctx, { app, port, inspectorPort }) {
     proc.exited.then(async (code) => {
       if (shuttingDown || proc !== tunnel) return
       log.write(`túnel saiu sozinho (código ${code})`)
+      setTunnelLink(null)
       await deps.sleep(EXIT_GRACE_MS)
       if (shuttingDown) return
       if (tunnelRestarted) {
         deps.print(MSG.tunnelGaveUp)
-        await announce(localUrl, { browser: false })
+        await announce(localUrl, {})
         return
       }
       tunnelRestarted = true
@@ -284,11 +302,12 @@ function createSession(deps, ctx, { app, port, inspectorPort }) {
       const link = await openTunnel()
       if (shuttingDown) return
       if (link) {
-        await announce(link, { browser: false, remote: true, proc: tunnel })
+        setTunnelLink(link)
+        await announce(link, { remote: true, proc: tunnel })
         watchTunnel(tunnel)
       } else {
         deps.print(MSG.tunnelGaveUp)
-        await announce(localUrl, { browser: false })
+        await announce(localUrl, {})
       }
     })
   }
@@ -302,9 +321,15 @@ function createSession(deps, ctx, { app, port, inspectorPort }) {
     watchServer(server)
     const link = await openTunnel()
     if (shuttingDown) return done
-    if (link) watchTunnel(tunnel)
-    else deps.print(MSG.tunnelFailed)
-    await announce(link ?? localUrl, { browser: true, remote: link !== null, proc: link ? tunnel : null })
+    if (link) {
+      setTunnelLink(link)
+      watchTunnel(tunnel)
+    } else {
+      deps.print(MSG.tunnelFailed)
+    }
+    await announce(link ?? localUrl, { remote: link !== null, proc: link ? tunnel : null })
+    // A página local tem a lista de mesas com os links (que já usam o túnel).
+    if (!shuttingDown) openBrowser(deps, `${localUrl}/`)
     deps.print(MSG.closeHint)
     return done
   }

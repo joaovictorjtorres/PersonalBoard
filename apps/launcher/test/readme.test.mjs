@@ -28,6 +28,9 @@ describe('README', () => {
       'a extração do Explorer falha em caminhos muito longos',
       'porta mostrada na janela (8787 a 8797)',
       'trocar só\no domínio',
+      'Peça o link da mesa ao mestre',
+      'Já jogou aqui?',
+      'http://localhost:<porta>/',
     ]) {
       expect(readme).toContain(text)
     }

@@ -59,8 +59,10 @@ Para o mestre hospedar a mesa no próprio PC Windows, de graça, sem instalar na
    (SmartScreen), clique em **Mais informações → Executar assim mesmo**. Se o antivírus perguntar,
    permita `app\node\node.exe`, `app\cloudflared.exe` e, durante uma atualização,
    `%TEMP%\MesaVirtual-update\node.exe`.
-4. A janela verifica se há versão nova, sobe o servidor e o túnel e mostra o link
-   `https://….trycloudflare.com`. Ele já vai copiado e o navegador abre sozinho. Mande para o grupo.
+4. A janela verifica se há versão nova, sobe o servidor e o túnel e mostra o endereço do túnel
+   `https://….trycloudflare.com` (já copiado). O navegador abre sozinho a página das suas mesas em
+   `http://localhost:<porta>/`: cada mesa tem **Abrir como mestre**, **Copiar link de mestre** e
+   **Copiar link de jogador** (os links já usam o túnel). Mande o link de jogador para o grupo.
 5. Para desligar, feche a janela ou aperte Ctrl+C. Ctrl+C pode mostrar "Deseja finalizar o arquivo
    em lotes (S/N)?": responda S (ou simplesmente feche a janela).
 
@@ -71,6 +73,11 @@ O link muda a cada vez que a mesa é aberta; o `/t/<id>` das mesas continua vale
 o domínio). Sem internet (ou se o túnel falhar), a mesa funciona só no seu PC, no endereço
 `http://localhost:<porta>` com a porta mostrada na janela (8787 a 8797). Se as portas
 8787 a 8797 estiverem todas ocupadas, feche o outro programa que as usa e abra de novo.
+
+A lista de mesas só aparece no seu PC: quem abre o endereço do túnel sem o link de uma mesa vê
+"Peça o link da mesa ao mestre". Numa sessão nova (o endereço do túnel muda), o jogador entra com o
+mesmo apelido ou clica no próprio nome em "Já jogou aqui?" e continua dono dos próprios desenhos e
+tokens. O mestre, pelo link de mestre, volta a ser o mesmo mestre.
 
 Para suporte, o `Iniciar Mesa.cmd` aceita `--no-update` (pula a verificação de atualização) e
 `--port N` (porta fixa); rode-o pelo prompt de comando, por exemplo `"Iniciar Mesa.cmd" --port 8790`.
@@ -113,6 +120,10 @@ pnpm tunnel   # terminal 2: imprime o link https://….trycloudflare.com para o 
 
 O link `https://….trycloudflare.com` muda a cada execução do `pnpm tunnel`. O `/t/<id>` das mesas
 continua valendo: basta trocar o domínio pelo novo.
+
+A lista de mesas fica em `http://localhost:8787/`. Sem o launcher, ela não sabe o endereço do túnel
+e mostra "Túnel indisponível, só local"; para os links já saírem com o túnel, informe-o:
+`curl -X POST http://localhost:8787/api/registry/tunnel -H "Content-Type: application/json" -d "{\"url\":\"https://….trycloudflare.com\"}"`.
 
 Seu computador precisa ficar ligado durante a sessão.
 
