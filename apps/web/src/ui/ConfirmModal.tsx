@@ -12,6 +12,7 @@ export function ConfirmHost() {
 function ConfirmModal({ request }: { request: ConfirmRequest }) {
   const cancelRef = useRef<HTMLButtonElement>(null)
   const confirmRef = useRef<HTMLButtonElement>(null)
+  const altRef = useRef<HTMLButtonElement>(null)
 
   useEffect(() => {
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -20,10 +21,16 @@ function ConfirmModal({ request }: { request: ConfirmRequest }) {
     const onKey = (e: KeyboardEvent) => {
       e.stopPropagation()
       if (e.key === 'Tab') {
-        // foco preso entre os dois botões
+        // foco preso entre os botões do aviso
         e.preventDefault()
-        const next = document.activeElement === confirmRef.current ? cancelRef.current : confirmRef.current
-        next?.focus()
+        const order = [cancelRef.current, altRef.current, confirmRef.current].filter((b): b is HTMLButtonElement => !!b)
+        const i = order.indexOf(document.activeElement as HTMLButtonElement)
+        order[(i + (e.shiftKey ? order.length - 1 : 1)) % order.length]?.focus()
+        return
+      }
+      if (e.key === 'Enter' && altRef.current && document.activeElement === altRef.current) {
+        e.preventDefault()
+        settleConfirm('alternative')
         return
       }
       const action = confirmKeyAction(e.key, document.activeElement === cancelRef.current)
@@ -59,6 +66,16 @@ function ConfirmModal({ request }: { request: ConfirmRequest }) {
             <button ref={cancelRef} type="button" onClick={() => settleConfirm(false)}>
               Cancelar
             </button>
+            {request.alternativeLabel && (
+              <button
+                ref={altRef}
+                type="button"
+                className={request.alternativeDanger ? 'danger-solid' : undefined}
+                onClick={() => settleConfirm('alternative')}
+              >
+                {request.alternativeLabel}
+              </button>
+            )}
             <button
               ref={confirmRef}
               type="button"

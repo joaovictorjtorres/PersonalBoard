@@ -12,6 +12,7 @@ import { MembersPanel } from './MembersPanel'
 import { NicknameModal } from './NicknameModal'
 import { Toasts } from './Toasts'
 import { Toolbar } from './Toolbar'
+import { TurnsWindow } from './turns/TurnsWindow'
 import { useKeyboard } from './useKeyboard'
 
 const debug = new URLSearchParams(window.location.search).has('debug')
@@ -91,6 +92,7 @@ function TableView() {
       <div className="panel topbar">
         <strong>{name ?? '…'}</strong>
       </div>
+      <TurnsWindow />
       <div className="right-column">
         <MembersPanel />
         <ChatPanel />

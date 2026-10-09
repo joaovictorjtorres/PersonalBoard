@@ -1,5 +1,5 @@
 import { useMemo, useRef, type MouseEvent } from 'react'
-import { Eraser, Grid3x3, Hand, ImagePlus, MousePointer2, Pencil, Ruler, Shapes, Undo2 } from 'lucide-react'
+import { Eraser, Grid3x3, Hand, ImagePlus, MousePointer2, Pencil, Ruler, Shapes, Swords, Undo2 } from 'lucide-react'
 import { useTable, useTableActions } from '../store/context'
 import { GridPopover } from './GridPopover'
 import { PenPopover } from './PenPopover'
@@ -12,6 +12,7 @@ export function Toolbar() {
   const tool = useTable((s) => s.tool)
   const penMode = useTable((s) => s.penMode)
   const isGm = useTable((s) => s.self?.role === 'gm')
+  const turnsOpen = useTable((s) => s.turns.open)
   const actions = useTableActions()
   const fileInput = useRef<HTMLInputElement>(null)
   // Menus abrem ao passar o mouse (e pelo botão direito / toque longo); um aberto por vez.
@@ -113,6 +114,16 @@ export function Toolbar() {
           </div>
         )}
         </div>
+      )}
+      {isGm && (
+        <button
+          aria-label="Turnos"
+          title="Turnos: abre ou fecha a ordem de turnos para todos"
+          aria-pressed={turnsOpen}
+          onClick={() => actions.submit({ kind: 'turnsOpen', open: !turnsOpen })}
+        >
+          <Swords size={ICON} aria-hidden />
+        </button>
       )}
       <button aria-label="Desfazer (Ctrl+Z)" title="Desfazer (Ctrl+Z)" onClick={() => actions.undo()}>
         <Undo2 size={ICON} aria-hidden />

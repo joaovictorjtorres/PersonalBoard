@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest'
-import { askConfirm, confirmKeyAction, confirmStore, plural, settleConfirm } from '../src/ui/confirm'
+import { askChoice, askConfirm, confirmKeyAction, confirmStore, plural, settleConfirm } from '../src/ui/confirm'
 
 afterEach(() => settleConfirm(false))
 
@@ -31,6 +31,32 @@ describe('askConfirm', () => {
   it('plural', () => {
     expect(plural(1, 'desenho', 'desenhos')).toBe('1 desenho')
     expect(plural(0, 'desenho', 'desenhos')).toBe('0 desenhos')
+  })
+})
+
+describe('askChoice', () => {
+  it('três respostas: confirmar, alternativa e cancelar', async () => {
+    const a = askChoice({ title: 'Encerrar', message: 'm', confirmLabel: 'Manter', alternativeLabel: 'Limpar', alternativeDanger: true })
+    expect(confirmStore.getState().request).toMatchObject({ alternativeLabel: 'Limpar', alternativeDanger: true })
+    settleConfirm('alternative')
+    await expect(a).resolves.toBe('alternative')
+    const b = askChoice({ title: 'E', message: 'm', alternativeLabel: 'L' })
+    settleConfirm(true)
+    await expect(b).resolves.toBe('confirm')
+    const c = askChoice({ title: 'E', message: 'm', alternativeLabel: 'L' })
+    settleConfirm(false)
+    await expect(c).resolves.toBe('cancel')
+  })
+
+  it('askConfirm continua booleano; um pedido novo cancela o anterior', async () => {
+    const a = askConfirm({ title: 'A', message: 'a' })
+    settleConfirm('alternative')
+    await expect(a).resolves.toBe(false)
+    const first = askChoice({ title: 'A', message: 'a', alternativeLabel: 'L' })
+    const second = askConfirm({ title: 'B', message: 'b' })
+    await expect(first).resolves.toBe('cancel')
+    settleConfirm(true)
+    await expect(second).resolves.toBe(true)
   })
 })
 
