@@ -61,6 +61,14 @@ export class RegistryDO extends DurableObject<Env> {
     return this.ctx.storage.sql.exec('UPDATE tables SET name = ? WHERE id = ? RETURNING id', name, id).toArray().length > 0
   }
 
+  setPlayerKey(id: string, key: string): boolean {
+    return this.ctx.storage.sql.exec('UPDATE tables SET player_key = ? WHERE id = ? RETURNING id', key, id).toArray().length > 0
+  }
+
+  setGmSecret(id: string, secret: string): boolean {
+    return this.ctx.storage.sql.exec('UPDATE tables SET gm_secret = ? WHERE id = ? RETURNING id', secret, id).toArray().length > 0
+  }
+
   removeTable(id: string): boolean {
     return this.ctx.storage.sql.exec('DELETE FROM tables WHERE id = ? RETURNING id', id).toArray().length > 0
   }

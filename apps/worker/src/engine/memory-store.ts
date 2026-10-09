@@ -43,6 +43,10 @@ export class MemoryStore implements TableStore {
     this.playerKeyHash = hash
   }
 
+  setGmSecretHash(hash: string): void {
+    if (this.meta) this.meta = { ...this.meta, gmSecretHash: hash }
+  }
+
   getLayers() { return [...this.layers].sort((a, b) => a.order - b.order) }
   putLayer(layer: Layer) { this.layers = [...this.layers.filter((l) => l.id !== layer.id), { ...layer }] }
   deleteLayer(id: string) { this.layers = this.layers.filter((l) => l.id !== id) }

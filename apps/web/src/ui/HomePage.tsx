@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { createTable } from '../lib/api'
 import { rememberGmSecret } from '../lib/identity'
-import { deleteConfirmOptions, deleteTable, loadRegistry, renameTable, type RegistryLoad } from '../lib/registry'
+import {
+  deleteConfirmOptions,
+  deleteTable,
+  loadRegistry,
+  renameTable,
+  rotateConfirmOptions,
+  rotateLink,
+  type RegistryLoad,
+} from '../lib/registry'
 import { askConfirm } from './confirm'
 import { HomeView, type HomeActions } from './HomeView'
 
@@ -46,6 +54,20 @@ export function HomePage() {
       setNotice(null)
       if (!(await deleteTable(table.id))) setNotice('Não foi possível apagar a mesa. Tente de novo.')
       await refresh()
+    },
+    async rotate(table, kind) {
+      if (!(await askConfirm(rotateConfirmOptions(kind)))) return
+      setNotice(null)
+      if (!(await rotateLink(table.id, kind))) {
+        setNotice('Não foi possível gerar o link novo. Tente de novo.')
+        await refresh()
+        return
+      }
+      const next = await loadRegistry()
+      setLoad(next)
+      // O mestre deste PC continua entrando como mestre: o segredo guardado no navegador passa a ser o novo.
+      const gmSecret = next.kind === 'local' ? next.view.tables.find((t) => t.id === table.id)?.gmSecret : undefined
+      if (kind === 'gm' && gmSecret) rememberGmSecret(table.id, gmSecret)
     },
     retry: () => void refresh(),
   }

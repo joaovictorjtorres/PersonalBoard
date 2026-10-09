@@ -77,7 +77,9 @@ o domínio). Sem internet (ou se o túnel falhar), a mesa funciona só no seu PC
 A lista de mesas só aparece no seu PC: quem abre o endereço do túnel sem o link de uma mesa vê
 "Peça o link da mesa ao mestre". Numa sessão nova (o endereço do túnel muda), o jogador entra com o
 mesmo apelido ou clica no próprio nome em "Já jogou aqui?" e continua dono dos próprios desenhos e
-tokens. O mestre, pelo link de mestre, volta a ser o mesmo mestre.
+tokens. O mestre, pelo link de mestre, volta a ser o mesmo mestre. Cada mesa tem também
+**Gerar novo link de jogador** e **Gerar novo link de mestre**: o link antigo para de funcionar
+("Este link expirou. Peça o link novo ao mestre") e quem já está na mesa continua conectado.
 
 Para suporte, o `Iniciar Mesa.cmd` aceita `--no-update` (pula a verificação de atualização) e
 `--port N` (porta fixa); rode-o pelo prompt de comando, por exemplo `"Iniciar Mesa.cmd" --port 8790`.

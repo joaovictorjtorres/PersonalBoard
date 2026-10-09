@@ -50,6 +50,10 @@ export class SqlStore implements TableStore {
     this.sql.exec('INSERT OR REPLACE INTO player_key (id, hash) VALUES (1, ?)', hash)
   }
 
+  setGmSecretHash(hash: string): void {
+    this.sql.exec('UPDATE meta SET gm_secret_hash = ?', hash)
+  }
+
   getLayers(): Layer[] {
     return this.sql
       .exec<{ data: string }>('SELECT data FROM layers')

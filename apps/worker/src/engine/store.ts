@@ -28,6 +28,7 @@ export interface TableStore {
   /** Hash da chave do link de jogador; null = mesa sem chave (antiga): entrada livre. */
   getPlayerKeyHash(): string | null
   setPlayerKeyHash(hash: string): void
+  setGmSecretHash(hash: string): void
   getLayers(): Layer[]
   putLayer(layer: Layer): void
   deleteLayer(id: string): void

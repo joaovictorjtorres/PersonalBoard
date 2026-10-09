@@ -1,4 +1,5 @@
 import { TABLE_ID_RE, TableNameSchema, TunnelReportSchema, type RegistryView } from '@mesa/shared'
+import { randomSecret, sha256Hex } from './crypto'
 import { registryStub } from './registry-do'
 
 export const json = (body: unknown, status = 200) =>
@@ -34,6 +35,10 @@ export async function handleRegistry(request: Request, env: Env, rest: string[])
     if (request.method === 'PATCH') return renameTable(env, id, await readJson(request))
     if (request.method === 'DELETE') return deleteTable(env, id)
   }
+  if (rest.length === 3 && rest[0] === 'tables' && TABLE_ID_RE.test(rest[1]) && request.method === 'POST') {
+    if (rest[2] === 'player-link') return rotateLink(env, rest[1], 'player')
+    if (rest[2] === 'gm-link') return rotateLink(env, rest[1], 'gm')
+  }
   return notFound()
 }
 
@@ -65,4 +70,22 @@ async function pruneFiles(env: Env, keys: string[]): Promise<void> {
   }
   const orphans = keys.filter((k) => !used.has(k))
   if (orphans.length > 0) await env.FILES.delete(orphans)
+}
+
+/** Link novo (chave de jogador ou segredo de mestre): o antigo para de funcionar; conectados continuam. */
+async function rotateLink(env: Env, id: string, kind: 'player' | 'gm'): Promise<Response> {
+  const registry = registryStub(env)
+  if (!(await registry.findTable(id))) return notFound()
+  const secret = randomSecret()
+  const hash = await sha256Hex(secret)
+  const table = tableStub(env, id)
+  // TableDO primeiro: se falhar no meio, o índice ainda mostra o link que funciona.
+  if (kind === 'player') {
+    if (!(await table.setPlayerKeyHash(hash))) return notFound()
+    await registry.setPlayerKey(id, secret)
+  } else {
+    if (!(await table.setGmSecretHash(hash))) return notFound()
+    await registry.setGmSecret(id, secret)
+  }
+  return noContent()
 }

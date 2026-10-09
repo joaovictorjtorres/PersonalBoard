@@ -84,3 +84,24 @@ export async function copyText(text: string): Promise<boolean> {
     return false
   }
 }
+
+export type LinkKind = 'player' | 'gm'
+
+/** Link novo de jogador ou de mestre: o antigo para de funcionar; quem está na mesa continua. */
+export async function rotateLink(id: string, kind: LinkKind): Promise<boolean> {
+  try {
+    const path = kind === 'player' ? 'player-link' : 'gm-link'
+    return (await fetch(`/api/registry/tables/${id}/${path}`, { method: 'POST', headers: JSON_HEADERS })).ok
+  } catch {
+    return false
+  }
+}
+
+export function rotateConfirmOptions(kind: LinkKind): ConfirmOptions {
+  const who = kind === 'player' ? 'jogador' : 'mestre'
+  return {
+    title: `Gerar novo link de ${who}`,
+    message: `O link de ${who} atual vai parar de funcionar. Quem já está na mesa continua conectado.`,
+    confirmLabel: 'Gerar novo link',
+  }
+}

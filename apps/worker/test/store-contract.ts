@@ -67,4 +67,6 @@ export function checkStoreContract(store: TableStore): void {
   store.setPlayerKeyHash('k1')
   store.setPlayerKeyHash('k2')
   expect(store.getPlayerKeyHash()).toBe('k2')
+  store.setGmSecretHash('novo')
+  expect(store.getMeta()?.gmSecretHash).toBe('novo')
 }

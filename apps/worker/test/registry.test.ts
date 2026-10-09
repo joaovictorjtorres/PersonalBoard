@@ -218,3 +218,52 @@ describe('atividade no índice', () => {
     expect((await registryView()).tables.some((t) => t.id === id)).toBe(false)
   })
 })
+
+const rotate = (id: string, kind: 'player-link' | 'gm-link', headers: Record<string, string> = {}) =>
+  SELF.fetch(`${LOCAL}/api/registry/tables/${id}/${kind}`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...headers } })
+
+describe('gerar novos links', () => {
+  it('link de jogador novo: quem está conectado continua; a chave antiga expira (inclusive com segredo guardado); a nova entra', async () => {
+    const { tableId, playerKey: oldKey } = await createTable('Links')
+    const p = await TestClient.connect(tableId)
+    const { clientId, welcome } = await p.hello('Ana')
+    expect((await rotate(tableId, 'player-link')).status).toBe(204)
+    const newKey = (await registryView()).tables.find((t) => t.id === tableId)!.playerKey!
+    expect(newKey).not.toBe(oldKey)
+
+    p.send({ t: 'op', opId: 'still', op: { kind: 'create', object: tokenObject() } })
+    expect(await p.waitFor('ack')).toMatchObject({ opId: 'still' })
+
+    const stale = await TestClient.connect(tableId)
+    stale.send({ t: 'hello', v: 2, clientId: crypto.randomUUID(), nickname: 'Bia', playerKey: oldKey })
+    expect(await stale.waitFor('error')).toEqual({ t: 'error', reason: 'link_expired' })
+    const back = await TestClient.connect(tableId)
+    back.send({ t: 'hello', v: 2, clientId, nickname: 'Ana', clientSecret: welcome.clientSecret, playerKey: oldKey })
+    expect(await back.waitFor('error')).toEqual({ t: 'error', reason: 'link_expired' })
+    const fresh = await TestClient.connect(tableId)
+    expect((await fresh.hello('Bia', { playerKey: newKey })).welcome.self.role).toBe('player')
+  })
+
+  it('link de mestre novo: o segredo antigo deixa de dar mestre; o novo dá e volta a ser o mesmo membro', async () => {
+    const { tableId, gmSecret: oldSecret } = await createTable('Mestre novo')
+    const gm = await TestClient.connect(tableId)
+    const { welcome: w1 } = await gm.hello('Mestre', { gmSecret: oldSecret })
+    expect((await rotate(tableId, 'gm-link')).status).toBe(204)
+    const newSecret = (await registryView()).tables.find((t) => t.id === tableId)!.gmSecret
+    expect(newSecret).not.toBe(oldSecret)
+
+    const stale = await TestClient.connect(tableId)
+    stale.send({ t: 'hello', v: 2, clientId: crypto.randomUUID(), nickname: 'X', gmSecret: oldSecret })
+    expect(await stale.waitFor('error')).toEqual({ t: 'error', reason: 'link_expired' })
+    const again = await TestClient.connect(tableId)
+    const { welcome } = await again.hello('Mestre', { gmSecret: newSecret, playerKey: null })
+    expect(welcome.self).toMatchObject({ role: 'gm', clientId: w1.self.clientId })
+  })
+
+  it('gerar link: mesa fora do índice → 404; pelo túnel → 404; sem corpo JSON → 415', async () => {
+    expect((await rotate('ZZZZZZZZZZ', 'player-link')).status).toBe(404)
+    const { tableId } = await createTable()
+    expect((await rotate(tableId, 'gm-link', { 'cf-ray': 'x' })).status).toBe(404)
+    expect((await SELF.fetch(`${LOCAL}/api/registry/tables/${tableId}/player-link`, { method: 'POST' })).status).toBe(415)
+  })
+})

@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { RegistryTable } from '@mesa/shared'
-import { deleteConfirmOptions, formatWhen, playersLabel, tableLinks, type RegistryLoad } from '../src/lib/registry'
+import { deleteConfirmOptions, formatWhen, playersLabel, rotateConfirmOptions, tableLinks, type RegistryLoad } from '../src/lib/registry'
 import { HomeView, type HomeActions } from '../src/ui/HomeView'
 
 const table: RegistryTable = {
   id: 'AbCdEfGhIj', name: 'Campanha <b>', createdAt: Date.UTC(2026, 9, 1, 12), lastActivityAt: Date.UTC(2026, 9, 8, 12),
   players: 2, gmSecret: 'segredo', playerKey: null,
 }
-const actions: HomeActions = { create: async () => true, rename: async () => true, remove: async () => {}, retry: () => {} }
+const actions: HomeActions = { create: async () => true, rename: async () => true, remove: async () => {}, rotate: async () => {}, retry: () => {} }
 const render = (load: RegistryLoad | null) =>
   renderToStaticMarkup(<HomeView load={load} origin="http://localhost:8787" actions={actions} notice={null} />).replace(/<!-- -->/g, '')
 
@@ -19,7 +19,7 @@ describe('HomeView', () => {
     expect(html).toContain('Campanha &lt;b&gt;')
     expect(html).not.toContain('Campanha <b>')
     expect(html).toContain('2 jogadores')
-    for (const label of ['Abrir como mestre', 'Copiar link de mestre', 'Copiar link de jogador', 'Renomear', 'Apagar', 'Criar mesa', 'Nome da mesa']) {
+    for (const label of ['Abrir como mestre', 'Copiar link de mestre', 'Copiar link de jogador', 'Gerar novo link de jogador', 'Gerar novo link de mestre', 'Renomear', 'Apagar', 'Criar mesa', 'Nome da mesa']) {
       expect(html, label).toContain(label)
     }
     expect(html).toContain('href="/t/AbCdEfGhIj#gm=segredo"')
@@ -47,6 +47,19 @@ describe('HomeView', () => {
 })
 
 describe('helpers da página inicial', () => {
+  it('textos dos avisos de gerar novo link', () => {
+    expect(rotateConfirmOptions('player')).toEqual({
+      title: 'Gerar novo link de jogador',
+      message: 'O link de jogador atual vai parar de funcionar. Quem já está na mesa continua conectado.',
+      confirmLabel: 'Gerar novo link',
+    })
+    expect(rotateConfirmOptions('gm')).toEqual({
+      title: 'Gerar novo link de mestre',
+      message: 'O link de mestre atual vai parar de funcionar. Quem já está na mesa continua conectado.',
+      confirmLabel: 'Gerar novo link',
+    })
+  })
+
   it('tableLinks: com túnel usa o túnel; sem túnel usa a origem local; "Abrir como mestre" é relativo; chave de jogador vai no #j=', () => {
     expect(tableLinks('http://localhost:8787', 'https://t.trycloudflare.com', table)).toEqual({
       player: 'https://t.trycloudflare.com/t/AbCdEfGhIj',

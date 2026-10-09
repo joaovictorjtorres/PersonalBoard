@@ -108,6 +108,20 @@ export class TableDO extends DurableObject<Env> {
     return true
   }
 
+  /** RPC do índice: chave nova do link de jogador; quem está conectado continua. */
+  setPlayerKeyHash(hash: string): boolean {
+    if (!this.store.getMeta()) return false
+    this.store.setPlayerKeyHash(hash)
+    return true
+  }
+
+  /** RPC do índice: segredo novo do link de mestre; quem está conectado continua. */
+  setGmSecretHash(hash: string): boolean {
+    if (!this.store.getMeta()) return false
+    this.store.setGmSecretHash(hash)
+    return true
+  }
+
   /** Chaves dos arquivos que a mesa usa: imagens no mapa e no chat da mesa. */
   listAssetKeys(): string[] {
     const keys = new Set<string>()

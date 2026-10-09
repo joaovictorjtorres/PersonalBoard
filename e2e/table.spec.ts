@@ -1547,3 +1547,54 @@ test('link de jogador sem a chave: "Este link expirou. Peça o link novo ao mest
   await expect(stray.getByText('Este link expirou. Peça o link novo ao mestre')).toBeVisible()
   await expect(stray.getByLabel('Seu apelido')).toHaveCount(0)
 })
+
+// ---------------------------------------------------------------- gerar novos links
+
+async function rotateFromCard(page: Page, name: string, label: 'Gerar novo link de jogador' | 'Gerar novo link de mestre') {
+  await page.goto('/')
+  await tableCard(page, name).getByRole('button', { name: label }).click()
+  await expect(confirmDialog(page)).toContainText('Quem já está na mesa continua conectado.')
+  await confirmDialog(page).getByRole('button', { name: 'Gerar novo link' }).click()
+  await expect(confirmDialog(page)).toHaveCount(0)
+}
+
+const registryEntry = async (page: Page, id: string) =>
+  ((await (await page.request.get('/api/registry/tables')).json()).tables as any[]).find((t) => t.id === id)
+
+test('novo link de jogador: o antigo expira com a mensagem, o novo funciona, quem está conectado continua', async ({ browser, page }) => {
+  const name = `Link jogador ${Date.now()}`
+  const t = await (await page.request.post('/api/tables', { data: { name } })).json()
+  const player = await open(browser, playerPath(t), 'Ana')
+  await rotateFromCard(page, name, 'Gerar novo link de jogador')
+  await expect.poll(async () => (await registryEntry(page, t.tableId)).playerKey).not.toBe(t.playerKey)
+  const fresh = await registryEntry(page, t.tableId)
+
+  const stale = await (await browser.newContext()).newPage()
+  await stale.goto(playerPath(t))
+  await expect(stale.getByText('Este link expirou. Peça o link novo ao mestre')).toBeVisible()
+  await open(browser, playerPath({ tableId: t.tableId, playerKey: fresh.playerKey }), 'Bia')
+  expect(await player.evaluate(() => (window as any).__mesa.getState().status)).toBe('open')
+})
+
+test('novo link de mestre: o antigo expira, "Abrir como mestre" usa o novo e entra como mestre', async ({ browser, page }) => {
+  const name = `Link mestre ${Date.now()}`
+  const t = await (await page.request.post('/api/tables', { data: { name } })).json()
+  const gm = await open(browser, `/t/${t.tableId}?debug=1#gm=${t.gmSecret}`, 'Mestre')
+  await rotateFromCard(page, name, 'Gerar novo link de mestre')
+  await expect.poll(async () => (await registryEntry(page, t.tableId)).gmSecret).not.toBe(t.gmSecret)
+  const { gmSecret } = await registryEntry(page, t.tableId)
+  // o segredo guardado neste navegador (o do mestre no PC) passa a ser o novo
+  expect(await page.evaluate((id) => localStorage.getItem(`mesa:gm:${id}`), t.tableId)).toBe(gmSecret)
+  await page.reload()
+  await expect(tableCard(page, name).getByRole('link', { name: 'Abrir como mestre' })).toHaveAttribute('href', `/t/${t.tableId}#gm=${gmSecret}`)
+
+  const stale = await (await browser.newContext()).newPage()
+  await stale.goto(`/t/${t.tableId}?debug=1#gm=${t.gmSecret}`)
+  await stale.getByLabel('Seu apelido').fill('Mestre')
+  await stale.getByRole('button', { name: 'Entrar' }).click()
+  await expect(stale.getByText('Este link expirou. Peça o link novo ao mestre')).toBeVisible()
+
+  const again = await open(browser, `/t/${t.tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  expect(await again.evaluate(() => (window as any).__mesa.getState().self.role)).toBe('gm')
+  expect(await gm.evaluate(() => (window as any).__mesa.getState().status)).toBe('open')
+})

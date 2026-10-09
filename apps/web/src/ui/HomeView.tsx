@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { TABLE_NAME_MAX, type RegistryTable } from '@mesa/shared'
-import { copyText, formatWhen, playersLabel, tableLinks, type RegistryLoad, type TableLinks } from '../lib/registry'
+import { copyText, formatWhen, playersLabel, tableLinks, type LinkKind, type RegistryLoad, type TableLinks } from '../lib/registry'
 
 export interface HomeActions {
   create(name: string): Promise<boolean>
   rename(id: string, name: string): Promise<boolean>
   remove(table: RegistryTable): Promise<void>
+  rotate(table: RegistryTable, kind: LinkKind): Promise<void>
   retry(): void
 }
 
@@ -154,6 +155,8 @@ export function TableCard({ table, links, actions }: { table: RegistryTable; lin
           <CopyButton text={links.player} label="Copiar link de jogador" />
         </div>
         <div className="table-actions-group">
+          <button type="button" onClick={() => void actions.rotate(table, 'player')}>Gerar novo link de jogador</button>
+          <button type="button" onClick={() => void actions.rotate(table, 'gm')}>Gerar novo link de mestre</button>
           <button
             type="button"
             onClick={() => {
