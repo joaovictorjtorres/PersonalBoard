@@ -57,7 +57,7 @@ describe('swapApp', () => {
 
   it('falha no segundo rename → restaura app e avisa "arquivo em uso"', () => {
     const p = appPaths(root)
-    const flaky = flakyFs(2, 5) // app→app.old ok; app.new→app falha 5x; restauração ok
+    const flaky = flakyFs(2, 10) // app→app.old ok; app.new→app falha 10x; restauração ok
     expect(() => swapApp(flaky, root, noSleep)).toThrow('arquivo em uso ao trocar a pasta app')
     expect(versionOf(p.app)).toBe('0.4.0')
     expect(fs.existsSync(p.appOld)).toBe(false)
@@ -88,6 +88,31 @@ describe('renameWithRetry', () => {
     renameWithRetry(flakyFs(1, 2), from, path.join(base, 'b'), { attempts: 5, delayMs: 500, sleepSync: (ms) => waits.push(ms) })
     expect(fs.existsSync(path.join(base, 'b'))).toBe(true)
     expect(waits).toEqual([500, 500])
+  })
+})
+
+describe('renameWithRetry: orçamento padrão', () => {
+  it('10 tentativas com 1000 ms entre elas', () => {
+    const waits = []
+    const from = path.join(base, 'a')
+    fs.mkdirSync(from)
+    renameWithRetry(flakyFs(1, 9), from, path.join(base, 'b'), { sleepSync: (ms) => waits.push(ms) })
+    expect(waits).toEqual(Array(9).fill(1000))
+    expect(fs.existsSync(path.join(base, 'b'))).toBe(true)
+  })
+
+  it('desiste na 10ª falha (9 esperas) e lança', () => {
+    const waits = []
+    const from = path.join(base, 'a')
+    fs.mkdirSync(from)
+    expect(() => renameWithRetry(flakyFs(1), from, path.join(base, 'b'), { sleepSync: (ms) => waits.push(ms) })).toThrow('EBUSY')
+    expect(waits).toHaveLength(9)
+  })
+
+  it('swapApp usa o mesmo orçamento', () => {
+    const waits = []
+    swapApp(flakyFs(1, 9), root, { sleepSync: (ms) => waits.push(ms) })
+    expect(waits).toEqual(Array(9).fill(1000))
   })
 })
 

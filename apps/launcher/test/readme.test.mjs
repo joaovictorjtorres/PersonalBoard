@@ -19,6 +19,14 @@ describe('README', () => {
       'backups\\AAAA-MM-DD_HHMMSS',
       '## Publicar uma versão (pacote Windows)',
       'pnpm release 0.4.0',
+      'não grava versão, commit nem tag (só um git fetch)',
+      'o commit local é mantido (os arquivos não\nsão restaurados)',
+      'app\\node\\node.exe',
+      'app\\cloudflared.exe',
+      '%TEMP%\\MesaVirtual-update\\node.exe',
+      'a extração do Explorer falha em caminhos muito longos',
+      'porta mostrada na janela (8787–8797)',
+      'trocar só\no domínio',
     ]) {
       expect(readme).toContain(text)
     }

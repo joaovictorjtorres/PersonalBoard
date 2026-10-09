@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
+import net from 'node:net'
 import os from 'node:os'
 import readline from 'node:readline/promises'
 import { isPortFree } from './ports.mjs'
@@ -25,6 +26,7 @@ async function ask(question) {
 export function createRealDeps(launcherDir) {
   return {
     fs,
+    net,
     spawn,
     fetch: (input, init) => globalThis.fetch(input, init),
     now: () => Date.now(),

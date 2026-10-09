@@ -12,6 +12,8 @@ export const MSG = {
   updateReady: (version) => `✓ Versão ${version} baixada. Reiniciando para instalar…`,
   updateApplied: '✓ Atualização instalada.',
   updateFailed: (reason) => `✗ Não foi possível atualizar: ${reason}. Continuando na versão atual.`,
+  updateNotInstalled: 'a atualização preparada não foi instalada',
+  alreadyOpen: '✗ A Mesa Virtual já está aberta em outra janela.',
   backupDone: (name) => `✓ Backup das mesas: backups\\${name}`,
   backupFailed: (reason) => `✗ Não foi possível fazer o backup das mesas (${reason}). Seguindo assim mesmo.`,
   dataDirFailed: (reason) => `✗ Não foi possível preparar a pasta de dados (${reason}). Seguindo assim mesmo.`,

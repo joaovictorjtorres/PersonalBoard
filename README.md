@@ -28,18 +28,22 @@ pnpm e2e          # ponta a ponta: sobe um wrangler dev próprio em :8788 (E2E_P
 ## Publicar uma versão (pacote Windows)
 
 ```bash
-pnpm release 0.4.0 --dry-run   # confere git (limpo, na main, em dia), typecheck e testes; não grava nada
+pnpm release 0.4.0 --dry-run   # confere git (limpo, na main, em dia), typecheck e testes; não grava versão, commit nem tag (só um git fetch)
 pnpm release 0.4.0             # grava a versão, commita "release: v0.4.0", cria a tag e envia
 ```
 
 A tag dispara o GitHub Actions (`.github/workflows/release.yml`, em Windows): testes, build,
 montagem do `MesaVirtual-v0.4.0-win64.zip` (Node 24 portátil, `cloudflared` e servidor com as
 dependências de Windows), teste de fumaça no zip e criação da Release com notas automáticas.
-Acompanhe em https://github.com/joaovictorjtorres/PersonalBoard/actions.
+Acompanhe em https://github.com/joaovictorjtorres/PersonalBoard/actions. O mesmo fluxo (testes,
+build, pacote e fumaça, sem criar Release) roda em todo push na `main` e pelo botão "Run workflow",
+para ensaiar antes de taguear.
 
-Se o `pnpm release` falhar antes do envio, ele restaura `package.json` e `version.txt` a partir
-do HEAD e nada é publicado. Se falhar no envio, o commit e a tag ficam só no seu computador e a
-mensagem traz o comando para reenviar (`git push --atomic origin main v0.4.0`) ou desfazer. Ele
+Se o `pnpm release` falhar antes do commit, ele restaura `package.json` e `version.txt` a partir
+do HEAD e nada é publicado. Se falhar na criação da tag, o commit local é mantido (os arquivos não
+são restaurados) e a mensagem imprime como recuperar. Se falhar no envio, o commit e a tag ficam só
+no seu computador e a mensagem traz o comando para reenviar (`git push --atomic origin main v0.4.0`)
+ou desfazer. Ele
 não tenta de novo sozinho: leia o erro antes de repetir.
 
 ## Rodar no Windows (pacote)
@@ -49,10 +53,12 @@ Para o mestre hospedar a mesa no próprio PC Windows, de graça, sem instalar na
 1. Baixe o `MesaVirtual-vX.Y.Z-win64.zip` mais recente em
    https://github.com/joaovictorjtorres/PersonalBoard/releases/latest.
 2. Extraia para um caminho curto, por exemplo `C:\MesaVirtual`. Caminhos longos (acima de
-   260 caracteres) quebram o servidor. Não rode de dentro do zip.
+   260 caracteres) quebram o servidor, e a extração do Explorer falha em caminhos muito longos:
+   extraia direto em `C:\MesaVirtual`. Não rode de dentro do zip.
 3. Dê dois cliques em **Iniciar Mesa**. Se o Windows mostrar "O Windows protegeu o computador"
    (SmartScreen), clique em **Mais informações → Executar assim mesmo**. Se o antivírus perguntar,
-   permita o `node.exe` e o `cloudflared.exe` da pasta `app`.
+   permita `app\node\node.exe`, `app\cloudflared.exe` e, durante uma atualização,
+   `%TEMP%\MesaVirtual-update\node.exe`.
 4. A janela verifica se há versão nova, sobe o servidor e o túnel e mostra o link
    `https://….trycloudflare.com`. Ele já vai copiado e o navegador abre sozinho. Mande para o grupo.
 5. Para desligar, feche a janela ou aperte Ctrl+C. Ctrl+C pode mostrar "Deseja finalizar o arquivo
@@ -61,8 +67,9 @@ Para o mestre hospedar a mesa no próprio PC Windows, de graça, sem instalar na
 Se o servidor não subir (a janela mostra o erro e as últimas linhas do log), instale o
 "Microsoft Visual C++ Redistributable (x64)" da Microsoft e abra a mesa de novo.
 
-O link muda a cada vez que a mesa é aberta; o `/t/<id>` das mesas continua valendo. Sem internet
-(ou se o túnel falhar), a mesa funciona só no seu PC em `http://localhost:8787`. Se as portas
+O link muda a cada vez que a mesa é aberta; o `/t/<id>` das mesas continua valendo (basta trocar só
+o domínio). Sem internet (ou se o túnel falhar), a mesa funciona só no seu PC, no endereço
+`http://localhost:<porta>` com a porta mostrada na janela (8787–8797). Se as portas
 8787–8797 estiverem todas ocupadas, feche o outro programa que as usa e abra de novo.
 
 Para suporte, o `Iniciar Mesa.cmd` aceita `--no-update` (pula a verificação de atualização) e

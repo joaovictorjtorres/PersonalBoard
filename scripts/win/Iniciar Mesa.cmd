@@ -1,8 +1,8 @@
 @echo off
-setlocal
+setlocal EnableExtensions DisableDelayedExpansion
 title Mesa Virtual
 chcp 65001 >nul
-cd /d "%~dp0"
+pushd "%~dp0"
 
 :run
 if not exist "app\node\node.exe" if exist "app.old\node\node.exe" ren "app.old" "app"
@@ -11,6 +11,7 @@ set "CODE=%ERRORLEVEL%"
 
 if "%CODE%"=="75" (
   "%TEMP%\MesaVirtual-update\node.exe" "%TEMP%\MesaVirtual-update\launcher\launcher.mjs" --root "%~dp0." --apply-update
+  if errorlevel 1 echo [Mesa Virtual] A atualizacao nao pode ser aplicada; continuando na versao atual.
   goto run
 )
 
@@ -24,4 +25,5 @@ if not "%CODE%"=="0" (
   echo Registro: "%LOCALAPPDATA%\MesaVirtual\logs\launcher.log"
   pause
 )
+popd
 endlocal & exit /b %CODE%

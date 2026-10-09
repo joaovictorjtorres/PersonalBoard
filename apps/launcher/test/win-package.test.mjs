@@ -97,6 +97,22 @@ describe('Iniciar Mesa.cmd (contrato congelado com o launcher)', () => {
     expect(cmd.indexOf('"-1073741510"')).toBeLessThan(cmd.indexOf('pause'))
   })
 
+  it('setlocal sem expansão atrasada; pushd/popd em vez de cd; aviso se a troca falhar', () => {
+    const lines = cmd.split(/\r?\n/)
+    expect(lines).toContain('setlocal EnableExtensions DisableDelayedExpansion')
+    expect(cmd).not.toContain('cd /d')
+    expect(lines).toContain('pushd "%~dp0"')
+    const popd = lines.findIndex((l) => l.trim() === 'popd')
+    const exit = lines.findIndex((l) => l.startsWith('endlocal & exit /b %CODE%'))
+    expect(popd).toBeGreaterThan(0)
+    expect(popd).toBeLessThan(exit)
+    const apply = lines.findIndex((l) => l.includes('--apply-update'))
+    expect(lines[apply + 1].trim()).toBe(
+      'if errorlevel 1 echo [Mesa Virtual] A atualizacao nao pode ser aplicada; continuando na versao atual.',
+    )
+    expect(lines.indexOf('pushd "%~dp0"')).toBeLessThan(lines.findIndex((l) => l.startsWith('"app\\node\\node.exe"')))
+  })
+
   it('--apply-update roda do node preparado em %TEMP% (fora de app\\)', () => {
     const line = cmd.split(/\r?\n/).find((l) => l.includes('--apply-update'))
     expect(line.trim().startsWith(`"%TEMP%\\${STAGING_DIR_NAME}\\node.exe"`)).toBe(true)

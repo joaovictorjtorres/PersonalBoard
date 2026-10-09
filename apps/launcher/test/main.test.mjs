@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import net from 'node:net'
 import path from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { run } from '../src/main.mjs'
@@ -418,5 +419,102 @@ describe('run: endurecimento (T5)', () => {
     writeFakeApp(path.join(root, 'app.new'), '0.5.0')
     expect(await run(h.deps, { root, applyUpdate: true })).toBe(0)
     expect(h.chdirs).toEqual([root])
+  })
+})
+
+describe('run: ajustes da revisão final', () => {
+  it('app.new sem update-failed.txt: avisa, apaga e NÃO consulta o GitHub', async () => {
+    const { h, root } = setup({ release: releaseFixture('0.5.0') })
+    writeFakeApp(path.join(root, 'app.new'), '0.5.0')
+    const result = (await startServing(h, root, {})).result
+    expect(h.output).toContain(MSG.updateFailed('a atualização preparada não foi instalada'))
+    expect(h.fetches.some((f) => f.url.startsWith('https://api.github.com/'))).toBe(false)
+    expect(fs.existsSync(path.join(root, 'app.new'))).toBe(false)
+    h.signal()
+    await result
+  })
+
+  it('app.new COM update-failed.txt: só a mensagem do recado', async () => {
+    const { h, root, dataDir } = setup({ release: releaseFixture('0.5.0') })
+    writeFakeApp(path.join(root, 'app.new'), '0.5.0')
+    fs.mkdirSync(dataDir, { recursive: true })
+    fs.writeFileSync(path.join(dataDir, 'update-failed.txt'), 'EBUSY')
+    const result = (await startServing(h, root, {})).result
+    expect(h.output.filter((l) => l.includes('Não foi possível atualizar'))).toEqual([MSG.updateFailed('EBUSY')])
+    h.signal()
+    await result
+  })
+
+  it('link velho: túnel morre durante a espera → só o link do túnel novo é mostrado e copiado', async () => {
+    const { h, root } = setup()
+    const baseFetch = h.deps.fetch
+    let calls = 0
+    h.deps.fetch = async (url, init) => {
+      if (String(url).includes('mesa-1.trycloudflare.com')) {
+        if (++calls === 3) h.children.tunnel[0].exit(1)
+        throw new TypeError('fetch failed')
+      }
+      if (String(url).includes('mesa-2.trycloudflare.com')) return new Response('ok', { status: 200 })
+      return baseFetch(url, init)
+    }
+    const result = (await startServing(h, root)).result
+    await until(() => h.clipboard.length > 0, 'link novo copiado')
+    expect(h.clipboard).toEqual(['https://mesa-2.trycloudflare.com'])
+    expect(h.text()).not.toContain('mesa-1.trycloudflare.com')
+    expect(h.browser).toHaveLength(0)
+    h.signal()
+    await result
+  })
+
+  it('poda os logs do wrangler: ficam só os 10 mais novos', async () => {
+    const { h, root, dataDir } = setup()
+    const dir = path.join(dataDir, 'logs', 'wrangler')
+    fs.mkdirSync(dir, { recursive: true })
+    for (let i = 0; i < 14; i++) {
+      const f = path.join(dir, `wrangler-${String(i).padStart(2, '0')}.log`)
+      fs.writeFileSync(f, 'x')
+      fs.utimesSync(f, new Date(T0 + i * 1000), new Date(T0 + i * 1000))
+    }
+    const result = (await startServing(h, root)).result
+    expect(fs.readdirSync(dir).sort()).toEqual(
+      Array.from({ length: 10 }, (_, i) => `wrangler-${String(i + 4).padStart(2, '0')}.log`),
+    )
+    h.signal()
+    await result
+  })
+
+  it('instância única: segunda janela recebe EADDRINUSE → mensagem e código 1', async () => {
+    const { h, root } = setup()
+    const sock = path.join(base, 'mesa.sock')
+    h.deps.net = net
+    h.deps.pipePath = sock
+    const first = (await startServing(h, root)).result
+    const second = createHarness({ base, dataDir: path.join(base, 'Dados do João') })
+    second.deps.net = net
+    second.deps.pipePath = sock
+    expect(await run(second.deps, { root, noUpdate: true })).toBe(1)
+    expect(second.output).toEqual([MSG.alreadyOpen])
+    expect(second.spawns).toHaveLength(0)
+    h.signal()
+    await first
+    // liberou o pipe: dá para abrir de novo
+    const third = createHarness({ base, dataDir: path.join(base, 'Dados do João') })
+    third.deps.net = net
+    third.deps.pipePath = sock
+    const again = (await startServing(third, root)).result
+    third.signal()
+    expect(await again).toBe(0)
+  })
+
+  it('--smoke e --apply-update não pegam o pipe; fora do Windows sem pipePath é no-op', async () => {
+    const { h, root } = setup({ platform: 'linux' })
+    h.deps.net = { createServer: () => { throw new Error('não devia criar servidor') } }
+    const result = (await startServing(h, root)).result
+    h.signal()
+    expect(await result).toBe(0)
+    const s = createHarness({ base, dataDir: path.join(base, 'Dados do João') })
+    s.deps.net = h.deps.net
+    s.deps.pipePath = path.join(base, 'x.sock')
+    expect(await run(s.deps, { root, smoke: true })).toBe(0)
   })
 })

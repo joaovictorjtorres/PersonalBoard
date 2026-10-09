@@ -1,6 +1,7 @@
 import { isNewer, normalizeVersion } from './semver.mjs'
 
 export const REPO = 'joaovictorjtorres/PersonalBoard'
+export const DOWNLOAD_PREFIX = `https://github.com/${REPO}/releases/download/`
 export const LATEST_URL = `https://api.github.com/repos/${REPO}/releases/latest`
 
 /** @param {string} version "X.Y.Z" */
@@ -23,7 +24,14 @@ export function pickUpdate(release, currentVersion) {
   const name = assetName(version)
   const asset = assets.find((a) => a && a.name === name)
   if (!asset) return null
-  if (typeof asset.browser_download_url !== 'string') return null
+  if (typeof asset.browser_download_url !== 'string' || !asset.browser_download_url.startsWith(DOWNLOAD_PREFIX)) return null
   if (!Number.isInteger(asset.size) || asset.size <= 0) return null
-  return { version, url: asset.browser_download_url, size: asset.size, name }
+  /** @type {string | undefined} */
+  let sha256
+  if (typeof asset.digest === 'string' && asset.digest.toLowerCase().startsWith('sha256:')) {
+    const hex = asset.digest.slice(7)
+    if (!/^[0-9a-fA-F]{64}$/.test(hex)) return null
+    sha256 = hex.toLowerCase()
+  }
+  return { version, url: asset.browser_download_url, size: asset.size, name, ...(sha256 ? { sha256 } : {}) }
 }

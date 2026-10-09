@@ -1,8 +1,10 @@
 import path from 'node:path'
 import { backupDue, backupNow } from './backup.mjs'
 import { dataPaths, readConfig } from './config.mjs'
+import { acquireInstanceLock } from './instance.mjs'
 import { createLogger, createTail } from './log.mjs'
 import { MSG } from './messages.mjs'
+import { pruneOldFiles } from './prune.mjs'
 import { INSPECTOR_FIRST, INSPECTOR_LAST, pickPort } from './ports.mjs'
 import {
   copyToClipboard, killTree, launch, openBrowser, serverCommand, serverEnv, tunnelCommand, waitForServer,
@@ -15,6 +17,8 @@ import { applyUpdate, checkForUpdate, consumeUpdateFailure } from './update.mjs'
 /**
  * @typedef {object} Deps
  * @property {typeof import('node:fs')} fs
+ * @property {typeof import('node:net')} [net]
+ * @property {string} [pipePath]
  * @property {typeof import('node:child_process').spawn} spawn
  * @property {typeof fetch} fetch
  * @property {() => number} now
@@ -52,6 +56,21 @@ export const LINK_WAIT_MS = 30_000
 
 /** @param {Deps} deps @param {LauncherOptions} opts @returns {Promise<number>} */
 export async function run(deps, opts) {
+  if (opts.applyUpdate || opts.smoke) return runMain(deps, opts)
+  const lock = await acquireInstanceLock(deps)
+  if (!lock.ok) {
+    deps.print(MSG.alreadyOpen)
+    return 1
+  }
+  try {
+    return await runMain(deps, opts)
+  } finally {
+    lock.close()
+  }
+}
+
+/** @param {Deps} deps @param {LauncherOptions} opts @returns {Promise<number>} */
+async function runMain(deps, opts) {
   const { fs } = deps
   const root = path.resolve(opts.root ?? path.join(deps.launcherDir, '..', '..'))
   const paths = dataPaths(deps.env, deps.homedir)
@@ -61,6 +80,7 @@ export async function run(deps, opts) {
     deps.print(MSG.dataDirFailed(err?.message ?? String(err)))
   }
   const log = createLogger(fs, paths.logFile, { now: deps.now })
+  if (!opts.applyUpdate) pruneOldFiles(fs, path.join(paths.logsDir, 'wrangler'))
   if (opts.applyUpdate) {
     // Windows não renomeia app\ se o diretório atual do processo estiver dentro dela.
     try {
@@ -83,6 +103,9 @@ export async function run(deps, opts) {
   const version = readVersion(fs, path.join(app, 'version.txt'))
   deps.print(MSG.header(version))
   log.write(`início v${version} ${JSON.stringify(opts)}`)
+  // app.new sem update-failed.txt = uma atualização preparada que nunca foi instalada
+  const stagedNotInstalled = fs.existsSync(appPaths(root).appNew) && !fs.existsSync(paths.updateFailedFile)
+  if (stagedNotInstalled) log.write('app.new encontrada sem recado de falha: atualização preparada não instalada')
   try {
     removeLeftovers(fs, root)
   } catch (err) {
@@ -98,6 +121,7 @@ export async function run(deps, opts) {
   if (!opts.smoke) {
     const failure = consumeUpdateFailure(fs, paths)
     if (failure) deps.print(MSG.updateFailed(failure))
+    else if (stagedNotInstalled) deps.print(MSG.updateFailed(MSG.updateNotInstalled))
     else if (opts.noUpdate) deps.print(MSG.updateSkippedFlag)
     else if (!config.autoUpdate) deps.print(MSG.updateDisabled)
     else if (await checkForUpdate(deps, ctx)) return UPDATE_EXIT_CODE
@@ -189,14 +213,17 @@ function createSession(deps, ctx, { app, port, inspectorPort }) {
     return null
   }
 
-  async function announce(link, { browser, remote = false }) {
+  const isCurrent = (proc) => !shuttingDown && (proc === null || (proc === tunnel && proc.isAlive()))
+
+  async function announce(link, { browser, remote = false, proc = null }) {
     let answered = true
     if (remote) {
       deps.print(MSG.linkWaiting)
       answered = await waitForServer(deps, link, {
-        timeoutMs: LINK_WAIT_MS, intervalMs: 1_000, isAlive: () => !shuttingDown,
+        timeoutMs: LINK_WAIT_MS, intervalMs: 1_000, isAlive: () => isCurrent(proc),
       })
-      if (shuttingDown) return
+      // túnel trocado/morto durante a espera: este link é velho, não mostra nem copia
+      if (!isCurrent(proc)) return
     }
     deps.print('')
     deps.print(MSG.linkTitle)
@@ -257,7 +284,7 @@ function createSession(deps, ctx, { app, port, inspectorPort }) {
       const link = await openTunnel()
       if (shuttingDown) return
       if (link) {
-        await announce(link, { browser: false, remote: true })
+        await announce(link, { browser: false, remote: true, proc: tunnel })
         watchTunnel(tunnel)
       } else {
         deps.print(MSG.tunnelGaveUp)
@@ -277,7 +304,7 @@ function createSession(deps, ctx, { app, port, inspectorPort }) {
     if (shuttingDown) return done
     if (link) watchTunnel(tunnel)
     else deps.print(MSG.tunnelFailed)
-    await announce(link ?? localUrl, { browser: true, remote: link !== null })
+    await announce(link ?? localUrl, { browser: true, remote: link !== null, proc: link ? tunnel : null })
     deps.print(MSG.closeHint)
     return done
   }

@@ -8,9 +8,9 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const workflowFile = path.join(repo, '.github', 'workflows', 'release.yml')
 
 describe('release.yml', () => {
-  it('existe e segue o spec (tag v*, windows-latest, contents: write)', () => {
+  it('existe e segue o spec (tag v*, main, dispatch, windows-latest, contents: write)', () => {
     const yml = fs.readFileSync(workflowFile, 'utf8')
-    expect(yml).toMatch(/on:\s*\n\s*push:\s*\n\s*tags:\s*\['v\*'\]/)
+    expect(yml).toMatch(/on:\s*\n\s*push:\s*\n\s*branches:\s*\[main\]\s*\n\s*tags:\s*\['v\*'\]\s*\n\s*workflow_dispatch:/)
     expect(yml).toMatch(/runs-on:\s*windows-latest/)
     expect(yml).toMatch(/permissions:\s*\n\s*contents:\s*write/)
   })
@@ -46,5 +46,35 @@ describe('release.yml', () => {
     expect(between.match(/^\s*- (name|uses):/gm)?.length).toBe(1)
     expect(yml.match(/^ {2}[\w-]+:\s*$/gm)).toContain('  windows-package:')
     expect(yml.match(/runs-on:/g)).toHaveLength(1)
+  })
+
+  it('ensaio sem tag: confere a tag e cria a Release só em refs/tags/v*; version.txt dá a versão', () => {
+    const yml = fs.readFileSync(workflowFile, 'utf8')
+    const steps = yml.split(/^ {6}- /m)
+    const tagStep = steps.find((s) => s.includes('name: Tag confere com version.txt'))
+    const releaseStep = steps.find((s) => s.includes('name: Criar a Release'))
+    expect(tagStep).toContain("if: startsWith(github.ref, 'refs/tags/v')")
+    expect(releaseStep).toContain("if: startsWith(github.ref, 'refs/tags/v')")
+    const versionStep = steps.find((s) => s.includes('Get-Content version.txt'))
+    expect(versionStep).not.toContain('if:')
+    expect(versionStep).toContain('VERSION=$version')
+    // os demais passos rodam sempre
+    for (const s of steps.filter((s) => /^(name|uses):/.test(s) && s !== tagStep && s !== releaseStep)) {
+      expect(s).not.toMatch(/^\s+if:/m)
+    }
+  })
+
+  it('fumaça com timeout de 5 min e checkout sem credenciais', () => {
+    const yml = fs.readFileSync(workflowFile, 'utf8')
+    const smoke = yml.split(/^ {6}- /m).find((s) => s.includes('Teste de fumaça'))
+    expect(smoke).toContain('timeout-minutes: 5')
+    expect(yml).toContain('persist-credentials: false')
+  })
+
+  it('todo `uses:` fixado em SHA de 40 hex com comentário de versão', () => {
+    const yml = fs.readFileSync(workflowFile, 'utf8')
+    const uses = yml.split('\n').filter((l) => /^\s*(- )?uses:/.test(l))
+    expect(uses.length).toBeGreaterThanOrEqual(3)
+    for (const line of uses) expect(line).toMatch(/uses:\s*[\w.-]+\/[\w.-]+@[0-9a-f]{40}\s+# v\d+(\.\d+)*\s*$/)
   })
 })

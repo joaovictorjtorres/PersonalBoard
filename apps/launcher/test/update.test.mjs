@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -125,6 +126,60 @@ describe('checkForUpdate', () => {
     const { h, ctx } = setup({ release: releaseFixture('0.5.0'), answer: 's', extractOk: false })
     expect(await checkForUpdate(h.deps, ctx)).toBe(false)
     expect(h.output.at(-1)).toMatch(/^✗ Não foi possível atualizar: não foi possível extrair o zip/)
+  })
+})
+
+describe('stageUpdate: integridade do download', () => {
+  const zipName = 'MesaVirtual-v0.5.0-win64.zip'
+  const sha = (buf) => createHash('sha256').update(buf).digest('hex')
+
+  it('SHA-256 confere → atualiza', async () => {
+    const release = releaseFixture('0.5.0')
+    release.assets[0].digest = `sha256:${sha(Buffer.from('zip'))}`
+    const { h, ctx } = setup({ release, answer: '' })
+    expect(await checkForUpdate(h.deps, ctx)).toBe(true)
+  })
+
+  it('SHA-256 não confere → rejeita, apaga o zip e avisa', async () => {
+    const release = releaseFixture('0.5.0')
+    release.assets[0].digest = `sha256:${sha(Buffer.from('outro'))}`
+    const { h, ctx, p, paths } = setup({ release, answer: '' })
+    expect(await checkForUpdate(h.deps, ctx)).toBe(false)
+    expect(h.output.at(-1)).toMatch(/^✗ Não foi possível atualizar: .*SHA-256/)
+    expect(fs.existsSync(path.join(h.deps.tmpdir, zipName))).toBe(false)
+    expect(fs.existsSync(p.appNew)).toBe(false)
+    expect(fs.existsSync(paths.backupsDir)).toBe(false)
+  })
+
+  it('URL fora do repositório oficial é recusada pelo downloadAsset', async () => {
+    const { h, ctx } = setup({ answer: '' })
+    const asset = { version: '0.5.0', url: 'https://evil.example/x.zip', size: 3, name: zipName }
+    const { stageUpdate } = await import('../src/update.mjs')
+    expect(await stageUpdate(h.deps, ctx, asset)).toBe(false)
+    expect(h.fetches.some((f) => f.url.startsWith('https://evil.example'))).toBe(false)
+  })
+})
+
+describe('stageUpdate: backup depois da validação', () => {
+  it('pacote inválido → nenhum backup foi feito', async () => {
+    const { h, ctx, paths } = setup({ release: releaseFixture('0.5.0'), answer: '', extractVersion: '0.4.9' })
+    expect(await checkForUpdate(h.deps, ctx)).toBe(false)
+    expect(fs.existsSync(paths.backupsDir)).toBe(false)
+  })
+
+  it('já houve backup há menos de 1 h → não repete', async () => {
+    const { h, ctx, paths } = setup({ release: releaseFixture('0.5.0'), answer: '' })
+    ctx.config.lastBackup = new Date(h.deps.now() - 30 * 60_000).toISOString()
+    expect(await checkForUpdate(h.deps, ctx)).toBe(true)
+    expect(fs.existsSync(paths.backupsDir)).toBe(false)
+    expect(h.output.some((l) => l.includes('Backup das mesas'))).toBe(false)
+  })
+
+  it('último backup há mais de 1 h → faz', async () => {
+    const { h, ctx, paths } = setup({ release: releaseFixture('0.5.0'), answer: '' })
+    ctx.config.lastBackup = new Date(h.deps.now() - 90 * 60_000).toISOString()
+    expect(await checkForUpdate(h.deps, ctx)).toBe(true)
+    expect(fs.readdirSync(paths.backupsDir)).toHaveLength(1)
   })
 })
 

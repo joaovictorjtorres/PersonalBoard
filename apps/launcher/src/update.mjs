@@ -1,10 +1,11 @@
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { backupNow } from './backup.mjs'
 import { MSG } from './messages.mjs'
 import { extractZip } from './processes.mjs'
-import { LATEST_URL, pickUpdate } from './release.mjs'
+import { DOWNLOAD_PREFIX, LATEST_URL, pickUpdate } from './release.mjs'
 import { readVersion } from './semver.mjs'
 import { appPaths, renameWithRetry, swapApp } from './swap.mjs'
 
@@ -13,6 +14,7 @@ export const STAGING_DIR_NAME = 'MesaVirtual-update'
 export const API_TIMEOUT_MS = 5_000
 const DOWNLOAD_TIMEOUT_MS = 15 * 60_000
 const USER_AGENT = 'MesaVirtual-launcher'
+export const BACKUP_REUSE_MS = 60 * 60 * 1000
 const YES = new Set(['', 's', 'sim', 'y', 'yes'])
 
 /** rm recursivo com novas tentativas (antivírus/indexador seguram arquivos por instantes no Windows). */
@@ -48,6 +50,9 @@ export async function downloadAsset(deps, asset, destFile) {
   const { fs } = deps
   fs.rmSync(destFile, { force: true })
   try {
+    if (typeof asset.url !== 'string' || !asset.url.startsWith(DOWNLOAD_PREFIX)) {
+      throw new Error('o endereço do download não é do repositório oficial')
+    }
     const res = await deps.fetch(asset.url, {
       headers: { 'User-Agent': USER_AGENT },
       signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
@@ -56,10 +61,23 @@ export async function downloadAsset(deps, asset, destFile) {
     await pipeline(Readable.fromWeb(res.body), fs.createWriteStream(destFile))
     const size = fs.statSync(destFile).size
     if (size !== asset.size) throw new Error(`download incompleto (${size} de ${asset.size} bytes)`)
+    if (asset.sha256) {
+      const hash = createHash('sha256')
+      for await (const chunk of fs.createReadStream(destFile)) hash.update(chunk)
+      if (hash.digest('hex') !== asset.sha256.toLowerCase()) {
+        throw new Error('o arquivo baixado não confere com o SHA-256 publicado (integridade)')
+      }
+    }
   } catch (err) {
     fs.rmSync(destFile, { force: true })
     throw err
   }
+}
+
+function recentBackup(lastBackupIso, nowMs) {
+  if (typeof lastBackupIso !== 'string') return false
+  const last = Date.parse(lastBackupIso)
+  return !Number.isNaN(last) && last <= nowMs && nowMs - last < BACKUP_REUSE_MS
 }
 
 export function stagingDir(deps) {
@@ -85,8 +103,6 @@ export async function stageUpdate(deps, ctx, asset) {
   try {
     deps.print(MSG.updateDownloading(asset.version, Math.max(1, Math.round(asset.size / 1_048_576))))
     await downloadAsset(deps, asset, zipFile)
-    const backup = backupNow(deps, ctx)
-    if (backup) deps.print(MSG.backupDone(backup))
     rmWithRetry(deps, p.appNewTmp)
     rmWithRetry(deps, p.appNew)
     await extractZip(deps, zipFile, p.appNewTmp)
@@ -98,6 +114,11 @@ export async function stageUpdate(deps, ctx, asset) {
     if (!complete) throw new Error('o pacote baixado não tem o conteúdo esperado')
     renameWithRetry(fs, extracted, p.appNew, { sleepSync: deps.sleepSync })
     rmWithRetry(deps, p.appNewTmp)
+    // backup só depois de o zip estar validado, e não se já houve um na última hora
+    if (!recentBackup(ctx.config.lastBackup, deps.now())) {
+      const backup = backupNow(deps, ctx)
+      if (backup) deps.print(MSG.backupDone(backup))
+    }
     stageSwapper(deps)
     try {
       rmWithRetry(deps, zipFile)

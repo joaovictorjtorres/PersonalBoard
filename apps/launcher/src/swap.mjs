@@ -17,7 +17,7 @@ function defaultSleepSync(ms) {
 }
 
 /** rename com novas tentativas (antivírus/indexador seguram arquivos por instantes no Windows). */
-export function renameWithRetry(fs, from, to, { attempts = 5, delayMs = 500, sleepSync = defaultSleepSync } = {}) {
+export function renameWithRetry(fs, from, to, { attempts = 10, delayMs = 1000, sleepSync = defaultSleepSync } = {}) {
   for (let attempt = 1; ; attempt++) {
     try {
       fs.renameSync(from, to)
