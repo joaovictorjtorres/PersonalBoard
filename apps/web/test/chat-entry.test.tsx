@@ -8,6 +8,15 @@ const render = (entry: ChatEntry, author: ChatAuthor | null = ana) =>
   renderToStaticMarkup(<ChatEntryView entry={entry} author={author} onOpenImage={() => {}} />).replace(/<!-- -->/g, '')
 
 describe('ChatEntryView', () => {
+  it('com menu do autor, o nome ganha a classe que indica o botão direito; sem menu, não', () => {
+    const entry: ChatEntry = { id: 'm0', at: 0, authorId: 'a', kind: 'message', text: 'oi' }
+    const withMenu = renderToStaticMarkup(
+      <ChatEntryView entry={entry} author={ana} onOpenImage={() => {}} onAuthorMenu={() => {}} />,
+    )
+    expect(withMenu).toContain('class="chat-author has-menu"')
+    expect(render(entry)).not.toContain('has-menu')
+  })
+
   // Review Focus #1
   it('texto e apelido com HTML aparecem como texto, nunca como marcação', () => {
     const html = render(

@@ -3,6 +3,8 @@ import { Dices, ImagePlus, MessageSquare, X } from 'lucide-react'
 import { CHAT_TEXT_MAX, type ChatEntry, type RollRequest } from '@mesa/shared'
 import type { ChatTab } from '../../store/chat'
 import { useTable, useTableActions } from '../../store/context'
+import { MemberMenu } from '../MemberMenu'
+import { memberMenuOptions } from '../memberMenuOptions'
 import { ChatEntryView } from './ChatEntryView'
 import { DiceModal } from './DiceModal'
 import { ImageLightbox } from './ImageLightbox'
@@ -26,6 +28,9 @@ export function ChatPanel() {
   const listRef = useRef<HTMLOListElement>(null)
   const closeDice = useCallback(() => setDice(null), [])
   const closeLightbox = useCallback(() => setLightbox(null), [])
+  const [memberMenu, setMemberMenu] = useState<{ clientId: string; x: number; y: number } | null>(null)
+  const closeMemberMenu = useCallback(() => setMemberMenu(null), [])
+  const isGm = useTable((s) => s.self?.role === 'gm')
   const totalUnread = Object.values(unread).reduce((sum, n) => sum + n, 0)
   const tabName = (tab: ChatTab) => (tab === 'table' ? 'Mesa' : (members[tab]?.nickname ?? 'Conversa'))
 
@@ -101,7 +106,7 @@ export function ChatPanel() {
                   </button>
                   {tab !== 'table' && (
                     <button
-                      className="icon-button"
+                      className="icon-button chat-tab-close"
                       aria-label={`Fechar conversa com ${tabName(tab)}`}
                       title="Fechar (apaga a conversa)"
                       onClick={() => actions.closeDm(tab)}
@@ -121,9 +126,20 @@ export function ChatPanel() {
               wasNearBottom.current = isNearBottom(el.scrollHeight, el.scrollTop, el.clientHeight)
             }}
             className="chat-list" aria-label={`Mensagens — ${tabName(active)}`}>
-            {entries.map((entry) => (
-              <ChatEntryView key={entry.id} entry={entry} author={members[entry.authorId] ?? null} onOpenImage={setLightbox} />
-            ))}
+            {entries.map((entry) => {
+              const author = members[entry.authorId]
+              const options = memberMenuOptions(entry.authorId, selfId, isGm)
+              const hasMenu = author !== undefined && (options.dm || options.edit)
+              return (
+                <ChatEntryView
+                  key={entry.id}
+                  entry={entry}
+                  author={author ?? null}
+                  onOpenImage={setLightbox}
+                  onAuthorMenu={hasMenu ? (e) => setMemberMenu({ clientId: entry.authorId, x: e.clientX, y: e.clientY }) : undefined}
+                />
+              )
+            })}
           </ol>
 
           <form
@@ -173,6 +189,15 @@ export function ChatPanel() {
 
       {dice && <DiceModal x={dice.x} y={dice.y} onClose={closeDice} />}
       {lightbox && <ImageLightbox assetKey={lightbox} onClose={closeLightbox} />}
+      {memberMenu && members[memberMenu.clientId] && (
+        <MemberMenu
+          key={memberMenu.clientId}
+          member={members[memberMenu.clientId]}
+          x={memberMenu.x}
+          y={memberMenu.y}
+          onClose={closeMemberMenu}
+        />
+      )}
     </section>
   )
 }

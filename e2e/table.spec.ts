@@ -441,13 +441,44 @@ test('conversa privada chega só ao destinatário; o mestre não recebe; fechar 
   await expect(gm.getByRole('tab')).toHaveCount(1)
   expect(await chatState(gm)).not.toContain('segredo')
 
-  // Fechar a aba apaga o histórico; reabrir começa vazia.
-  await bia.getByRole('button', { name: 'Fechar conversa com Ana' }).click()
+  // Fechar a aba apaga o histórico; reabrir começa vazia. O X só aparece com o mouse em cima.
+  const closeAna = bia.getByRole('button', { name: 'Fechar conversa com Ana' })
+  await bia.mouse.move(0, 0)
+  await expect(closeAna).toHaveCSS('opacity', '0')
+  await tabAna.hover()
+  await expect(closeAna).toHaveCSS('opacity', '1')
+  await closeAna.click()
   await expect(tabAna).toHaveCount(0)
   expect(await chatState(bia)).not.toContain('segredo')
   await (await memberMenu(bia, 'Ana')).getByRole('button', { name: 'Conversa privada' }).click()
   await expect(bia.getByRole('tab', { name: /^Ana/ })).toHaveAttribute('aria-selected', 'true')
   await expect(chatEntries(bia)).toHaveCount(0)
+})
+
+test('botão direito no nome do chat: conversa privada; o mestre também edita apelido e cor', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+  const bia = await open(browser, `/t/${tableId}?debug=1`, 'Bia')
+
+  await ana.getByLabel('Mensagem', { exact: true }).fill('oi mesa')
+  await ana.getByLabel('Mensagem', { exact: true }).press('Enter')
+  await expect(chatEntries(bia).last()).toContainText('oi mesa')
+  await expect(chatEntries(gm).last()).toContainText('oi mesa')
+
+  // Jogador: só "Conversa privada".
+  await chatEntries(bia).last().locator('.chat-author', { hasText: 'Ana' }).click({ button: 'right' })
+  await expect(bia.getByRole('button', { name: 'Editar apelido e cor' })).toHaveCount(0)
+  await bia.getByRole('button', { name: 'Conversa privada' }).click()
+  await expect(bia.getByRole('tab', { name: /^Ana/ })).toHaveAttribute('aria-selected', 'true')
+
+  // Mestre: pode editar pelo chat.
+  await chatEntries(gm).last().locator('.chat-author', { hasText: 'Ana' }).click({ button: 'right' })
+  await expect(gm.getByRole('button', { name: 'Conversa privada' })).toBeVisible()
+  await expect(gm.getByRole('button', { name: 'Editar apelido e cor' })).toBeVisible()
+
+  // A própria mensagem: sem menu para jogador (não há conversa consigo mesmo).
+  await expect(chatEntries(ana).last().locator('.chat-author')).toHaveCount(0)
 })
 
 test('imagem enviada no chat aparece no outro cliente', async ({ browser, page }) => {

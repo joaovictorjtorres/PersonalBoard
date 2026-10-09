@@ -1,4 +1,4 @@
-import { Fragment } from 'react'
+import { Fragment, type MouseEvent } from 'react'
 import { formatRollFormula, type ChatEntry } from '@mesa/shared'
 import { bonusLabel, formatTime, modeLabel, rollParts, thumbSize } from './format'
 
@@ -14,13 +14,29 @@ export function ChatEntryView({
   entry,
   author,
   onOpenImage,
+  onAuthorMenu,
 }: {
   entry: ChatEntry
   author: ChatAuthor | null
   onOpenImage: (assetKey: string) => void
+  /** Botão direito no nome do autor (conversa privada / editar). Ausente = sem menu. */
+  onAuthorMenu?: (e: MouseEvent) => void
 }) {
   const { nickname, color } = author ?? UNKNOWN
-  const name = <strong style={{ color }}>{nickname}</strong>
+  const name = onAuthorMenu ? (
+    <strong
+      className="chat-author has-menu"
+      style={{ color }}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        onAuthorMenu(e)
+      }}
+    >
+      {nickname}
+    </strong>
+  ) : (
+    <strong style={{ color }}>{nickname}</strong>
+  )
   const time = <time className="chat-time" dateTime={new Date(entry.at).toISOString()}>{formatTime(entry.at)}</time>
 
   if (entry.kind === 'roll') {
