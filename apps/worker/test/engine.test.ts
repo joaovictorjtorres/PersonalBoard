@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { DEFAULT_LAYERS, DEFAULT_TURNS, LOCK_TTL_MS, MEMBER_RECENT_MS, TURNS_MAX, type NewObject, type ObjectPatch, type Op } from '@mesa/shared'
+import { DEFAULT_LAYERS, DEFAULT_TURNS, LOCK_TTL_MS, MEMBER_RECENT_MS, TURNS_MAX, type NewObject, type ObjectOp, type ObjectPatch, type Op } from '@mesa/shared'
 import { MemoryStore } from '../src/engine/memory-store'
-import { TableEngine, type OpResult } from '../src/engine/engine'
+import { TableEngine, type OpEffect, type OpResult } from '../src/engine/engine'
 
 let clock = 1_000
 let store: MemoryStore
@@ -722,5 +722,182 @@ describe('turnos', () => {
     expect(snap.objects.some((o) => o.id === 'tok1')).toBe(false)
     expect(snap.turns?.entries).toEqual([{ id: 'a', name: 'Segredo', tokenId: 'tok1', initiative: null }])
     expect(engine.turns()).toEqual(snap.turns)
+  })
+})
+
+describe('applyOp batch', () => {
+  const batch = (...ops: ObjectOp[]): Op => ({ kind: 'batch', ops })
+  const strokeObj = (id: string, over: Partial<NewObject> = {}): NewObject =>
+    ({
+      id, type: 'stroke', layerId: 'tokens', x: 0, y: 0, width: 10, height: 10, rotation: 0, zIndex: 1,
+      segments: [[0, 0, 10, 10]], color: '#ffffff', strokeWidth: 2, ...over,
+    }) as NewObject
+  const changes = (r: OpResult) => (effects(r) as Array<Extract<OpEffect, { kind: 'objects' }>>)[0].changes
+
+  beforeEach(() => {
+    engine.applyOp('A', 'player', 'op0', create(token()))
+  })
+
+  it('aplica tudo de uma vez e devolve um efeito com as mudanças, na ordem', () => {
+    const r = engine.applyOp('A', 'player', 'b1', batch(
+      { kind: 'update', id: 'tok1', patch: { x: 50 } },
+      { kind: 'create', object: token({ id: 'tok2' }) },
+    ))
+    expect(r).toMatchObject({ ok: true, duplicate: false, version: 0 })
+    expect(effects(r)).toEqual([{
+      kind: 'objects',
+      changes: [
+        { kind: 'object', before: expect.objectContaining({ x: 10 }), after: expect.objectContaining({ x: 50, version: 2 }) },
+        { kind: 'object', before: null, after: expect.objectContaining({ id: 'tok2', ownerId: 'A' }) },
+      ],
+    }])
+    expect(store.getObject('tok1')?.x).toBe(50)
+    expect(store.getObject('tok2')).not.toBeNull()
+  })
+
+  it('uma sub-ação proibida recusa o lote inteiro com o motivo dela, sem current, e nada muda', () => {
+    engine.applyOp('G', 'gm', 'g0', create(token({ id: 'gmtok' })))
+    const r = engine.applyOp('A', 'player', 'b1', batch(
+      { kind: 'create', object: token({ id: 'tok2' }) },
+      { kind: 'update', id: 'tok1', patch: { x: 50 } },
+      { kind: 'update', id: 'gmtok', patch: { x: 1 } },
+    ))
+    expect(r).toEqual({ ok: false, reason: 'forbidden' })
+    expect(store.getObject('tok2')).toBeNull()
+    expect(store.getObject('tok1')?.x).toBe(10)
+  })
+
+  it('ids repetidos no lote são contraditórios (invalid) e nada muda', () => {
+    const cases: ObjectOp[][] = [
+      [{ kind: 'delete', id: 'tok1' }, { kind: 'update', id: 'tok1', patch: { x: 1 } }],
+      [{ kind: 'update', id: 'tok1', patch: { x: 1 } }, { kind: 'update', id: 'tok1', patch: { y: 1 } }],
+      [{ kind: 'create', object: token({ id: 'n1' }) }, { kind: 'create', object: token({ id: 'n1' }) }],
+    ]
+    cases.forEach((ops, i) => expect(engine.applyOp('A', 'player', `b${i}`, batch(...ops))).toEqual({ ok: false, reason: 'invalid' }))
+    expect(store.getObject('tok1')?.x).toBe(10)
+    expect(store.getObject('n1')).toBeNull()
+  })
+
+  it('criar um id que já existe na mesa recusa com exists', () => {
+    expect(engine.applyOp('A', 'player', 'b1', batch({ kind: 'create', object: token() }))).toEqual({ ok: false, reason: 'exists' })
+  })
+
+  it('objeto travado por outra pessoa recusa o lote (locked) e nada muda', () => {
+    engine.applyOp('G', 'gm', 'g1', update('tok1', { control: ALL }))
+    expect(engine.grab('B', 'player', 'tok1')).toBe(true)
+    const r = engine.applyOp('A', 'player', 'b1', batch({ kind: 'create', object: token({ id: 'tok2' }) }, { kind: 'delete', id: 'tok1' }))
+    expect(r).toEqual({ ok: false, reason: 'locked' })
+    expect(store.getObject('tok1')).not.toBeNull()
+    expect(store.getObject('tok2')).toBeNull()
+  })
+
+  it('apagar no lote leva anotação e trava junto; lote recusado mantém as duas', () => {
+    engine.applyOp('G', 'gm', 'n1', { kind: 'noteSet', objectId: 'tok1', text: 'segredo' })
+    engine.grab('A', 'player', 'tok1')
+    const refused = batch({ kind: 'delete', id: 'tok1' }, { kind: 'create', object: token({ id: 'x', layerId: 'gm' }) })
+    expect(engine.applyOp('A', 'player', 'b1', refused)).toEqual({ ok: false, reason: 'forbidden' })
+    expect(store.listNotes()).toEqual({ tok1: 'segredo' })
+    expect(engine.activeLocks()).toEqual([{ objectId: 'tok1', clientId: 'A' }])
+    expect(engine.applyOp('A', 'player', 'b2', batch({ kind: 'delete', id: 'tok1' }))).toMatchObject({ ok: true })
+    expect(store.listNotes()).toEqual({})
+    expect(engine.activeLocks()).toEqual([])
+  })
+
+  it('jogador não muda camada dentro do lote', () => {
+    expect(engine.applyOp('A', 'player', 'b1', batch({ kind: 'update', id: 'tok1', patch: { layerId: 'drawings' } }))).toEqual({ ok: false, reason: 'forbidden' })
+  })
+
+  it('opId repetido não reaplica', () => {
+    const op = batch({ kind: 'update', id: 'tok1', patch: { x: 50 } })
+    engine.applyOp('A', 'player', 'b1', op)
+    expect(engine.applyOp('A', 'player', 'b1', op)).toEqual({ ok: true, duplicate: true, version: 0 })
+  })
+
+  it('encaixe na grade marca eco só na imagem encaixada', () => {
+    engine.applyOp('G', 'gm', 's1', { kind: 'settingsUpdate', patch: { grid: { snap: true, size: 50 } } })
+    const r = engine.applyOp('A', 'player', 'b1', batch(
+      { kind: 'update', id: 'tok1', patch: { x: 61, y: 20 } },
+      { kind: 'create', object: strokeObj('s1') },
+    ))
+    const [img, line] = changes(r)
+    expect(img).toMatchObject({ echo: true, after: { x: 50, y: 0 } })
+    expect(line.echo).toBeUndefined()
+  })
+
+  it('ação que não é de objeto dentro do lote é invalid e nada muda (nem os turnos)', () => {
+    const turnsBefore = store.getTurns()
+    const foreign: unknown[] = [
+      { kind: 'turnsOpen', open: true },
+      { kind: 'turnNext' },
+      { kind: 'noteSet', objectId: 'tok1', text: 'x' },
+      { kind: 'memberRemove', clientId: 'B' },
+      { kind: 'memberUpdate', clientId: 'A', patch: { nickname: 'Z' } },
+      { kind: 'clearObjects', layerId: null, scope: 'drawings' },
+      { kind: 'layerCreate', layer: { id: 'l1', name: 'Nova' } },
+      { kind: 'settingsUpdate', patch: { grid: { snap: true } } },
+    ]
+    foreign.forEach((sub, i) => {
+      const op = batch({ kind: 'update', id: 'tok1', patch: { x: 50 } }, sub as ObjectOp)
+      expect(engine.applyOp('G', 'gm', `f${i}`, op)).toEqual({ ok: false, reason: 'invalid' })
+    })
+    expect(store.getObject('tok1')?.x).toBe(10)
+    expect(store.getTurns()).toEqual(turnsBefore)
+    expect(store.listNotes()).toEqual({})
+    expect(store.getLayers().some((l) => l.id === 'l1')).toBe(false)
+    expect(store.getSettings().grid.snap).toBe(false)
+  })
+
+  describe('pedaços de traço (create com from)', () => {
+    const cut = (from = 's1'): Op => batch(
+      { kind: 'create', object: strokeObj('p1', { layerId: 'drawings' }), from },
+      { kind: 'create', object: strokeObj('p2', { layerId: 'drawings', x: 5 }), from },
+      { kind: 'delete', id: from },
+    )
+
+    beforeEach(() => {
+      engine.applyOp('A', 'player', 'sa', create(strokeObj('s1', { layerId: 'drawings' })))
+    })
+
+    it('mestre corta o traço do jogador: os pedaços continuam do jogador, com o controle dele', () => {
+      expect(engine.applyOp('G', 'gm', 'b1', cut())).toMatchObject({ ok: true })
+      for (const id of ['p1', 'p2']) {
+        expect(store.getObject(id)).toMatchObject({ ownerId: 'A', updatedBy: 'G', control: { mode: 'list', clientIds: ['A'] } })
+      }
+      expect(store.getObject('s1')).toBeNull()
+    })
+
+    it('jogador que controla um traço alheio o corta sem virar dono nem mudar o controle', () => {
+      engine.applyOp('G', 'gm', 'g1', update('s1', { control: ALL }))
+      expect(engine.applyOp('B', 'player', 'b1', cut())).toMatchObject({ ok: true })
+      expect(store.getObject('p1')).toMatchObject({ ownerId: 'A', control: ALL })
+    })
+
+    it('sem o delete do original no mesmo lote: invalid', () => {
+      const op = batch({ kind: 'create', object: strokeObj('p1', { layerId: 'drawings' }), from: 's1' })
+      expect(engine.applyOp('A', 'player', 'b1', op)).toEqual({ ok: false, reason: 'invalid' })
+      expect(store.getObject('p1')).toBeNull()
+    })
+
+    it('original ou pedaço que não é traço: invalid', () => {
+      const fromImage = batch(
+        { kind: 'create', object: strokeObj('p1', { layerId: 'drawings' }), from: 'tok1' },
+        { kind: 'delete', id: 'tok1' },
+      )
+      expect(engine.applyOp('A', 'player', 'b1', fromImage)).toEqual({ ok: false, reason: 'invalid' })
+      const imagePiece = batch({ kind: 'create', object: token({ id: 'p1' }), from: 's1' }, { kind: 'delete', id: 's1' })
+      expect(engine.applyOp('A', 'player', 'b2', imagePiece)).toEqual({ ok: false, reason: 'invalid' })
+      expect(store.getObject('tok1')).not.toBeNull()
+      expect(store.getObject('s1')).not.toBeNull()
+    })
+
+    it('original que não existe: not_found', () => {
+      expect(engine.applyOp('A', 'player', 'b1', cut('zzz'))).toEqual({ ok: false, reason: 'not_found' })
+    })
+
+    it('create avulso com from é invalid', () => {
+      const op: Op = { kind: 'create', object: strokeObj('p1', { layerId: 'drawings' }), from: 's1' }
+      expect(engine.applyOp('A', 'player', 'c1', op)).toEqual({ ok: false, reason: 'invalid' })
+      expect(store.getObject('p1')).toBeNull()
+    })
   })
 })

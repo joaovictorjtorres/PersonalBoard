@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla'
 import { nanoid } from 'nanoid'
-import type { ChatChannel, ClientMessage, MemberPatch, Op, Point, Presence, RollRequest, SettingsPatch, ShapeKind } from '@mesa/shared'
-import { CHAT_TEXT_MAX, DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, TURNS_MAX, canControl, parseCommand, snapToGrid } from '@mesa/shared'
+import type { ChatChannel, ClientMessage, MemberPatch, ObjectOp, Op, Point, Presence, RollRequest, SettingsPatch, ShapeKind } from '@mesa/shared'
+import { BATCH_MAX, CHAT_TEXT_MAX, DEFAULT_LAYER_NAME, RULER_THROTTLE_MS, TURNS_MAX, canControl, parseCommand, snapToGrid } from '@mesa/shared'
 import { SyncClient, type SyncClientOptions } from '../sync/SyncClient'
 import { throttle, type Throttled } from '../lib/throttle'
 import { getClientId, readClientSecret, readGmSecret, rememberClientSecret, shouldRetryAuth } from '../lib/identity'
@@ -29,6 +29,11 @@ export interface TableActions {
   disconnect(): void
   submit(op: Op): boolean
   submitGroup(ops: Op[]): boolean
+  /**
+   * Lotes atômicos (`batch`) como um só passo de desfazer. Lote com mais de 200 sub-ações é recusado
+   * aqui, com aviso. `failText`: aviso se o servidor recusar.
+   */
+  submitBatches(batches: ObjectOp[][], failText: string): boolean
   undo(): void
   grab(id: string): void
   release(id: string): void
@@ -108,7 +113,7 @@ export function createTableStore(
       sync?.send({ t: 'presence', p: { kind: 'ruler', points: ruler.points } })
     }, RULER_THROTTLE_MS)
 
-    const submitMany = (ops: Op[], isUndo: boolean): boolean => {
+    const submitMany = (ops: Op[], isUndo: boolean, failText?: string): boolean => {
       if (ops.length === 0) return true
       const s = get()
       if (s.status !== 'open' || !sync) {
@@ -116,7 +121,7 @@ export function createTableStore(
         return false
       }
       const items = ops.map((op) => ({ opId: `op_${nanoid()}`, op }))
-      set(reduceSubmitBatch(s, items, { isUndo, groupId: `g_${nanoid()}` }))
+      set(reduceSubmitBatch(s, items, { isUndo, groupId: `g_${nanoid()}`, ...(failText ? { failText } : {}) }))
       for (const { opId, op } of items) sync.sendOp(opId, op)
       return true
     }
@@ -179,6 +184,15 @@ export function createTableStore(
       },
       submit: (op) => submitMany([op], false),
       submitGroup: (ops) => submitMany(ops, false),
+      submitBatches(batches, failText) {
+        const list = batches.filter((ops) => ops.length > 0)
+        if (list.length === 0) return true
+        if (list.some((ops) => ops.length > BATCH_MAX)) {
+          set((s) => addToast(s, 'Seleção grande demais; selecione menos itens'))
+          return false
+        }
+        return submitMany(list.map((ops): Op => ({ kind: 'batch', ops })), false, failText)
+      },
       undo() {
         const s = get()
         const group = s.undoStack[s.undoStack.length - 1]

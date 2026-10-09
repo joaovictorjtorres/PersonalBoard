@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ClientMessageSchema, ObjectPatchSchema, OpSchema, RULER_MAX_POINTS, TableObjectSchema, isObjectOp, isTurnOp, readChatReqId, readOpId } from '../src'
+import { BATCH_MAX, ClientMessageSchema, ObjectPatchSchema, OpSchema, RULER_MAX_POINTS, TableObjectSchema, isObjectOp, isTurnOp, readChatReqId, readOpId } from '../src'
 
 const uuid = '3f1c2b9e-8a4d-4c1e-9b7a-2d5e6f708192'
 const image = {
@@ -227,5 +227,38 @@ describe('ações de turno no protocolo', () => {
       { kind: 'turnAdd', entry: { id: 'a', name: '   ' } },
     ]
     for (const op of bad) expect(ClientMessageSchema.safeParse({ t: 'op', opId: 'op_1', op }).success).toBe(false)
+  })
+})
+
+describe('OpSchema batch', () => {
+  const del = (id: string) => ({ kind: 'delete', id })
+  const parse = (ops: unknown[]) => OpSchema.safeParse({ kind: 'batch', ops }).success
+
+  it('aceita de 1 a 200 sub-ações de objeto (create, update, delete)', () => {
+    expect(parse([{ kind: 'create', object: image }, { kind: 'update', id: 'x', patch: { x: 1 } }, del('y')])).toBe(true)
+    expect(parse(Array.from({ length: BATCH_MAX }, (_, i) => del(`d${i}`)))).toBe(true)
+  })
+
+  it('create aceita `from` (pedaço de um traço apagado no mesmo lote)', () => {
+    expect(parse([{ kind: 'create', object: image, from: 's1' }, del('s1')])).toBe(true)
+  })
+
+  it('recusa vazio, mais de 200, lote dentro de lote e ações que não são de objeto', () => {
+    expect(parse([])).toBe(false)
+    expect(parse(Array.from({ length: BATCH_MAX + 1 }, (_, i) => del(`d${i}`)))).toBe(false)
+    expect(parse([{ kind: 'batch', ops: [del('a')] }])).toBe(false)
+    expect(parse([{ kind: 'layerCreate', layer: { id: 'l1', name: 'Nova' } }])).toBe(false)
+    expect(parse([{ kind: 'settingsUpdate', patch: {} }])).toBe(false)
+    expect(parse([{ kind: 'turnNext' }])).toBe(false)
+    expect(parse([{ kind: 'turnsOpen', open: true }])).toBe(false)
+    expect(parse([{ kind: 'noteSet', objectId: 'a', text: 'x' }])).toBe(false)
+    expect(parse([{ kind: 'memberRemove', clientId: 'c1' }])).toBe(false)
+    expect(parse([{ kind: 'memberUpdate', clientId: 'c1', patch: { nickname: 'Bia' } }])).toBe(false)
+    expect(parse([{ kind: 'clearObjects', layerId: null, scope: 'drawings' }])).toBe(false)
+  })
+
+  it('recusa o mesmo id duas vezes (contraditório)', () => {
+    expect(parse([del('a'), { kind: 'update', id: 'a', patch: { x: 1 } }])).toBe(false)
+    expect(parse([{ kind: 'create', object: image }, { kind: 'create', object: image }])).toBe(false)
   })
 })

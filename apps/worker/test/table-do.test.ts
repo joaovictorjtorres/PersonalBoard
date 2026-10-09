@@ -791,3 +791,92 @@ describe('TableDO — turnos', () => {
     expect(welcome.snapshot.turns).toMatchObject({ open: true, phase: 'combat', round: 1, currentId: 'a' })
   })
 })
+
+describe('TableDO — lote (batch)', () => {
+  const op = (opId: string, o: Op) => ({ t: 'op' as const, opId, op: o })
+  const strokeObject = (id: string): NewObject =>
+    ({
+      id, type: 'stroke', layerId: 'drawings', x: 0, y: 0, width: 10, height: 0, rotation: 0, zIndex: 1,
+      segments: [[0, 0, 10, 0]], color: '#ffffff', strokeWidth: 3,
+    }) as NewObject
+
+  it('autor recebe ack; cada um recebe um envio só, com o que enxerga', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    const p = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    await p.hello('Ana')
+    const pub = tokenObject()
+    const secret = tokenObject({ layerId: 'gm' })
+    gm.send(op('b1', { kind: 'batch', ops: [{ kind: 'create', object: pub }, { kind: 'create', object: secret }] }))
+    expect(await gm.waitFor('ack')).toEqual({ t: 'ack', opId: 'b1', version: 0 })
+    const got = await p.waitFor('batch')
+    expect(got.ops).toEqual([{ kind: 'upsert', object: expect.objectContaining({ id: pub.id }) }])
+    await gm.expectNone('batch')
+    await p.expectNone('op')
+  })
+
+  it('lote recusado não chega a ninguém', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    const p = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    await p.hello('Ana')
+    p.send(op('b1', { kind: 'batch', ops: [{ kind: 'create', object: tokenObject() }, { kind: 'create', object: tokenObject({ layerId: 'gm' }) }] }))
+    expect(await p.waitFor('reject')).toMatchObject({ opId: 'b1', reason: 'forbidden' })
+    await gm.expectNone('batch')
+    const { welcome } = await (await TestClient.connect(tableId)).hello('Bia')
+    expect(welcome.snapshot.objects).toEqual([])
+  })
+
+  it('mais de 200 sub-ações ou ação que não é de objeto (turno, camada): reject invalid, sem efeito', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    const p = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    await p.hello('Ana')
+    const many = Array.from({ length: 201 }, (_, i) => ({ kind: 'delete', id: `d${i}` }))
+    p.send(JSON.stringify({ t: 'op', opId: 'b1', op: { kind: 'batch', ops: many } }))
+    expect(await p.waitFor('reject')).toMatchObject({ opId: 'b1', reason: 'invalid' })
+    p.send(JSON.stringify({ t: 'op', opId: 'b2', op: { kind: 'batch', ops: [{ kind: 'layerCreate', layer: { id: 'l1', name: 'X' } }] } }))
+    expect(await p.waitFor('reject')).toMatchObject({ opId: 'b2', reason: 'invalid' })
+    gm.send(JSON.stringify({ t: 'op', opId: 'b3', op: { kind: 'batch', ops: [{ kind: 'turnsOpen', open: true }] } }))
+    expect(await gm.waitFor('reject')).toMatchObject({ opId: 'b3', reason: 'invalid' })
+    await gm.expectNone('turnsUpdated')
+    await p.expectNone('turnsUpdated')
+  })
+
+  it('mestre corta o traço da Ana: os pedaços chegam com a Ana como dona', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    const p = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    const { clientId: ana } = await p.hello('Ana')
+    p.send(op('c1', { kind: 'create', object: strokeObject('s1') }))
+    await p.waitFor('ack')
+    gm.send(op('b1', {
+      kind: 'batch',
+      ops: [{ kind: 'create', object: strokeObject('p1'), from: 's1' }, { kind: 'delete', id: 's1' }],
+    }))
+    expect(await gm.waitFor('ack')).toMatchObject({ opId: 'b1' })
+    expect((await p.waitFor('batch')).ops).toEqual([
+      { kind: 'upsert', object: expect.objectContaining({ id: 'p1', ownerId: ana, control: { mode: 'list', clientIds: [ana] } }) },
+      { kind: 'delete', id: 's1' },
+    ])
+  })
+
+  it('encaixe: o autor recebe no lote só o que o servidor encaixou', async () => {
+    const { tableId, gmSecret } = await createTable()
+    const gm = await TestClient.connect(tableId)
+    const p = await TestClient.connect(tableId)
+    await gm.hello('Mestre', { gmSecret })
+    await p.hello('Ana')
+    gm.send(op('s1', { kind: 'settingsUpdate', patch: { grid: { snap: true } } }))
+    await p.waitFor('settingsUpdated')
+    const tok = tokenObject({ x: 0, y: 0 })
+    p.send(op('c1', { kind: 'create', object: tok }))
+    await p.waitFor('ack')
+    p.send(op('b1', { kind: 'batch', ops: [{ kind: 'update', id: tok.id, patch: { x: 61 } }] }))
+    expect((await p.waitFor('batch')).ops).toEqual([{ kind: 'upsert', object: expect.objectContaining({ id: tok.id, x: 70 }) }])
+  })
+})

@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { ASSET_KEY_RE, LAYER_NAME_MAX, NOTE_MAX, RULER_MAX_POINTS } from './constants'
+import { ASSET_KEY_RE, BATCH_MAX, LAYER_NAME_MAX, NOTE_MAX, RULER_MAX_POINTS } from './constants'
 import {
   ChatChannelSchema,
   ChatImageSideSchema,
@@ -70,10 +70,42 @@ export const ClearObjectsOpSchema = z
   .refine((op) => op.scope === 'drawings' || (op.layerId !== null && op.authorId === undefined), 'clear all needs one layer')
 export type ClearObjectsOp = z.infer<typeof ClearObjectsOpSchema>
 
+const CreateOpSchema = z.object({
+  kind: z.literal('create'),
+  object: NewObjectSchema,
+  /**
+   * Só dentro de um lote: o traço novo é um pedaço do traço `from`, que o mesmo lote apaga.
+   * O pedaço herda o dono e o controle do original.
+   */
+  from: IdSchema.optional(),
+})
+const UpdateOpSchema = z.object({ kind: z.literal('update'), id: IdSchema, patch: ObjectPatchSchema })
+const DeleteOpSchema = z.object({ kind: z.literal('delete'), id: IdSchema })
+
+export const ObjectOpSchema = z.discriminatedUnion('kind', [CreateOpSchema, UpdateOpSchema, DeleteOpSchema])
+export type ObjectOp = z.infer<typeof ObjectOpSchema>
+
+/** Cada id aparece uma vez só no lote: criar, mexer ou apagar o mesmo id duas vezes é contraditório. */
+export function batchTargetsUnique(ops: ObjectOp[]): boolean {
+  const seen = new Set<string>()
+  for (const op of ops) {
+    const id = op.kind === 'create' ? op.object.id : op.id
+    if (seen.has(id)) return false
+    seen.add(id)
+  }
+  return true
+}
+
+/** Lote atômico de ações de objeto: o servidor aplica tudo ou nada. */
+export const BatchOpSchema = z
+  .object({ kind: z.literal('batch'), ops: z.array(ObjectOpSchema).min(1).max(BATCH_MAX) })
+  .refine((op) => batchTargetsUnique(op.ops), 'batch touches the same id twice')
+export type BatchOp = z.infer<typeof BatchOpSchema>
+
 export const OpSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('create'), object: NewObjectSchema }),
-  z.object({ kind: z.literal('update'), id: IdSchema, patch: ObjectPatchSchema }),
-  z.object({ kind: z.literal('delete'), id: IdSchema }),
+  CreateOpSchema,
+  UpdateOpSchema,
+  DeleteOpSchema,
   z.object({ kind: z.literal('layerCreate'), layer: z.object({ id: IdSchema, name: LayerNameSchema }) }),
   z.object({ kind: z.literal('layerUpdate'), id: IdSchema, patch: LayerPatchSchema }),
   z.object({ kind: z.literal('layerDelete'), id: IdSchema }),
@@ -95,9 +127,9 @@ export const OpSchema = z.discriminatedUnion('kind', [
   TurnNextOpSchema,
   TurnPrevOpSchema,
   TurnsEndOpSchema,
+  BatchOpSchema,
 ])
 export type Op = z.infer<typeof OpSchema>
-export type ObjectOp = Extract<Op, { kind: 'create' | 'update' | 'delete' }>
 
 export function isObjectOp(op: Op): op is ObjectOp {
   return op.kind === 'create' || op.kind === 'update' || op.kind === 'delete'
@@ -216,6 +248,8 @@ export type ServerMessage =
   | { t: 'ack'; opId: string; version: number }
   | { t: 'reject'; opId: string; reason: RejectReason; current?: TableObject | null }
   | { t: 'op'; op: AppliedOp; by: string }
+  /** Lote aplicado (batch), já filtrado pelo que quem recebe enxerga, num envio só. */
+  | { t: 'batch'; ops: AppliedOp[]; by: string }
   /** Apagados em lote (clearObjects), já filtrados pelo que quem recebe enxerga; o autor também recebe. */
   | { t: 'objectsRemoved'; ids: string[]; by: string }
   | { t: 'grabbed'; objectId: string; clientId: string }

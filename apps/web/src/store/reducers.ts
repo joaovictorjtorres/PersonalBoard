@@ -12,6 +12,7 @@ import {
   mergeSettings,
   moveLayer,
   sortLayers,
+  type AppliedOp,
   type ClearObjectsOp,
   type Layer,
   type Member,
@@ -24,8 +25,8 @@ import {
 import type { ConnStatus } from '../sync/SyncClient'
 import { chatRejectText, reduceChatEntry } from './chat'
 import { ackTurnOp, recomputeTurns } from './turns'
-import { applyLocalOp, opTargetId } from './localOps'
-import { inverseGroupOf } from './undo'
+import { applyLocalOp, objectOpsOf, opTargetId } from './localOps'
+import { batchInverse, inverseGroupOf } from './undo'
 import type { LocalPrev, PendingOp, TableState, Toast } from './state'
 
 const REJECT_TEXT: Record<RejectReason, string> = {
@@ -88,8 +89,9 @@ function reapplyPending(
 ): Record<string, TableObject> {
   let out = objects
   for (const p of Object.values(pending)) {
-    if (!isObjectOp(p.op)) continue
-    if (onlyId === undefined || opTargetId(p.op) === onlyId) out = applyLocalOp(out, p.op, selfId)
+    for (const op of objectOpsOf(p.op)) {
+      if (onlyId === undefined || opTargetId(op) === onlyId) out = applyLocalOp(out, op, selfId)
+    }
   }
   return out
 }
@@ -198,11 +200,24 @@ function clearIds(s: TableState, op: ClearObjectsOp): Set<string> {
 /**
  * Desfazer não pode tentar mexer em objeto que a limpeza apagou: ops de update/delete para eles saem
  * da pilha (grupos que ficam vazios também). A limpeza em si não entra na pilha — o aviso é a proteção.
+ * Dentro de um lote inverso, saem as sub-ações que citam os apagados, e também a recriação `from` de
+ * um pedaço apagado (o servidor a recusaria sem o pedaço); lote que fica vazio sai.
  */
 export function pruneUndoStack(stack: Op[][], gone: ReadonlySet<string>): Op[][] {
-  const touchesGone = (op: Op) => (op.kind === 'update' || op.kind === 'delete') && gone.has(op.id)
+  const touchesGone = (op: Op): boolean => {
+    if (op.kind === 'update' || op.kind === 'delete') return gone.has(op.id)
+    if (op.kind === 'create') return op.from !== undefined && gone.has(op.from)
+    return op.kind === 'batch' && op.ops.some(touchesGone)
+  }
+  const prune = (op: Op): Op | null => {
+    if (op.kind !== 'batch') return touchesGone(op) ? null : op
+    const ops = op.ops.filter((sub) => !touchesGone(sub))
+    return ops.length === 0 ? null : ops.length === op.ops.length ? op : { ...op, ops }
+  }
   if (!stack.some((group) => group.some(touchesGone))) return stack
-  return stack.map((group) => group.filter((op) => !touchesGone(op))).filter((group) => group.length > 0)
+  return stack
+    .map((group) => group.map(prune).filter((op): op is Op => op !== null))
+    .filter((group) => group.length > 0)
 }
 
 function withoutLayer<S extends TableState>(s: S, layerId: string): S {
@@ -298,6 +313,18 @@ function applyOptimistic<S extends TableState>(
       const notes = Object.fromEntries(objects.filter((o) => s.notes[o.id] !== undefined).map((o) => [o.id, s.notes[o.id]]))
       return { next: withoutObjects(s, ids), before: null, prev: { kind: 'objects', objects, notes }, layerOrders: null }
     }
+    case 'batch': {
+      const selfId = s.self?.clientId ?? ''
+      const before: Record<string, TableObject | null> = {}
+      let objects = s.objects
+      for (const sub of op.ops) {
+        const id = opTargetId(sub)
+        if (!(id in before)) before[id] = s.objects[id] ?? null
+        objects = applyLocalOp(objects, sub, selfId)
+      }
+      const selectedId = s.selectedId && !objects[s.selectedId] ? null : s.selectedId
+      return { next: { ...s, objects, selectedId }, before: null, prev: { kind: 'batch', before }, layerOrders: null }
+    }
     default: {
       const unreachable: never = op
       return unreachable
@@ -327,6 +354,9 @@ function revertLocal<S extends TableState>(s: S, p: PendingOp): S {
       for (const o of prev.objects) objects[o.id] = o
       return { ...s, objects, notes: { ...s.notes, ...prev.notes } }
     }
+    case 'batch':
+      // tratado em rejectBatch
+      return s
   }
 }
 
@@ -346,10 +376,30 @@ function settleGroup<S extends TableState>(s: S, p: PendingOp, inverse: Op[] | n
   }
 }
 
+function inverseOfApplied(op: Op, applied: { before: TableObject | null; prev: LocalPrev | null }, role: Role | undefined): Op[] | null {
+  if (op.kind === 'batch') return applied.prev?.kind === 'batch' ? batchInverse(op, applied.prev.before, role) : null
+  return inverseGroupOf(op, applied.before, role)
+}
+
+/** Lote recusado: os objetos dele voltam ao estado de antes, com as outras ops pendentes por cima. */
+function rejectBatch<S extends TableState>(s: S, opId: string, p: PendingOp, reason: RejectReason): S {
+  const pending = omit(s.pending, opId)
+  const before = p.prev?.kind === 'batch' ? p.prev.before : {}
+  let objects = { ...s.objects }
+  for (const [id, o] of Object.entries(before)) {
+    if (o) objects[id] = o
+    else delete objects[id]
+  }
+  const selfId = s.self?.clientId ?? ''
+  for (const id of Object.keys(before)) objects = reapplyPending(objects, pending, selfId, id)
+  const next = settleGroup({ ...s, pending, objects }, p, null)
+  return addToast(next, p.isUndo ? 'Não foi possível desfazer' : (p.failText ?? rejectText(p.op, reason)))
+}
+
 export function reduceSubmitBatch<S extends TableState>(
   s: S,
   items: Array<{ opId: string; op: Op }>,
-  opts: { isUndo: boolean; groupId: string },
+  opts: { isUndo: boolean; groupId: string; failText?: string },
 ): S {
   let next = s
   const pending = { ...s.pending }
@@ -362,8 +412,9 @@ export function reduceSubmitBatch<S extends TableState>(
       prev: applied.prev,
       layerOrders: applied.layerOrders,
       isUndo: opts.isUndo,
-      inverse: opts.isUndo ? null : inverseGroupOf(op, applied.before, s.self?.role),
+      inverse: opts.isUndo ? null : inverseOfApplied(op, applied, s.self?.role),
       group: opts.isUndo ? null : { id: opts.groupId, index },
+      ...(opts.failText ? { failText: opts.failText } : {}),
     }
   })
   const undoGroups =
@@ -375,6 +426,24 @@ export function reduceSubmitBatch<S extends TableState>(
 
 export function reduceSubmit<S extends TableState>(s: S, opId: string, op: Op, opts: { isUndo: boolean }): S {
   return reduceSubmitBatch(s, [{ opId, op }], { isUndo: opts.isUndo, groupId: opId })
+}
+
+/** Um upsert/delete vindo do servidor (op avulsa ou item de um lote). */
+function applyServerOp<S extends TableState>(s: S, op: AppliedOp, selfId: string): S {
+  if (op.kind === 'upsert') {
+    const object = op.object
+    const objects = reapplyPending({ ...s.objects, [object.id]: object }, s.pending, selfId, object.id)
+    return { ...s, objects, dragPreviews: omit(s.dragPreviews, object.id) }
+  }
+  const id = op.id
+  return {
+    ...s,
+    objects: omit(s.objects, id),
+    notes: omit(s.notes, id),
+    dragPreviews: omit(s.dragPreviews, id),
+    locks: omit(s.locks, id),
+    selectedId: s.selectedId === id ? null : s.selectedId,
+  }
 }
 
 export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now: number): S {
@@ -460,6 +529,8 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
         const id = opTargetId(p.op)
         if (p.op.kind === 'delete') notes = omit(notes, id)
         else if (objects[id]) objects = { ...objects, [id]: { ...objects[id], version: msg.version } }
+      } else if (p.op.kind === 'batch') {
+        for (const sub of p.op.ops) if (sub.kind === 'delete') notes = omit(notes, sub.id)
       }
       const pending = omit(s.pending, msg.opId)
       let acked: S = { ...s, pending, objects, notes }
@@ -471,6 +542,7 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
     case 'reject': {
       const p = s.pending[msg.opId]
       if (!p) return s
+      if (p.op.kind === 'batch') return rejectBatch(s, msg.opId, p, msg.reason)
       const pending = omit(s.pending, msg.opId)
       let next: S
       if (isObjectOp(p.op)) {
@@ -493,22 +565,11 @@ export function reduceServer<S extends TableState>(s: S, msg: ServerMessage, now
       return addToast(next, p.isUndo ? 'Não foi possível desfazer' : rejectText(p.op, msg.reason, layerGone))
     }
 
-    case 'op': {
-      if (msg.op.kind === 'upsert') {
-        const object = msg.op.object
-        const objects = reapplyPending({ ...s.objects, [object.id]: object }, s.pending, selfId, object.id)
-        return { ...s, objects, dragPreviews: omit(s.dragPreviews, object.id) }
-      }
-      const id = msg.op.id
-      return {
-        ...s,
-        objects: omit(s.objects, id),
-        notes: omit(s.notes, id),
-        dragPreviews: omit(s.dragPreviews, id),
-        locks: omit(s.locks, id),
-        selectedId: s.selectedId === id ? null : s.selectedId,
-      }
-    }
+    case 'op':
+      return applyServerOp(s, msg.op, selfId)
+
+    case 'batch':
+      return msg.ops.reduce((acc, op) => applyServerOp(acc, op, selfId), s)
 
     case 'objectsRemoved': {
       const gone = new Set(msg.ids)

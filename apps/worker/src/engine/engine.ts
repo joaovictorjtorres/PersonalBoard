@@ -6,11 +6,13 @@ import {
   RollRequestSchema,
   TableObjectSchema,
   applyTurnOp,
+  batchTargetsUnique,
   canControl,
   changedLayers,
   clearAllowed,
   clearTargets,
   insertLayer,
+  isObjectOp,
   isTurnOp,
   mergePatch,
   mergeSettings,
@@ -19,6 +21,7 @@ import {
   snapPatch,
   snapToGrid,
   uniformInt,
+  type BatchOp,
   type ChatEntry,
   type ClearObjectsOp,
   type Layer,
@@ -40,14 +43,22 @@ import {
   type Turns,
 } from '@mesa/shared'
 import { randomUint32 } from '../crypto'
+import { StagedObjects, type ObjectTx } from './staged'
 import type { StoredMember, TableStore } from './store'
 
 export type LayerChange = { before: Layer | null; after: Layer }
 
+/** `echo`: o servidor alterou o objeto (encaixe na grade); o autor também precisa recebê-lo. */
+export interface ObjectChange {
+  kind: 'object'
+  before: TableObject | null
+  after: TableObject | null
+  echo?: true
+}
+
 /** O que mudou; o TableDO decide quem recebe o quê. */
 export type OpEffect =
-  /** `echo`: o servidor alterou o objeto (encaixe na grade); o autor também precisa recebê-lo. */
-  | { kind: 'object'; before: TableObject | null; after: TableObject | null; echo?: true }
+  | ObjectChange
   | { kind: 'layers'; changes: LayerChange[] }
   | { kind: 'layerRemoved'; layer: Layer }
   | { kind: 'note'; objectId: string; text: string }
@@ -59,6 +70,8 @@ export type OpEffect =
   | { kind: 'objectsRemoved'; objects: TableObject[] }
   /** Estado completo dos turnos; todos recebem (não há filtro por destinatário). */
   | { kind: 'turns'; turns: Turns }
+  /** Lote (batch): as mudanças na ordem do lote; cada pessoa recebe num envio só o que enxerga. */
+  | { kind: 'objects'; changes: ObjectChange[] }
 
 export type OpResult =
   | { ok: true; duplicate: true; version: number }
@@ -96,6 +109,17 @@ const touchesGeometry = (p: ObjectPatch) =>
 export class TableEngine {
   // Travas ficam só em memória: se o DO hibernar, elas somem — aceitável, pois expiram em 10 s.
   private locks = new Map<string, Lock>()
+
+  /** Escrita direta no store; apagar leva junto a anotação e a trava. */
+  private readonly direct: ObjectTx = {
+    get: (id) => this.store.getObject(id),
+    put: (object) => this.store.putObject(object),
+    remove: (id) => {
+      this.store.deleteObject(id)
+      this.store.deleteNote(id)
+      this.locks.delete(id)
+    },
+  }
 
   constructor(
     private store: TableStore,
@@ -197,9 +221,11 @@ export class TableEngine {
   }
 
   private execute(clientId: string, role: Role, op: Op, online: Set<string>): OpResult {
-    if (op.kind === 'create') return this.create(clientId, role, op.object)
+    // `from` (pedaço de um traço) só vale dentro de um lote que apaga o original.
+    if (op.kind === 'create') return op.from === undefined ? this.create(clientId, role, op.object) : rejectInvalid()
     if (op.kind === 'update' || op.kind === 'delete') return this.change(clientId, role, op)
     if (op.kind === 'clearObjects') return this.clearObjects(clientId, role, op)
+    if (op.kind === 'batch') return this.batch(clientId, role, op)
     // Camadas, anotações, membros e configurações: só o mestre.
     if (role !== 'gm') return reject('forbidden', null)
     if (isTurnOp(op)) return this.turnOp(op)
@@ -215,9 +241,16 @@ export class TableEngine {
     }
   }
 
-  private create(clientId: string, role: Role, object: NewObject): OpResult {
+  /** `inherit`: dono e controle do traço original (pedaço criado num lote com `from`). */
+  private create(
+    clientId: string,
+    role: Role,
+    object: NewObject,
+    tx: ObjectTx = this.direct,
+    inherit?: Pick<TableObject, 'ownerId' | 'control'>,
+  ): OpResult {
     if (!this.canEditLayer(role, object.layerId)) return reject('forbidden', null)
-    const existing = this.store.getObject(object.id)
+    const existing = tx.get(object.id)
     if (existing) return reject('exists', this.canSeeObject(role, existing) ? existing : null)
     // Encaixe só para imagens (mapa e tokens); traços e formas ficam onde foram soltos.
     const grid = this.store.getSettings().grid
@@ -225,25 +258,28 @@ export class TableEngine {
     const placed = snap ? { ...object, ...snapToGrid(object, grid.size) } : object
     const after = {
       ...placed,
-      control: { mode: 'list', clientIds: [clientId] },
-      ownerId: clientId,
+      control: inherit?.control ?? { mode: 'list', clientIds: [clientId] },
+      ownerId: inherit?.ownerId ?? clientId,
       version: 1,
       updatedBy: clientId,
     } as TableObject
-    this.store.putObject(after)
+    tx.put(after)
     return done(1, { kind: 'object', before: null, after, ...(snap ? { echo: true as const } : {}) })
   }
 
-  private change(clientId: string, role: Role, op: Extract<Op, { kind: 'update' | 'delete' }>): OpResult {
-    const before = this.store.getObject(op.id)
+  private change(
+    clientId: string,
+    role: Role,
+    op: Extract<Op, { kind: 'update' | 'delete' }>,
+    tx: ObjectTx = this.direct,
+  ): OpResult {
+    const before = tx.get(op.id)
     if (!before || !this.canSeeObject(role, before)) return reject('not_found', null)
     if (!this.canEditObject(clientId, role, before)) return reject('forbidden', before)
     if (this.lockHeldByOther(op.id, clientId)) return reject('locked', before)
 
     if (op.kind === 'delete') {
-      this.store.deleteObject(op.id)
-      this.store.deleteNote(op.id)
-      this.locks.delete(op.id)
+      tx.remove(op.id)
       return done(0, { kind: 'object', before, after: null })
     }
 
@@ -259,7 +295,7 @@ export class TableEngine {
       updatedBy: clientId,
     })
     if (!parsed.success) return rejectInvalid()
-    this.store.putObject(parsed.data)
+    tx.put(parsed.data)
     return done(parsed.data.version, { kind: 'object', before, after: parsed.data, ...(snap ? { echo: true as const } : {}) })
   }
 
@@ -280,6 +316,38 @@ export class TableEngine {
       this.locks.delete(o.id)
     }
     return done(0, { kind: 'objectsRemoved', objects: removed })
+  }
+
+  /**
+   * Lote atômico: cada sub-ação passa pelas regras de create/update/delete numa cópia de trabalho;
+   * a primeira falha recusa tudo (nada muda). Id repetido no lote é contraditório → invalid.
+   * `create … from: X` (pedaço de traço): o lote também apaga X, X existia antes do lote e os dois
+   * são traços; o pedaço herda dono e controle de X (a permissão sobre X vem do `delete` de X).
+   */
+  private batch(clientId: string, role: Role, op: BatchOp): OpResult {
+    if (!batchTargetsUnique(op.ops)) return rejectInvalid()
+    const deleted = new Set(op.ops.flatMap((sub) => (sub.kind === 'delete' ? [sub.id] : [])))
+    const tx = new StagedObjects(this.direct)
+    const changes: ObjectChange[] = []
+    for (const sub of op.ops) {
+      // O schema já garante; defesa para uma op que chegue por outro caminho.
+      if (!isObjectOp(sub)) return rejectInvalid()
+      let r: OpResult
+      if (sub.kind !== 'create') r = this.change(clientId, role, sub, tx)
+      else if (sub.from === undefined) r = this.create(clientId, role, sub.object, tx)
+      else {
+        if (!deleted.has(sub.from) || sub.object.type !== 'stroke') return rejectInvalid()
+        const origin = this.store.getObject(sub.from)
+        if (!origin || !this.canSeeObject(role, origin)) return { ok: false, reason: 'not_found' }
+        if (origin.type !== 'stroke') return rejectInvalid()
+        r = this.create(clientId, role, sub.object, tx, { ownerId: origin.ownerId, control: origin.control })
+      }
+      // `current` fala de um objeto só; o cliente volta o lote inteiro para o estado de antes.
+      if (!r.ok) return { ok: false, reason: r.reason }
+      if (!r.duplicate) for (const e of r.effects) if (e.kind === 'object') changes.push(e)
+    }
+    tx.commit()
+    return done(0, { kind: 'objects', changes })
   }
 
   private saveLayers(before: Layer[], after: Layer[], extra: OpEffect[] = []): OpResult {

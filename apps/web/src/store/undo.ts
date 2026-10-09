@@ -1,4 +1,5 @@
-import type { ObjectPatch, Op, Role, TableObject } from '@mesa/shared'
+import type { BatchOp, ObjectOp, ObjectPatch, Op, Role, TableObject } from '@mesa/shared'
+import { opTargetId } from './localOps'
 
 export function inverseOf(op: Op, before: TableObject | null): Op | null {
   switch (op.kind) {
@@ -36,4 +37,37 @@ export function inverseGroupOf(op: Op, before: TableObject | null, role: Role | 
     return [inv, { kind: 'update', id: before.id, patch: { control: before.control } }]
   }
   return [inv]
+}
+
+/**
+ * Lote que desfaz um lote: as inversas de cada sub-ação em ordem reversa. Original cortado em pedaços
+ * (`create … from: X` + `delete X`): a recriação de X sai com `from` = o primeiro pedaço, que o lote
+ * inverso apaga; assim X volta com o dono e o controle de antes. Quando o mestre recria objetos
+ * apagados inteiros, os updates de controle vão num segundo lote (no mesmo lote seriam id repetido).
+ */
+export function batchInverse(op: BatchOp, before: Record<string, TableObject | null>, role: Role | undefined): Op[] | null {
+  const firstPiece = new Map<string, string>()
+  for (const sub of op.ops) {
+    if (sub.kind === 'create' && sub.from !== undefined && !firstPiece.has(sub.from)) firstPiece.set(sub.from, sub.object.id)
+  }
+  const main: ObjectOp[] = []
+  const follow: ObjectOp[] = []
+  for (const sub of [...op.ops].reverse()) {
+    const prior = before[opTargetId(sub)] ?? null
+    const piece = sub.kind === 'delete' ? firstPiece.get(sub.id) : undefined
+    if (piece !== undefined) {
+      const recreate = inverseOf(sub, prior)
+      if (recreate?.kind === 'create') main.push({ ...recreate, from: piece })
+      continue
+    }
+    const group = inverseGroupOf(sub, prior, role)
+    if (!group) continue
+    const [inverse, ...rest] = group as ObjectOp[]
+    main.push(inverse)
+    follow.push(...rest)
+  }
+  if (main.length === 0) return null
+  const out: Op[] = [{ kind: 'batch', ops: main }]
+  if (follow.length > 0) out.push({ kind: 'batch', ops: follow })
+  return out
 }

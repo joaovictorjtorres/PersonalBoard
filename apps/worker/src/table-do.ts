@@ -8,6 +8,7 @@ import {
   RULER_RATE_PER_SEC,
   readChatReqId,
   readOpId,
+  type AppliedOp,
   type ChatMessage,
   type ChatRejectReason,
   type ClientMessage,
@@ -202,13 +203,22 @@ export class TableDO extends DurableObject<Env> {
         const { before, after } = effect
         // Com `echo` (encaixe na grade) o autor também recebe: o `ack` não traz a posição corrigida.
         this.broadcast(effect.echo ? null : author.sessionId, (other) => {
-          if (after && this.engine.canSeeObject(other.role, after)) {
-            return { t: 'op', by: author.clientId, op: { kind: 'upsert', object: after } }
+          const op = this.visibleChange(other, before, after)
+          return op ? { t: 'op', by: author.clientId, op } : null
+        })
+        return
+      }
+      case 'objects': {
+        // Um envio por pessoa com o que ela enxerga. A sessão do autor só recebe o que o servidor mudou (encaixe).
+        this.broadcast(null, (other) => {
+          const own = other.sessionId === author.sessionId
+          const ops: AppliedOp[] = []
+          for (const c of effect.changes) {
+            if (own && !c.echo) continue
+            const op = this.visibleChange(other, c.before, c.after)
+            if (op) ops.push(op)
           }
-          if (before && this.engine.canSeeObject(other.role, before)) {
-            return { t: 'op', by: author.clientId, op: { kind: 'delete', id: before.id } }
-          }
-          return null
+          return ops.length > 0 ? { t: 'batch', ops, by: author.clientId } : null
         })
         return
       }
@@ -368,6 +378,13 @@ export class TableDO extends DurableObject<Env> {
     for (const objectId of this.engine.releaseAll(att.clientId)) this.broadcastReleased(objectId, att.clientId)
     this.engine.touchMember(att.clientId)
     this.broadcast(att.sessionId, () => ({ t: 'memberLeft', clientId: att.clientId }))
+  }
+
+  /** Como `other` vê a mudança: upsert se enxerga o depois, delete se só enxergava o antes. */
+  private visibleChange(other: Attachment, before: TableObject | null, after: TableObject | null): AppliedOp | null {
+    if (after && this.engine.canSeeObject(other.role, after)) return { kind: 'upsert', object: after }
+    if (before && this.engine.canSeeObject(other.role, before)) return { kind: 'delete', id: before.id }
+    return null
   }
 
   private broadcastReleased(objectId: string, clientId: string): void {

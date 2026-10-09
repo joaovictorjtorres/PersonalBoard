@@ -63,3 +63,7 @@ export const TURNS_MAX = 50
 export const TURN_NAME_MAX = 32
 export const INITIATIVE_MIN = -99
 export const INITIATIVE_MAX = 999
+
+// Seleção em área
+/** Máximo de sub-ações num lote (`batch`). */
+export const BATCH_MAX = 200

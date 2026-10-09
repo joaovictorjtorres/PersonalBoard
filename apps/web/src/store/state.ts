@@ -29,6 +29,8 @@ export type LocalPrev =
   | { kind: 'settings'; settings: TableSettings }
   /** clearObjects: o que a limpeza otimista tirou, para voltar se o servidor recusar. */
   | { kind: 'objects'; objects: TableObject[]; notes: Record<string, string> }
+  /** Lote: cada objeto antes do lote (null = não existia), para voltar tudo se for recusado. */
+  | { kind: 'batch'; before: Record<string, TableObject | null> }
 
 export interface PendingOp {
   op: Op
@@ -40,6 +42,8 @@ export interface PendingOp {
   prev: LocalPrev | null
   /** layerMove: ordem absoluta resultante, para a reaplicação ser idempotente */
   layerOrders: Record<string, number> | null
+  /** Aviso se o servidor recusar (lotes da seleção e da borracha); senão o texto padrão do motivo. */
+  failText?: string
 }
 
 /** Grupo de desfazer ainda esperando ack/reject de todas as ops. */
