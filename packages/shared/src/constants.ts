@@ -57,3 +57,9 @@ export const RULER_MAX_POINTS = 32
 export const RULER_RATE_PER_SEC = 40
 export const DICE_MAX_COUNT = 50
 export const DICE_MAX_BONUS = 100
+
+// Turnos
+export const TURNS_MAX = 50
+export const TURN_NAME_MAX = 32
+export const INITIATIVE_MIN = -99
+export const INITIATIVE_MAX = 999
