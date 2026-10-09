@@ -10,16 +10,16 @@ Status: aguardando revisão
 
 **Já existe:** cada mesa guarda no servidor camadas, objetos, notas do mestre, ajustes e as últimas mensagens do chat da mesa; turnos entram pela spec de turnos. Conversas privadas continuam **não** sendo guardadas.
 
-**Fora do escopo:** duplicar mesa, senha de acesso, acesso à lista de fora do PC, aprovação do mestre para recuperar jogador.
+**Fora do escopo:** mesas criadas antes desta versão, duplicar mesa, senha de acesso, acesso à lista de fora do PC, aprovação do mestre para recuperar jogador.
 
 ## 2. Índice de mesas (servidor)
 
 - Um Durable Object único `RegistryDO` (nome fixo), com SQLite, guarda uma linha por mesa:
   - `id`, `name`, `createdAt`, `lastActivityAt`, `players` (membros jogadores conhecidos);
-  - `gmSecret` (texto) **só para mesas criadas a partir desta versão**. Mesas antigas têm só o hash no próprio TableDO; para elas, `gmSecret` fica vazio até o mestre abrir a mesa com o link de mestre por esta página (o TableDO confere o hash e informa o segredo ao índice).
+  - `gmSecret` (texto), gravado ao criar a mesa.
 - Criar mesa: registra no índice na mesma chamada.
 - O TableDO informa ao índice, de forma barata (no máximo uma vez por minuto por mesa): última atividade e número de jogadores.
-- **Migração:** mesas antigas não estão no índice. No primeiro uso, o servidor descobre as mesas existentes no armazenamento local do wrangler (`--persist-to`) **se for possível de forma confiável**; se não for, a página oferece "Adicionar mesa existente" colando o link de mestre (o servidor confere o hash e registra). O plano decide qual dos dois, verificando no código real; o segundo é o mínimo obrigatório.
+- **Mesas antigas** (criadas antes desta versão) são ignoradas: não aparecem na lista e não há migração (decisão do usuário: tudo ainda é teste).
 - Apagar mesa: remove do índice e apaga todo o armazenamento do TableDO (`deleteAll`) e os arquivos enviados que só ela usa.
 
 ## 3. Acesso só local
@@ -43,7 +43,6 @@ Status: aguardando revisão
   - **Copiar link de mestre** e **Copiar link de jogador** (com a URL do túnel);
   - **Renomear** (edição no card);
   - **Apagar** (modal de confirmação do app: "Apagar a mesa <nome>? Desenhos, tokens, chat e turnos serão perdidos.").
-- Mesa antiga sem segredo conhecido: "Copiar link de mestre" e "Abrir como mestre" desativados, com a dica "Abra a mesa uma vez pelo link de mestre".
 - "Nova mesa" no fim (nome + criar), como hoje.
 - Textos em pt-BR, sem travessões, sem diálogos nativos.
 
@@ -72,7 +71,6 @@ Status: aguardando revisão
 |---|---|
 | Pedido do túnel à lista ou para criar mesa | 404 / página "Peça o link ao mestre" |
 | Apagar mesa aberta por jogadores | jogadores conectados recebem "A mesa foi apagada" e voltam à página inicial |
-| Mesa antiga sem segredo no índice | botões de mestre desativados com dica |
 | Apelido de jogador online | recusado com mensagem |
 | Launcher sem túnel | links locais e aviso |
 
@@ -80,5 +78,5 @@ Status: aguardando revisão
 
 - **worker:** regra de acesso local (com e sem cabeçalhos do túnel, `Host` diferente); criar/listar/renomear/apagar; atualização de atividade com limite de frequência; URL do túnel; recuperação por apelido (fora, online recusado, maiúsculas/espaços, mestre não recupera) e do mestre por segredo; apagar mesa derruba conexões.
 - **launcher:** abre `localhost`; informa a URL do túnel (inclusive ao reabrir).
-- **web:** página local (cards, links com a URL do túnel, botões desativados para mesa antiga, modal de apagar); página remota sem lista; tela de entrada com "Já jogou aqui?".
+- **web:** página local (cards, links com a URL do túnel, modal de apagar); página remota sem lista; tela de entrada com "Já jogou aqui?".
 - **e2e:** criar duas mesas e vê-las na lista; renomear e apagar; jogador entra, desenha, sai; com navegador limpo, entra com o mesmo apelido e recupera o controle; mestre com navegador limpo pelo link de mestre recupera a autoria; pedido com cabeçalho do túnel não vê a lista.
