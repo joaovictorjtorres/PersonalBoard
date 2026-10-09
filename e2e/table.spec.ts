@@ -1390,3 +1390,96 @@ test('mestre com navegador limpo pelo link de mestre recupera a autoria', async 
   const owner = await again.evaluate(() => (Object.values((window as any).__mesa.getState().objects)[0] as any).ownerId)
   expect(owner).toBe(gmId)
 })
+
+// ---------------------------------------------------------------- página inicial local
+
+const tableCard = (page: Page, name: string) =>
+  page.locator('.table-card').filter({ has: page.getByRole('heading', { name, exact: true }) })
+
+test('lista local: criar duas mesas pela página, mais recente primeiro; renomear persiste', async ({ page }) => {
+  const stamp = Date.now()
+  const [a, b, c] = [`Lista A ${stamp}`, `Lista B ${stamp}`, `Lista C ${stamp}`]
+  await page.goto('/')
+  for (const name of [a, b]) {
+    await page.getByLabel('Nome da mesa').fill(name)
+    await page.getByRole('button', { name: 'Criar mesa' }).click()
+    await expect(tableCard(page, name)).toBeVisible()
+  }
+  const names = await page.locator('.table-card h3').allTextContents()
+  expect(names.indexOf(b)).toBeLessThan(names.indexOf(a))
+
+  const card = tableCard(page, a)
+  await card.getByRole('button', { name: 'Renomear' }).click()
+  await card.getByLabel('Novo nome').fill(c)
+  await card.getByRole('button', { name: 'Salvar' }).click()
+  await expect(tableCard(page, c)).toBeVisible()
+  await page.reload()
+  await expect(tableCard(page, c)).toBeVisible()
+  await expect(tableCard(page, a)).toHaveCount(0)
+})
+
+test('apagar pelo aviso do app: some da lista; o jogador conectado vê "A mesa foi apagada" e volta ao início', async ({ browser, page }) => {
+  const name = `Apagar ${Date.now()}`
+  const res = await page.request.post('/api/tables', { data: { name } })
+  const t = await res.json()
+  const player = await open(browser, playerPath(t), 'Ana')
+  await page.goto('/')
+  const card = tableCard(page, name)
+  await card.getByRole('button', { name: 'Apagar' }).click()
+  const dialog = page.getByRole('alertdialog')
+  await expect(dialog).toContainText(`Apagar a mesa ${name}? Desenhos, tokens, chat e turnos serão perdidos.`)
+  await dialog.getByRole('button', { name: 'Apagar' }).click()
+  await expect(card).toHaveCount(0)
+  await expect(player.getByText('A mesa foi apagada')).toBeVisible()
+  await expect(player).toHaveURL(/\/$/, { timeout: 10_000 })
+})
+
+test('links das mesas usam o túnel informado; sem túnel, aviso e links locais', async ({ page }) => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  const name = `Túnel ${Date.now()}`
+  const t = await (await page.request.post('/api/tables', { data: { name } })).json()
+  const tunnel = 'https://e2e-teste.trycloudflare.com'
+  const key = t.playerKey ? `#j=${t.playerKey}` : ''
+  expect((await page.request.post('/api/registry/tunnel', { data: { url: tunnel } })).status()).toBe(204)
+  try {
+    await page.goto('/')
+    await expect(page.getByText(tunnel)).toBeVisible()
+    const card = tableCard(page, name)
+    await card.getByRole('button', { name: 'Copiar link de jogador' }).click()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${tunnel}/t/${t.tableId}${key}`)
+    await card.getByRole('button', { name: 'Copiar link de mestre' }).click()
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${tunnel}/t/${t.tableId}#gm=${t.gmSecret}`)
+    await expect(card.getByRole('link', { name: 'Abrir como mestre' })).toHaveAttribute('href', `/t/${t.tableId}#gm=${t.gmSecret}`)
+  } finally {
+    await page.request.post('/api/registry/tunnel', { data: { url: null } })
+  }
+  await page.reload()
+  await expect(page.getByText('Túnel indisponível, só local')).toBeVisible()
+  await tableCard(page, name).getByRole('button', { name: 'Copiar link de jogador' }).click()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${new URL(page.url()).origin}/t/${t.tableId}${key}`)
+})
+
+test('página inicial sem rolagem horizontal em 1280x720 e em janela estreita', async ({ page }) => {
+  await page.request.post('/api/tables', { data: { name: 'Nome comprido de mesa '.repeat(3).trim().slice(0, 60) } })
+  const noHorizontalScroll = () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)
+  await page.goto('/')
+  await expect(page.locator('.table-card').first()).toBeVisible()
+  expect(await noHorizontalScroll()).toBe(true)
+  await page.setViewportSize({ width: 360, height: 640 })
+  expect(await noHorizontalScroll()).toBe(true)
+})
+
+test('pedido pelo túnel (cabeçalhos da Cloudflare) não vê a lista nem cria mesa; o link da mesa funciona', async ({ browser, page }) => {
+  const edge = { 'cf-ray': '8f00000000000000-GRU', 'cf-connecting-ip': '200.100.50.25' }
+  expect((await page.request.get('/api/registry/tables', { headers: edge })).status()).toBe(404)
+  expect((await page.request.post('/api/tables', { headers: edge, data: { name: 'x' } })).status()).toBe(404)
+  const t = await newTable(page)
+  const remote = await (await browser.newContext({ extraHTTPHeaders: edge })).newPage()
+  await remote.goto('/')
+  await expect(remote.getByText('Peça o link da mesa ao mestre')).toBeVisible()
+  await expect(remote.getByRole('button', { name: 'Criar mesa' })).toHaveCount(0)
+  await remote.goto(playerPath(t))
+  await remote.getByLabel('Seu apelido').fill('Remota')
+  await remote.getByRole('button', { name: 'Entrar' }).click()
+  await waitOpen(remote)
+})
