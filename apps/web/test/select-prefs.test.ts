@@ -8,15 +8,15 @@ const memory = () => {
 
 describe('opções do Selecionar', () => {
   it('padrão: retângulo, só a camada ativa', () => {
-    expect(loadSelectPrefs(memory())).toEqual({ selectShape: 'rect', selectAllLayers: false })
-    expect(DEFAULT_SELECT_PREFS).toEqual({ selectShape: 'rect', selectAllLayers: false })
+    expect(loadSelectPrefs(memory())).toEqual({ selectShape: 'rect', selectAllLayers: false, eraseAllLayers: false })
+    expect(DEFAULT_SELECT_PREFS).toEqual({ selectShape: 'rect', selectAllLayers: false, eraseAllLayers: false })
   })
 
   it('guarda e lê de volta', () => {
     const storage = memory()
-    saveSelectPrefs({ selectShape: 'lasso', selectAllLayers: true }, storage)
-    expect(JSON.parse(storage.mem.get(SELECT_PREFS_KEY)!)).toEqual({ selectShape: 'lasso', selectAllLayers: true })
-    expect(loadSelectPrefs(storage)).toEqual({ selectShape: 'lasso', selectAllLayers: true })
+    saveSelectPrefs({ selectShape: 'lasso', selectAllLayers: true, eraseAllLayers: true }, storage)
+    expect(JSON.parse(storage.mem.get(SELECT_PREFS_KEY)!)).toEqual({ selectShape: 'lasso', selectAllLayers: true, eraseAllLayers: true })
+    expect(loadSelectPrefs(storage)).toEqual({ selectShape: 'lasso', selectAllLayers: true, eraseAllLayers: true })
   })
 
   it('conteúdo inválido ou armazenamento bloqueado: padrão', () => {

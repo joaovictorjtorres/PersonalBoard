@@ -128,6 +128,8 @@ export interface TableState {
   penMode: PenMode
   /** Mestre no modo apagar: false = só os meus traços; true = de todos. */
   eraseAll: boolean
+  /** Borracha passa por traços de todas as camadas editáveis (guardado no localStorage). */
+  eraseAllLayers: boolean
   selectedId: string | null
   objectMenu: ObjectMenu | null
   viewport: Viewport
@@ -199,6 +201,7 @@ export function makeInitialState(): TableState {
     strokeWidth: 4,
     penMode: 'draw',
     eraseAll: false,
+    eraseAllLayers: false,
     selectedId: null,
     objectMenu: null,
     viewport: { x: 0, y: 0, scale: 1 },

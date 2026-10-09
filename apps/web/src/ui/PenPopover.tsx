@@ -14,6 +14,7 @@ export function PenPopover({ onClose, hover }: { onClose: () => void; hover?: Ho
   const strokeWidth = useTable((s) => s.strokeWidth)
   const penMode = useTable((s) => s.penMode)
   const eraseAll = useTable((s) => s.eraseAll)
+  const eraseAllLayers = useTable((s) => s.eraseAllLayers)
   const isGm = useTable((s) => s.self?.role === 'gm')
   const actions = useTableActions()
 
@@ -55,6 +56,15 @@ export function PenPopover({ onClose, hover }: { onClose: () => void; hover?: Ho
           </button>
         </div>
       </div>
+
+      {penMode === 'erase' && (
+        <div className="field">
+          <span>Alcance</span>
+          <label>
+            <input type="checkbox" checked={eraseAllLayers} onChange={(e) => actions.setEraseAllLayers(e.target.checked)} /> Todas as camadas
+          </label>
+        </div>
+      )}
 
       {isGm && penMode === 'erase' && (
         <div className="field" role="radiogroup" aria-label="Apagar">

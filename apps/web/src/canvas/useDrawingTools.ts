@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KonvaEventObject } from 'konva/lib/Node'
 import { nanoid } from 'nanoid'
-import { MAX_SEGMENT_NUMBERS, boundsOf, simplifyPoints } from '@mesa/shared'
+import { BATCH_MAX, MAX_SEGMENT_NUMBERS, boundsOf, simplifyPoints } from '@mesa/shared'
 import { throttle } from '../lib/throttle'
 import { useTableStore } from '../store/context'
-import { isLockedByOther } from '../store/reducers'
-import { planErase } from './eraser'
+import { canUseLayer, isLockedByOther } from '../store/reducers'
+import { chunk, planErase } from './eraser'
 
 interface OwnPreview {
   layerId: string
@@ -19,7 +19,7 @@ export function useDrawingTools() {
   const [ownPreview, setOwnPreview] = useState<OwnPreview | null>(null)
   const [erasePreview, setErasePreview] = useState<Record<string, number[][]>>({})
   const current = useRef<{ strokeId: string; layerId: string; points: number[]; unsent: number[] } | null>(null)
-  const erasing = useRef<{ layerId: string; path: number[] } | null>(null)
+  const erasing = useRef<{ layerId: string; layerIds: ReadonlySet<string> | null; path: number[] } | null>(null)
   const frame = useRef<number | null>(null)
 
   // Envia só os pontos novos desde o último envio (~30/s); quem recebe concatena.
@@ -54,6 +54,7 @@ export function useDrawingTools() {
     return planErase({
       objects: Object.values(s.objects),
       layerId: cur.layerId,
+      layerIds: cur.layerIds ?? undefined,
       path: cur.path,
       selfId: s.self.clientId,
       role: s.self.role,
@@ -79,10 +80,14 @@ export function useDrawingTools() {
       frame.current = null
     }
     const { ops } = plan()
+    const allLayers = !!erasing.current?.layerIds
     erasing.current = null
     setErasePreview({})
-    // Lote único: vira um só grupo de desfazer.
-    if (ops.length > 0) store.getState().actions.submitGroup(ops)
+    if (ops.length === 0) return
+    const { actions } = store.getState()
+    // Todas as camadas: cortes em lotes de até 200, cada lote um passo de desfazer.
+    if (allLayers) for (const batch of chunk(ops, BATCH_MAX)) actions.submitBatches([batch], 'Não foi possível apagar')
+    else actions.submitGroup(ops)
   }
 
   const onDown = (e: KonvaEventObject<MouseEvent>) => {
@@ -92,7 +97,8 @@ export function useDrawingTools() {
     const pos = e.target.getStage()?.getRelativePointerPosition()
     if (!pos) return
     if (s.penMode === 'erase') {
-      erasing.current = { layerId: s.activeLayerId, path: [pos.x, pos.y] }
+      const layerIds = s.eraseAllLayers ? new Set(s.layers.filter((l) => canUseLayer(l, s.self?.role)).map((l) => l.id)) : null
+      erasing.current = { layerId: s.activeLayerId, layerIds, path: [pos.x, pos.y] }
       scheduleErasePreview()
       return
     }

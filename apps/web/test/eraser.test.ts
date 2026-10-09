@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { MAX_SEGMENTS, MAX_SEGMENT_NUMBERS, type TableObject } from '@mesa/shared'
-import { erasableBy, eraserRadius, fitSegmentLimits, planErase, rebaseSegments, type EraseInput } from '../src/canvas/eraser'
+import { chunk, erasableBy, eraserRadius, fitSegmentLimits, planErase, rebaseSegments, type EraseInput } from '../src/canvas/eraser'
 
 const stroke = (over: Partial<TableObject> = {}): TableObject =>
   ({
@@ -105,5 +105,27 @@ describe('fitSegmentLimits', () => {
   it('não mexe no que já cabe', () => {
     const ok = [[0, 0, 1, 1]]
     expect(fitSegmentLimits(ok, 1)).toBe(ok)
+  })
+})
+
+describe('borracha em todas as camadas', () => {
+  const other = stroke({ id: 's2', layerId: 'tokens' })
+
+  it('sem layerIds só corta a camada ativa; com layerIds, todas as da lista', () => {
+    expect(planErase(input({ objects: [stroke(), other] })).ops.map((o) => (o.kind === 'create' ? '' : o.id))).toEqual(['s1'])
+    const all = planErase(input({ objects: [stroke(), other], layerIds: new Set(['drawings', 'tokens']) }))
+    expect(all.ops.map((o) => (o.kind === 'create' ? '' : o.id))).toEqual(['s1', 's2'])
+    expect(Object.keys(all.previews)).toEqual(['s1', 's2'])
+  })
+
+  it('camada fora da lista (travada ou oculta para a pessoa) fica de fora', () => {
+    const locked = stroke({ id: 's3', layerId: 'map' })
+    const all = planErase(input({ objects: [stroke(), locked], layerIds: new Set(['drawings']) }))
+    expect(all.ops.map((o) => (o.kind === 'create' ? '' : o.id))).toEqual(['s1'])
+  })
+
+  it('chunk divide em lotes de até N', () => {
+    expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]])
+    expect(chunk([], 2)).toEqual([])
   })
 })

@@ -773,6 +773,8 @@ test('modais e menus cabem na janela 1280x720 sem rolagem', async ({ browser, pa
   await expect(pen).toBeVisible()
   await pen.getByRole('button', { name: 'Apagar' }).click() // estado mais alto (escopo do mestre)
   await noScroll(pen, 'caneta')
+  const penBox = await pen.boundingBox()
+  expect(penBox && penBox.y >= 0 && penBox.y + penBox.height <= 720, 'caneta na janela').toBe(true)
   await gm.keyboard.press('Escape')
 
   await gm.getByRole('button', { name: 'Formas (S)' }).click({ button: 'right' })
@@ -1320,4 +1322,27 @@ test('seleção: quem assiste vê o contorno do grupo sendo arrastado, com o nom
   await gm.mouse.up()
   await expect.poll(groupDrags).toBe(0)
   await expect.poll(async () => (await objects(ana)).map((o) => Math.round(o.y)).sort()).toEqual([400, 450])
+})
+
+test('borracha em todas as camadas corta traços de duas camadas numa passada', async ({ browser, page }) => {
+  const { tableId, gmSecret } = await newTable(page)
+  const gm = await open(browser, `/t/${tableId}?debug=1#gm=${gmSecret}`, 'Mestre')
+  const ana = await open(browser, `/t/${tableId}?debug=1`, 'Ana')
+
+  await addStrokeAt(ana, 'a', 'drawings', [300, 300, 600, 300])
+  await addStrokeAt(ana, 'b', 'tokens', [300, 330, 600, 330])
+  await expect.poll(async () => (await objects(gm)).length).toBe(2)
+
+  await ana.keyboard.press('e')
+  await ana.getByRole('button', { name: 'Borracha (E)' }).hover()
+  const pop = ana.getByRole('dialog', { name: 'Opções da caneta' })
+  await pop.getByLabel('Todas as camadas').check()
+  await ana.mouse.move(900, 600)
+  await expect(pop).toHaveCount(0)
+
+  await ana.mouse.move(450, 250)
+  await ana.mouse.down()
+  await ana.mouse.move(450, 380, { steps: 10 })
+  await ana.mouse.up()
+  await expect.poll(async () => (await objects(gm)).map((o) => `${o.id}:${o.segments?.length}`).sort()).toEqual(['a:2', 'b:2'])
 })

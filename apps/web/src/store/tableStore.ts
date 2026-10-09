@@ -48,6 +48,7 @@ export interface TableActions {
   setTool(tool: Tool): void
   setPen(mode: PenMode): void
   setEraseAll(value: boolean): void
+  setEraseAllLayers(value: boolean): void
   setColor(color: string): void
   setStrokeWidth(width: number): void
   setActiveLayer(id: string): void
@@ -278,6 +279,11 @@ export function createTableStore(
         set({ tool: 'pencil', penMode, selectedId: null, ...NO_SELECTION })
       },
       setEraseAll: (eraseAll) => set({ eraseAll }),
+      setEraseAllLayers(eraseAllLayers) {
+        set({ eraseAllLayers })
+        const s = get()
+        saveSelectPrefs({ selectShape: s.selectShape, selectAllLayers: s.selectAllLayers, eraseAllLayers })
+      },
       setColor: (color) => set({ color }),
       setStrokeWidth: (strokeWidth) => set({ strokeWidth }),
       setActiveLayer(activeLayerId) {
@@ -517,11 +523,11 @@ export function createTableStore(
       closeSelectionMenu: () => set({ selectionMenu: null }),
       setSelectShape(selectShape) {
         set({ selectShape })
-        saveSelectPrefs({ selectShape, selectAllLayers: get().selectAllLayers })
+        saveSelectPrefs({ selectShape, selectAllLayers: get().selectAllLayers, eraseAllLayers: get().eraseAllLayers })
       },
       setSelectAllLayers(selectAllLayers) {
         set({ selectAllLayers, ...NO_SELECTION })
-        saveSelectPrefs({ selectShape: get().selectShape, selectAllLayers })
+        saveSelectPrefs({ selectShape: get().selectShape, selectAllLayers, eraseAllLayers: get().eraseAllLayers })
       },
     }
 

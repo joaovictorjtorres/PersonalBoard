@@ -7,9 +7,11 @@ export const SELECT_PREFS_KEY = 'mesa:select'
 export interface SelectPrefs {
   selectShape: SelectShape
   selectAllLayers: boolean
+  /** Borracha em todas as camadas (mesma chave, por pessoa). */
+  eraseAllLayers: boolean
 }
 
-export const DEFAULT_SELECT_PREFS: SelectPrefs = { selectShape: 'rect', selectAllLayers: false }
+export const DEFAULT_SELECT_PREFS: SelectPrefs = { selectShape: 'rect', selectAllLayers: false, eraseAllLayers: false }
 
 function defaultStorage(): KeyValueStorage | null {
   try {
@@ -26,6 +28,7 @@ export function loadSelectPrefs(storage: KeyValueStorage | null = defaultStorage
     return {
       selectShape: r.selectShape === 'lasso' ? 'lasso' : 'rect',
       selectAllLayers: r.selectAllLayers === true,
+      eraseAllLayers: r.eraseAllLayers === true,
     }
   } catch {
     return { ...DEFAULT_SELECT_PREFS }

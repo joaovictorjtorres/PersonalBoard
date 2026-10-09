@@ -7,7 +7,7 @@ import {
   eraseSegments,
   pathTouchesBox,
   simplifyPoints,
-  type Op,
+  type ObjectOp,
   type Role,
   type TableObject,
 } from '@mesa/shared'
@@ -64,6 +64,8 @@ export function fitSegmentLimits(segments: number[][], tolerance: number): numbe
 export interface EraseInput {
   objects: TableObject[]
   layerId: string
+  /** "Todas as camadas": as camadas em que a pessoa pode apagar; ausente = só `layerId`. */
+  layerIds?: ReadonlySet<string>
   /** Caminho da borracha em coordenadas do mundo. */
   path: number[]
   selfId: string
@@ -74,13 +76,14 @@ export interface EraseInput {
   isLocked: (id: string) => boolean
 }
 
-export function planErase(input: EraseInput): { previews: Record<string, number[][]>; ops: Op[] } {
+export function planErase(input: EraseInput): { previews: Record<string, number[][]>; ops: ObjectOp[] } {
   const radius = eraserRadius(input.penWidth, input.scale)
   const tolerance = 1 / input.scale
   const previews: Record<string, number[][]> = {}
-  const ops: Op[] = []
+  const ops: ObjectOp[] = []
+  const inScope = (layerId: string) => (input.layerIds ? input.layerIds.has(layerId) : layerId === input.layerId)
   for (const o of input.objects) {
-    if (o.type !== 'stroke' || o.layerId !== input.layerId) continue
+    if (o.type !== 'stroke' || !inScope(o.layerId)) continue
     if (!erasableBy(o, input.selfId, input.role, input.eraseAll) || input.isLocked(o.id)) continue
     if (!pathTouchesBox(input.path, radius + o.strokeWidth / 2, o)) continue
     const local = input.path.map((v, i) => v - (i % 2 === 0 ? o.x : o.y))
@@ -91,4 +94,11 @@ export function planErase(input: EraseInput): { previews: Record<string, number[
     ops.push(result.length === 0 ? { kind: 'delete', id: o.id } : { kind: 'update', id: o.id, patch: rebaseSegments(result, o.x, o.y) })
   }
   return { previews, ops }
+}
+
+/** Divide em listas de até `size` itens (lotes da borracha em todas as camadas). */
+export function chunk<T>(list: T[], size: number): T[][] {
+  const out: T[][] = []
+  for (let i = 0; i < list.length; i += size) out.push(list.slice(i, i + size))
+  return out
 }
